@@ -522,3 +522,26 @@
 [2026-04-20T20:39:47.234Z] Elapsed: 257.8s   finished=2026-04-20T20:39:47.234Z
 [2026-04-20T20:39:47.234Z] ==============================================================
 [2026-04-20T20:39:47.234Z] 
+[2026-04-20T22:14:05.305Z] ==============================================================
+[2026-04-20T22:14:05.305Z] Poster generation start: 2026-04-20T22:14:05.302Z
+[2026-04-20T22:14:05.305Z] mode=morning  dryRun=false  teams=ALL(10)
+[2026-04-20T22:14:05.305Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T22:14:05.305Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T22:14:05.305Z] output: aspect=9:16 1MP, steps=50, guidance=4.5, lora=1, prompt_strength=0.96
+[2026-04-20T22:14:05.305Z] upscale: Real-ESRGAN x4 → resize 2048w
+[2026-04-20T22:14:05.305Z] ==============================================================
+[2026-04-20T22:14:37.403Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [574KB, 32.1s]
+[2026-04-20T22:15:29.162Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [491KB, 51.8s]
+[2026-04-20T22:15:58.901Z] [KT] OK  (morning) → public/images/refs/ready/kt.jpg  [408KB, 29.7s]
+[2026-04-20T22:16:39.413Z] [SSG] OK  (morning) → public/images/refs/ready/ssg.jpg  [444KB, 40.5s]
+[2026-04-20T22:17:15.311Z] [NC] OK  (morning) → public/images/refs/ready/nc.jpg  [625KB, 35.9s]
+[2026-04-20T22:17:43.353Z] [DOOSAN] OK  (morning) → public/images/refs/ready/doosan.jpg  [531KB, 28.0s]
+[2026-04-20T22:18:16.535Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [488KB, 33.2s]
+[2026-04-20T22:19:05.869Z] [LOTTE] OK  (morning) → public/images/refs/ready/lotte.jpg  [587KB, 49.3s]
+[2026-04-20T22:19:33.383Z] [HANWHA] OK  (morning) → public/images/refs/ready/hanwha.jpg  [555KB, 27.5s]
+[2026-04-20T22:20:00.923Z] [KIWOOM] OK  (morning) → public/images/refs/ready/kiwoom.jpg  [483KB, 27.5s]
+[2026-04-20T22:20:00.924Z] --------------------------------------------------------------
+[2026-04-20T22:20:00.924Z] Done: 10 ok / 0 fail / 10 total
+[2026-04-20T22:20:00.924Z] Elapsed: 355.6s   finished=2026-04-20T22:20:00.924Z
+[2026-04-20T22:20:00.924Z] ==============================================================
+[2026-04-20T22:20:00.924Z] 
