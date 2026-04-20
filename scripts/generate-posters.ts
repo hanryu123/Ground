@@ -109,11 +109,20 @@ function triggerForTeam(teamId: string): string {
   return TRIGGER_BY_TEAM[id] ?? `ground.${id}`;
 }
 
-// flux-dev 계열은 guidance 가 SDXL 보다 훨씬 낮음 (3~4 가 적정). 28 step 권장.
-const STEPS = Number(process.env.POSTER_STEPS ?? 28);
-const GUIDANCE = Number(process.env.POSTER_GUIDANCE ?? 3.5);
+// 2026 프리미엄 모드: steps↑↑ + flux 안전 guidance + 1MP 풀 해상도.
+// (사장님 8K 오더 → cog 한계상 1MP 생성 후 Real-ESRGAN 4x 업스케일 후처리)
+const STEPS = Number(process.env.POSTER_STEPS ?? 50);
+const GUIDANCE = Number(process.env.POSTER_GUIDANCE ?? 4.5);
 const ASPECT_RATIO = process.env.POSTER_ASPECT ?? "9:16";
-const LORA_SCALE = Number(process.env.POSTER_LORA_SCALE ?? 1.05);
+const LORA_SCALE = Number(process.env.POSTER_LORA_SCALE ?? 1.0);
+const MEGAPIXELS = (process.env.POSTER_MEGAPIXELS ?? "1") as "1" | "0.25";
+
+// Real-ESRGAN 4x 업스케일 — 활성화 시 1024x1536 → 4096x6144
+// env `POSTER_UPSCALE=0` 으로 끌 수 있음. 비용·시간 추가 (~10s/장)
+const UPSCALE_ENABLED = process.env.POSTER_UPSCALE !== "0";
+const UPSCALE_MODEL =
+  "nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa";
+const UPSCALE_FACTOR = Number(process.env.POSTER_UPSCALE_FACTOR ?? 4);
 /**
  * img2img 강도 — flux-dev 기준 1.0=reference 완전 무시, 0.0=완전 보존.
  * 0.96 = "유니폼의 색/패턴/wordmark 만 흡수, 인물·포즈·얼굴·배경은 prompt 가 새로 그림".
@@ -227,13 +236,19 @@ async function applyFaceShadow(buf: Buffer): Promise<Buffer> {
 }
 
 /**
- * sharp 로 mozjpeg 최적화 — 90% 품질, 점진 인코딩, 메타 제거.
- * 일반적으로 SDXL 출력 1.5~3MB → 200~400KB 수준으로 줄어든다.
+ * sharp 로 mozjpeg 최적화 — 점진 인코딩, EXIF 제거.
+ *  - 업스케일된 4K+ 입력은 화질 보존을 위해 quality=92, 일반은 88
+ *  - 모바일 배포 사이즈 고려: 너비가 2048↑면 2048 로 다운샘플 (lanczos3)
+ *    → 화면에서 retina display 충분, 파일 크기 1~2MB 선
  */
-async function optimizeJpeg(buf: Buffer): Promise<Buffer> {
-  return sharp(buf, { failOn: "none" })
-    .rotate() // EXIF 회전 보정
-    .jpeg({ quality: 88, mozjpeg: true, progressive: true })
+async function optimizeJpeg(buf: Buffer, upscaled = false): Promise<Buffer> {
+  const meta = await sharp(buf, { failOn: "none" }).metadata();
+  let pipeline = sharp(buf, { failOn: "none" }).rotate();
+  if (upscaled && meta.width && meta.width > 2048) {
+    pipeline = pipeline.resize({ width: 2048, withoutEnlargement: true, kernel: "lanczos3" });
+  }
+  return pipeline
+    .jpeg({ quality: upscaled ? 92 : 88, mozjpeg: true, progressive: true })
     .withMetadata({ exif: undefined })
     .toBuffer();
 }
@@ -319,11 +334,12 @@ async function generateOne(
     const input: Record<string, unknown> = {
       prompt,
       aspect_ratio: ASPECT_RATIO,
+      megapixels: MEGAPIXELS,
       num_inference_steps: STEPS,
       guidance_scale: GUIDANCE,
       lora_scale: LORA_SCALE,
       output_format: "jpg",
-      output_quality: 92,
+      output_quality: 100,
       num_outputs: 1,
     };
     if (hasRef) {
@@ -337,9 +353,27 @@ async function generateOne(
     );
 
     const url = await urlFromOutput(output);
-    const raw = await downloadBuffer(url);
+
+    // 2026 프리미엄: 1024x1536 (1MP) → Real-ESRGAN 4x 업스케일 → 4096x6144
+    let finalUrl = url;
+    let upscaled = false;
+    if (UPSCALE_ENABLED) {
+      try {
+        const up = await replicate.run(
+          UPSCALE_MODEL as `${string}/${string}:${string}`,
+          { input: { image: url, scale: UPSCALE_FACTOR, face_enhance: true } }
+        );
+        finalUrl = await urlFromOutput(up);
+        upscaled = true;
+      } catch (upErr) {
+        // 업스케일 실패해도 원본 1MP 으로 폴백 — fatal 아님
+        console.warn(`[${teamId}] upscale fail (${upErr instanceof Error ? upErr.message : upErr}) → fallback 1MP`);
+      }
+    }
+
+    const raw = await downloadBuffer(finalUrl);
     const shaded = await applyFaceShadow(raw);
-    const optimized = await optimizeJpeg(shaded);
+    const optimized = await optimizeJpeg(shaded, upscaled);
     await fs.writeFile(outPath, optimized);
 
     const durationMs = Date.now() - t0;
@@ -377,7 +411,8 @@ async function main() {
     `mode=${MODE}  dryRun=${DRY_RUN}  ${filterLabel}`,
     `trigger=master:"${MASTER_TRIGGER}" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)`,
     `model=${MODEL ?? "(unset)"}`,
-    `output: aspect=${ASPECT_RATIO}, steps=${STEPS}, guidance=${GUIDANCE}, lora=${LORA_SCALE}, prompt_strength=${PROMPT_STRENGTH}`,
+    `output: aspect=${ASPECT_RATIO} ${MEGAPIXELS}MP, steps=${STEPS}, guidance=${GUIDANCE}, lora=${LORA_SCALE}, prompt_strength=${PROMPT_STRENGTH}`,
+    `upscale: ${UPSCALE_ENABLED ? `Real-ESRGAN x${UPSCALE_FACTOR} → resize 2048w` : "OFF"}`,
     `==============================================================`,
   ];
   console.log(header.join("\n"));

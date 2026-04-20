@@ -36,14 +36,31 @@ const MODE_TRIGGER: Record<PromptMode, string> = {
   "night-default": "ground.night",
 };
 
+/**
+ * 2026 프리미엄 화보 — flux-dev 가 자연어에 강하게 반응하므로
+ * 풀 문장 + 키워드 양쪽으로 detail 을 강제한다. SDXL 의 단어 나열형보다
+ * flux 는 진짜 사진 metadata 풍 묘사("shot on…", "lit by…") 에 더 잘 반응.
+ */
 const BASE_STYLE = [
-  "cinematic sports magazine cover",
-  "dramatic chiaroscuro lighting",
-  "ultra detailed",
-  "photorealistic",
-  "35mm film grain",
-  "shot on Hasselblad H6D",
-  "8k hyperdetailed",
+  // 핵심 quality 키워드 (사장님 오더 반영)
+  "hyper-realistic",
+  "highly detailed",
+  "8k resolution",
+  "sharp focus",
+  "professional sports illustrated cover photography",
+  "extremely intricate textures",
+  "ultra detailed fine fabric stitching on the jersey",
+  "skin pore microdetail",
+  "individual eyelash and stubble detail",
+  // 카메라 / 조명 (할리우드 영화 톤)
+  "cinematic lighting",
+  "dramatic rim backlight wrapping his shoulders",
+  "hollywood film contrast",
+  "deep blacks and clean highlights",
+  "shallow depth of field with creamy bokeh",
+  "shot on Phase One IQ4 medium format with Schneider 80mm f/1.4",
+  "kodak portra 400 film color science",
+  "fine 35mm film grain",
 ].join(", ");
 
 const COMP_STYLE = [
