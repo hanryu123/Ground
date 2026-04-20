@@ -501,3 +501,24 @@
 [2026-04-20T20:27:43.930Z] Elapsed: 61.8s   finished=2026-04-20T20:27:43.930Z
 [2026-04-20T20:27:43.930Z] ==============================================================
 [2026-04-20T20:27:43.930Z] 
+[2026-04-20T20:35:29.406Z] ==============================================================
+[2026-04-20T20:35:29.406Z] Poster generation start: 2026-04-20T20:35:29.404Z
+[2026-04-20T20:35:29.406Z] mode=morning  dryRun=false  teams=[kia,kt,ssg,nc,doosan,lotte,hanwha,kiwoom]
+[2026-04-20T20:35:29.406Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T20:35:29.406Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T20:35:29.406Z] output: aspect=9:16 1MP, steps=50, guidance=4.5, lora=1, prompt_strength=0.96
+[2026-04-20T20:35:29.406Z] upscale: Real-ESRGAN x4 → resize 2048w
+[2026-04-20T20:35:29.406Z] ==============================================================
+[2026-04-20T20:36:04.320Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [545KB, 34.9s]
+[2026-04-20T20:36:42.897Z] [KT] OK  (morning) → public/images/refs/ready/kt.jpg  [457KB, 38.6s]
+[2026-04-20T20:37:12.490Z] [SSG] OK  (morning) → public/images/refs/ready/ssg.jpg  [404KB, 29.6s]
+[2026-04-20T20:37:40.297Z] [NC] OK  (morning) → public/images/refs/ready/nc.jpg  [490KB, 27.8s]
+[2026-04-20T20:38:11.915Z] [DOOSAN] OK  (morning) → public/images/refs/ready/doosan.jpg  [472KB, 31.6s]
+[2026-04-20T20:38:41.490Z] [LOTTE] OK  (morning) → public/images/refs/ready/lotte.jpg  [546KB, 29.6s]
+[2026-04-20T20:39:14.619Z] [HANWHA] OK  (morning) → public/images/refs/ready/hanwha.jpg  [553KB, 33.1s]
+[2026-04-20T20:39:47.234Z] [KIWOOM] OK  (morning) → public/images/refs/ready/kiwoom.jpg  [480KB, 32.6s]
+[2026-04-20T20:39:47.234Z] --------------------------------------------------------------
+[2026-04-20T20:39:47.234Z] Done: 8 ok / 0 fail / 8 total
+[2026-04-20T20:39:47.234Z] Elapsed: 257.8s   finished=2026-04-20T20:39:47.234Z
+[2026-04-20T20:39:47.234Z] ==============================================================
+[2026-04-20T20:39:47.234Z] 
