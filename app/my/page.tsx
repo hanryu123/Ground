@@ -1,31 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
-import { TEAMS, findTeam } from "@/lib/teams";
+import { TEAMS } from "@/lib/teams";
+import { setMyTeam, useMyTeam } from "@/lib/useMyTeam";
 
-const STORAGE_KEY = "kbo-my-team";
 const ease = [0.22, 1, 0.36, 1] as const;
 
 export default function MyPage() {
-  const [selected, setSelected] = useState<string>("doosan");
+  const team = useMyTeam();
+  const selected = team.id;
 
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(STORAGE_KEY);
-      if (v) setSelected(v);
-    } catch {}
-  }, []);
-
-  const choose = (id: string) => {
-    setSelected(id);
-    try {
-      localStorage.setItem(STORAGE_KEY, id);
-    } catch {}
-  };
-
-  const team = useMemo(() => findTeam(selected), [selected]);
+  const choose = (id: string) => setMyTeam(id);
 
   return (
     <section className="flex min-h-dvh flex-col">

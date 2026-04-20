@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
+import OnboardingGate from "@/components/OnboardingGate";
 
 export const metadata: Metadata = {
   title: "KBO TODAY",
@@ -23,10 +24,17 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className="bg-black text-white">
-        <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-black">
-          <main className="flex-1 pb-24">{children}</main>
-          <BottomNav />
-        </div>
+        {/*
+          OnboardingGate 가 최상단에서 응원팀 미선택 사용자를 가로챈다.
+          팀이 선택되어 있지 않으면 children(전체 라우트 + BottomNav)이 렌더되지 않고
+          풀스크린 팀 선택 화면이 우선된다.
+        */}
+        <OnboardingGate>
+          <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-black">
+            <main className="flex-1 pb-24">{children}</main>
+            <BottomNav />
+          </div>
+        </OnboardingGate>
       </body>
     </html>
   );

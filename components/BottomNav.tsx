@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, CalendarDays, User } from "lucide-react";
 import { motion } from "framer-motion";
+import { useMyTeam } from "@/lib/useMyTeam";
 
 const TABS = [
   { href: "/today", label: "TODAY", Icon: Home },
@@ -13,6 +14,7 @@ const TABS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const team = useMyTeam();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50">
@@ -31,15 +33,22 @@ export default function BottomNav() {
                   <motion.div
                     animate={{
                       scale: active ? 1 : 0.95,
-                      opacity: active ? 1 : 0.55,
+                      opacity: active ? 1 : 0.5,
                     }}
                     transition={{ type: "spring", stiffness: 360, damping: 26 }}
                     className="flex flex-col items-center gap-1.5"
                   >
                     <Icon
                       size={22}
-                      strokeWidth={active ? 2.2 : 1.7}
+                      strokeWidth={active ? 2.3 : 1.7}
                       className="text-white"
+                      style={
+                        active
+                          ? {
+                              filter: `drop-shadow(0 0 8px ${team.accent}55)`,
+                            }
+                          : undefined
+                      }
                     />
                     <span
                       className="text-[9.5px] tracking-[0.22em] text-white"
@@ -56,7 +65,11 @@ export default function BottomNav() {
                         stiffness: 380,
                         damping: 30,
                       }}
-                      className="absolute -top-1 h-[3px] w-7 rounded-full bg-white"
+                      className="absolute -top-1 h-[3px] w-7 rounded-full"
+                      style={{
+                        backgroundColor: team.accent,
+                        boxShadow: `0 0 10px ${team.accent}99, 0 0 18px ${team.accent}55`,
+                      }}
                     />
                   )}
                 </Link>
