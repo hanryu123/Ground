@@ -63,6 +63,25 @@
 
   /* 흑백 영화 같은 극적인 명암 */
   .filter-cinema {
-    filter: grayscale(0.15) contrast(1.28) brightness(0.88);
+    filter: grayscale(0.15) contrast(1.32) brightness(0.85) saturate(0.85);
+  }
+
+  /* 매우 미세한 텍스트 그라디언트 (premium 헤드라인용) */
+  .text-gradient-pearl {
+    background: linear-gradient(180deg, #ffffff 0%, #b8b8b8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* 디바이더용 가는 그라디언트 라인 */
+  .divider-fade {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.12) 50%,
+      transparent 100%
+    );
   }
 }

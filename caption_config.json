@@ -1,0 +1,39 @@
+{
+    "_comment": "LoRA 학습용 캡션 템플릿. {trigger}, {team_name}, {team_name_ko}, {player_name}, {position}, {angle} 플레이스홀더 사용 가능.",
+    "base_template": "{trigger}, {team_name} uniform, {player_name}, baseball player, {position_tags}, action shot, high contrast, sharp focus, professional baseball photography, {extra}",
+    "position_tags": {
+      "pitcher": "baseball pitcher, pitching form, on the mound, wind-up, dynamic pose",
+      "batter":  "baseball batter, batting stance, swing follow-through, at bat, dynamic pose",
+      "fielder": "baseball fielder, fielding position, glove ready, dynamic pose"
+    },
+    "angle_tags": {
+      "front":          "front view, facing camera",
+      "back":           "back view, jersey number visible",
+      "side":           "side view, profile",
+      "three_quarter":  "three-quarter view",
+      "portrait":       "headshot, close-up portrait, upper body"
+    },
+    "team_color_hints": {
+      "LG":      "red and black uniform, pinstripes",
+      "KT":      "black and red uniform",
+      "SSG":     "red uniform",
+      "NC":      "dark blue uniform, pinstripes",
+      "DOOSAN":  "navy blue uniform, pinstripes",
+      "KIA":     "red uniform",
+      "SAMSUNG": "blue uniform, pinstripes",
+      "LOTTE":   "dark blue uniform",
+      "HANWHA":  "orange and black uniform",
+      "KIWOOM":  "burgundy red uniform, pinstripes"
+    },
+    "default_extra": "8k, detailed, realistic",
+    "filename_angle_hints": {
+      "_front":  "front",
+      "_back":   "back",
+      "_side":   "side",
+      "_profile":"side",
+      "_3q":     "three_quarter",
+      "_head":   "portrait",
+      "_face":   "portrait",
+      "_portrait":"portrait"
+    }
+  }

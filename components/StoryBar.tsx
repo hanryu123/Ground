@@ -12,7 +12,7 @@ type Props = {
 
 export default function StoryBar({ games, activeIndex, onSelect }: Props) {
   return (
-    <div className="no-scrollbar flex gap-3 overflow-x-auto px-5 pt-5 pb-3">
+    <div className="no-scrollbar flex gap-3.5 overflow-x-auto px-6 pt-6 pb-4">
       {games.map((g, i) => {
         const home = findTeam(g.homeId);
         const away = findTeam(g.awayId);
@@ -21,31 +21,39 @@ export default function StoryBar({ games, activeIndex, onSelect }: Props) {
           <button
             key={g.id}
             onClick={() => onSelect(i)}
-            className="flex shrink-0 flex-col items-center gap-1.5"
+            className="flex shrink-0 flex-col items-center gap-2 outline-none"
             aria-label={`${away.short} vs ${home.short}`}
           >
             <motion.div
-              animate={{ scale: active ? 1.05 : 1 }}
-              transition={{ type: "spring", stiffness: 400, damping: 28 }}
-              className={`relative h-[58px] w-[58px] rounded-full p-[2px] ${
-                active
-                  ? "bg-gradient-to-br from-white to-ink-300"
-                  : "bg-ink-600"
-              }`}
+              animate={{
+                scale: active ? 1.04 : 1,
+              }}
+              transition={{ type: "spring", stiffness: 380, damping: 26 }}
+              className="relative h-[60px] w-[60px] rounded-full p-[2px]"
+              style={{
+                background: active
+                  ? "linear-gradient(135deg,#ffffff 0%,#9a9a9a 60%,#ffffff 100%)"
+                  : "rgba(255,255,255,0.12)",
+              }}
             >
-              <div className="flex h-full w-full items-center justify-center rounded-full bg-ink-800 text-[11px] font-bold tracking-tight text-white">
-                <span>{away.short}</span>
-                <span className="mx-[3px] text-ink-400">·</span>
-                <span>{home.short}</span>
+              <div className="flex h-full w-full items-center justify-center rounded-full bg-black">
+                <span
+                  className="text-[12px] tracking-tight text-white"
+                  style={{ fontWeight: active ? 800 : 600 }}
+                >
+                  {away.short}
+                  <span className="mx-[3px] text-white/40">·</span>
+                  {home.short}
+                </span>
               </div>
             </motion.div>
-            <span
-              className={`text-[10px] font-medium ${
-                active ? "text-white" : "text-ink-400"
-              }`}
+            <motion.span
+              animate={{ opacity: active ? 1 : 0.45 }}
+              className="text-[10px] tracking-[0.18em] text-white"
+              style={{ fontWeight: active ? 700 : 400 }}
             >
               {g.time}
-            </span>
+            </motion.span>
           </button>
         );
       })}

@@ -1,0 +1,23 @@
+team_code,team_name_ko,team_name_en,player_name_ko,player_slug,position,trigger_token,jersey_number,note
+LG,LG 트윈스,LG Twins,임찬규,imchangyu,pitcher,imchangyu_kbo,19,
+LG,LG 트윈스,LG Twins,김현수,kimhyunsoo,batter,kimhyunsoo_kbo,22,
+KT,KT 위즈,KT Wiz,고영표,koyoungpyo,pitcher,koyoungpyo_kbo,21,
+KT,KT 위즈,KT Wiz,황재균,hwangjaegyun,batter,hwangjaegyun_kbo,10,2025 FA 강백호 한화 이적 후 KT 핵심 타자 대안 — 확정 필요
+SSG,SSG 랜더스,SSG Landers,김광현,kimkwanghyun,pitcher,kimkwanghyun_kbo,29,
+SSG,SSG 랜더스,SSG Landers,최정,choijeong,batter,choijeong_kbo,14,
+NC,NC 다이노스,NC Dinos,커티스 테일러,curtistaylor,pitcher,curtistaylor_kbo,,2026 신규 외국인 투수 (하트 아웃)
+NC,NC 다이노스,NC Dinos,박건우,parkgunwoo,batter,parkgunwoo_kbo,37,
+DOOSAN,두산 베어스,Doosan Bears,크리스 플렉센,flexen,pitcher,flexen_kbo,,2026 1선발 복귀 (알칸타라 이적)
+DOOSAN,두산 베어스,Doosan Bears,양의지,yangeuiji,batter,yangeuiji_kbo,25,
+KIA,KIA 타이거즈,KIA Tigers,양현종,yanghyunjong,pitcher,yanghyunjong_kbo,54,
+KIA,KIA 타이거즈,KIA Tigers,김도영,kimdoyoung,batter,kimdoyoung_kbo,5,
+SAMSUNG,삼성 라이온즈,Samsung Lions,원태인,wontaein,pitcher,wontaein_kbo,18,
+SAMSUNG,삼성 라이온즈,Samsung Lions,구자욱,kujawook,batter,kujawook_kbo,5,
+LOTTE,롯데 자이언츠,Lotte Giants,박세웅,parksewoong,pitcher,parksewoong_kbo,21,
+LOTTE,롯데 자이언츠,Lotte Giants,전준우,jeonjunwoo,batter,jeonjunwoo_kbo,8,
+HANWHA,한화 이글스,Hanwha Eagles,류현진,ryuhyunjin,pitcher,ryuhyunjin_kbo,99,
+HANWHA,한화 이글스,Hanwha Eagles,노시환,noshihwan,batter,noshihwan_kbo,8,
+HANWHA,한화 이글스,Hanwha Eagles,강백호,kangbaekho,batter,kangbaekho_kbo,50,2025 FA KT→한화 이적 (4년 100억)
+KIWOOM,키움 히어로즈,Kiwoom Heroes,라울 알칸타라,alcantara,pitcher,alcantara_kbo,,두산→키움 이적 후 2026 재계약 (후라도 아웃)
+KIWOOM,키움 히어로즈,Kiwoom Heroes,네이선 와일스,wiles,pitcher,wiles_kbo,,2026 신규 외국인 투수
+KIWOOM,키움 히어로즈,Kiwoom Heroes,트렌턴 브룩스,brooks,batter,brooks_kbo,,2026 신규 외국인 타자 (김혜성 MLB 이적 대체)
