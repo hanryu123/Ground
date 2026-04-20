@@ -9,6 +9,7 @@ import { TODAY_GAMES } from "@/lib/games";
 import { pickSlogan, splitSloganForDisplay } from "@/config/teams";
 import LogoImage from "@/components/LogoImage";
 import NotificationBell from "@/components/NotificationBell";
+import ShareButton from "@/components/ShareButton";
 import { useWeather, type WeatherInfo } from "@/lib/useWeather";
 import { posterCandidates, POSTER_FINAL_FALLBACK } from "@/lib/posterImage";
 import { useTodaySlot } from "@/lib/useTodaySlot";
@@ -18,11 +19,6 @@ const ease = [0.22, 1, 0.36, 1] as const;
 
 type Props = {
   team: Team;
-  /**
-   * 순위 드로어가 열려 있을 때 true. 하단 매치업/장소·시간/SP 정보 블록을
-   * 부드럽게 페이드 아웃 + 약간 아래로 밀어둔다.
-   */
-  hideBottomInfo?: boolean;
 };
 
 function getTodayMatch(team: Team) {
@@ -83,7 +79,31 @@ function formatMatchDate(iso: string | undefined | null): string {
   return `${month}월 ${day}일 · ${dow}`;
 }
 
-export default function HeroCard({ team, hideBottomInfo = false }: Props) {
+/** sessionStorage 키 — (candidates 동일하면 재방문 시 즉시 hit) */
+const POSTER_CACHE_KEY = "ground-poster-resolved";
+type PosterCache = Record<string, string>;
+
+function readPosterCache(): PosterCache {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(POSTER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as PosterCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePosterCache(cacheKey: string, src: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const next = { ...readPosterCache(), [cacheKey]: src };
+    sessionStorage.setItem(POSTER_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+export default function HeroCard({ team }: Props) {
   const match = useMemo(() => getTodayMatch(team), [team]);
 
   // ── 날씨 — 구장 좌표 기반 ──
@@ -94,8 +114,7 @@ export default function HeroCard({ team, hideBottomInfo = false }: Props) {
   // ── 시간대 + 승패 기반 정적 화보 후보 체인 (zero-latency) ──
   //  기본(시간 무관)               → /images/refs/ready/${teamId}.{ext}
   //                                   → 없으면 ready 풀에서 teamId 해시로 결정론적 픽
-  //  Night(22:00~05:59) + 승리만   → /images/refs/victory/Winning*.jpg 결정론적 픽
-  //  ※ /images/refs/posters/night.png 는 어떤 경로에서도 사용하지 않음.
+  //  Night(22:00~05:59) + 승리만   → /images/refs/victory/${teamId}.jpg → 공용 풀
   const slot = useTodaySlot();
   const isWinner = isTeamWinnerToday(team.id);
   const dateKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -104,13 +123,59 @@ export default function HeroCard({ team, hideBottomInfo = false }: Props) {
     [team.id, slot, isWinner, dateKey]
   );
 
-  // 후보 인덱스 — onError 시 다음 후보로 넘어가는 안전장치
-  const [idx, setIdx] = useState(0);
-  useEffect(() => {
-    setIdx(0);
-  }, [candidates]);
+  // ── 화보 src 사전 해석 (브라우저 broken-image 깜빡임 방지) ──
+  // 후보 체인을 JS Image 로 백그라운드 프로빙 → 첫 200 OK 만 DOM 에 마운트.
+  // 이렇게 하면 Image 컴포넌트가 404 를 만나서 깜빡이는 일이 절대 없다.
+  const cacheKey = candidates.join("|");
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(() => {
+    // 마운트 시 캐시 hit이면 즉시 결정 → 첫 페인트부터 정상 렌더
+    if (typeof window === "undefined") return null;
+    const cached = readPosterCache()[cacheKey];
+    return cached && candidates.includes(cached) ? cached : null;
+  });
 
-  const currentSrc = candidates[idx] ?? POSTER_FINAL_FALLBACK;
+  useEffect(() => {
+    let cancelled = false;
+
+    // 캐시 hit 체크 (effect 진입 시점에 다시 한 번)
+    const cachedNow = readPosterCache()[cacheKey];
+    if (cachedNow && candidates.includes(cachedNow)) {
+      setResolvedSrc(cachedNow);
+      return;
+    }
+
+    setResolvedSrc(null); // 후보 변경 → 일단 검정 배경 유지
+
+    (async () => {
+      for (const src of candidates) {
+        const ok = await new Promise<boolean>((resolve) => {
+          const img = new window.Image();
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = src;
+        });
+        if (cancelled) return;
+        if (ok) {
+          writePosterCache(cacheKey, src);
+          setResolvedSrc(src);
+          return;
+        }
+      }
+      if (!cancelled) {
+        // 모든 후보가 실패해도 최종 안전망(POSTER_FINAL_FALLBACK)은 ready 풀의 실재 파일.
+        // 만에 하나 그것마저 사라졌다면 그냥 검정 배경으로 떨어진다(깨짐 X).
+        console.error(
+          `[HeroCard] all poster candidates failed for teamId="${team.id}".\n` +
+            candidates.map((c) => `  - ${c}`).join("\n")
+        );
+        setResolvedSrc(POSTER_FINAL_FALLBACK);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [candidates, cacheKey, team.id]);
 
   // ── 슬로건 — 우천이면 sloganRainy 우선, 아니면 sloganReady ──
   const sloganText =
@@ -129,40 +194,25 @@ export default function HeroCard({ team, hideBottomInfo = false }: Props) {
         같은 src일 땐 키가 안정되어 깜빡임 없음.
       */}
       <AnimatePresence initial={false}>
-        <motion.div
-          key={currentSrc}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.8, ease }}
-          className="absolute inset-0"
-        >
-          <Image
-            src={currentSrc}
-            alt={team.nameEn}
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover"
-            onError={() => {
-              // 현재 후보 404 → 다음 후보로 자동 폴백.
-              // 마지막 후보(night.png)까지 실패해도 화면은 검정으로 유지되어 깨지지 않음.
-              if (idx < candidates.length - 1) {
-                console.warn(
-                  `[HeroCard] poster not found: ${currentSrc} → fallback: ${candidates[idx + 1]}`
-                );
-                setIdx(idx + 1);
-              } else {
-                console.error(
-                  `[HeroCard] all poster candidates failed for teamId="${team.id}" slot="${slot}" isWinner=${isWinner}.\n` +
-                    `Tried in order:\n` +
-                    candidates.map((c) => `  - ${c}`).join("\n") +
-                    `\nFix: drop a matching file (e.g. /public${candidates[0]}).`
-                );
-              }
-            }}
-          />
-        </motion.div>
+        {resolvedSrc && (
+          <motion.div
+            key={resolvedSrc}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease }}
+            className="absolute inset-0"
+          >
+            <Image
+              src={resolvedSrc}
+              alt={team.nameEn}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
+            />
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/*
@@ -198,6 +248,23 @@ export default function HeroCard({ team, hideBottomInfo = false }: Props) {
           />
         </motion.div>
       </div>
+
+      {/* ── 우상단: 공유 (벨 옆에 살짝 왼쪽) ── */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.7, ease, delay: 0.18 }}
+        className="absolute right-[60px] top-5 z-30"
+      >
+        <ShareButton
+          title="KBO TODAY"
+          text={
+            match
+              ? `${match.awayTeam.short} vs ${match.homeTeam.short} — ${formatMatchDate(match.game.date)}`
+              : `${team.short} — ${team.nameEn}`
+          }
+        />
+      </motion.div>
 
       {/* ── 우상단: 알림 종 ── */}
       <motion.div
@@ -245,20 +312,10 @@ export default function HeroCard({ team, hideBottomInfo = false }: Props) {
       {match && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
-          animate={{
-            opacity: hideBottomInfo ? 0 : 1,
-            y: hideBottomInfo ? 16 : 0,
-          }}
-          transition={{
-            duration: hideBottomInfo ? 0.28 : 0.8,
-            ease,
-            delay: hideBottomInfo ? 0 : 0.45,
-          }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease, delay: 0.45 }}
           className="absolute inset-x-0 bottom-0 z-20 flex flex-col px-7 pb-10 text-white"
-          style={{
-            textShadow: "0 1px 6px rgba(0,0,0,0.65)",
-            pointerEvents: hideBottomInfo ? "none" : "auto",
-          }}
+          style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}
         >
           {/* 0. 오늘 날짜 — 장소/시간과 동일한 톤·크기로 매치업 위에 작게 */}
           {dateLabel && (

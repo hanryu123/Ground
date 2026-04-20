@@ -1,0 +1,147 @@
+{
+  "_comment": "매일 아침 00:30 KST에 갱신되는 하루치 컨텍스트. 이 파일이 generate_daily_copy.py의 주 입력.",
+  "date": "2026-04-20",
+  "season_phase": "early_season",
+  "teams": {
+    "LG": {
+      "last_game": {
+        "result": "W",
+        "score": "6-3",
+        "opponent": "DOOSAN",
+        "venue": "잠실",
+        "hero": {"name": "오스틴 딘", "stat": "3안타 2타점"}
+      },
+      "standing": {"rank": 2, "w": 12, "l": 7, "gb": 0.5},
+      "streak": "W2",
+      "next_game": {"opponent": "KIA", "venue": "잠실", "starter": "임찬규"},
+      "situation": null,
+      "notes": "잠실 라이벌전 스윕 직전"
+    },
+    "KT": {
+      "last_game": {
+        "result": "L",
+        "score": "2-5",
+        "opponent": "SAMSUNG",
+        "venue": "수원",
+        "hero": null
+      },
+      "standing": {"rank": 7, "w": 8, "l": 11, "gb": 4.0},
+      "streak": "L2",
+      "next_game": {"opponent": "NC", "venue": "수원", "starter": "고영표"},
+      "situation": null,
+      "notes": "타선 침묵 계속"
+    },
+    "SSG": {
+      "last_game": {
+        "result": "W",
+        "score": "8-1",
+        "opponent": "KIWOOM",
+        "venue": "문학",
+        "hero": {"name": "최정", "stat": "홈런 포함 3타점"}
+      },
+      "standing": {"rank": 3, "w": 11, "l": 8, "gb": 1.5},
+      "streak": "W3",
+      "next_game": {"opponent": "LOTTE", "venue": "문학", "starter": "김광현"},
+      "situation": "winning_streak",
+      "notes": "김광현 선발, 홈 3연전 마지막"
+    },
+    "NC": {
+      "last_game": {
+        "result": "W",
+        "score": "4-2",
+        "opponent": "HANWHA",
+        "venue": "창원",
+        "hero": {"name": "커티스 테일러", "stat": "7이닝 2실점 9K"}
+      },
+      "standing": {"rank": 4, "w": 10, "l": 9, "gb": 2.5},
+      "streak": "W1",
+      "next_game": {"opponent": "KT", "venue": "수원", "starter": "구창모"},
+      "situation": "pitcher_gem",
+      "notes": "신 외인 테일러 호투"
+    },
+    "DOOSAN": {
+      "last_game": {
+        "result": "L",
+        "score": "3-6",
+        "opponent": "LG",
+        "venue": "잠실",
+        "hero": null
+      },
+      "standing": {"rank": 6, "w": 9, "l": 10, "gb": 3.0},
+      "streak": "L2",
+      "next_game": {"opponent": "SAMSUNG", "venue": "잠실", "starter": "크리스 플렉센"},
+      "situation": null,
+      "notes": "잠실 라이벌전 스윕 위기. 플렉센 복귀전."
+    },
+    "KIA": {
+      "last_game": {
+        "result": "W",
+        "score": "7-4",
+        "opponent": "LOTTE",
+        "venue": "광주",
+        "hero": {"name": "김도영", "stat": "2홈런 4타점"}
+      },
+      "standing": {"rank": 1, "w": 13, "l": 6, "gb": 0.0},
+      "streak": "W4",
+      "next_game": {"opponent": "LG", "venue": "잠실", "starter": "양현종"},
+      "situation": "winning_streak",
+      "notes": "김도영 컨디션 MVP급 회복. 1위."
+    },
+    "SAMSUNG": {
+      "last_game": {
+        "result": "W",
+        "score": "5-2",
+        "opponent": "KT",
+        "venue": "대구",
+        "hero": {"name": "원태인", "stat": "8이닝 1실점"}
+      },
+      "standing": {"rank": 5, "w": 10, "l": 9, "gb": 2.5},
+      "streak": "W2",
+      "next_game": {"opponent": "DOOSAN", "venue": "잠실", "starter": "최충연"},
+      "situation": "pitcher_gem",
+      "notes": "원태인 QS+ 페이스."
+    },
+    "LOTTE": {
+      "last_game": {
+        "result": "L",
+        "score": "4-7",
+        "opponent": "KIA",
+        "venue": "광주",
+        "hero": null
+      },
+      "standing": {"rank": 9, "w": 7, "l": 12, "gb": 5.5},
+      "streak": "L3",
+      "next_game": {"opponent": "SSG", "venue": "문학", "starter": "박세웅"},
+      "situation": "losing_streak",
+      "notes": "사직 복귀전 앞두고 원정에서 고전"
+    },
+    "HANWHA": {
+      "last_game": {
+        "result": "L",
+        "score": "2-4",
+        "opponent": "NC",
+        "venue": "창원",
+        "hero": null
+      },
+      "standing": {"rank": 8, "w": 8, "l": 11, "gb": 4.5},
+      "streak": "L1",
+      "next_game": {"opponent": "KIWOOM", "venue": "대전", "starter": "류현진"},
+      "situation": null,
+      "notes": "류현진 홈 등판 예정. 강백호 멀티히트 기록 연장 중."
+    },
+    "KIWOOM": {
+      "last_game": {
+        "result": "L",
+        "score": "1-8",
+        "opponent": "SSG",
+        "venue": "문학",
+        "hero": null
+      },
+      "standing": {"rank": 10, "w": 6, "l": 13, "gb": 6.5},
+      "streak": "L4",
+      "next_game": {"opponent": "HANWHA", "venue": "대전", "starter": "아리엘 후라도"},
+      "situation": "losing_streak",
+      "notes": "알칸타라 다음 등판 대기. 젊은 타선 리빌딩 중."
+    }
+  }
+}

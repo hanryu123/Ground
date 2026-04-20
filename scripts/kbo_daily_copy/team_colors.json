@@ -1,0 +1,62 @@
+{
+  "LG": {
+    "primary": "#C30452",
+    "secondary": "#000000",
+    "accent": "#FFFFFF",
+    "name": "LG 트윈스 레드"
+  },
+  "KT": {
+    "primary": "#000000",
+    "secondary": "#CC092F",
+    "accent": "#FFFFFF",
+    "name": "KT 블랙/레드"
+  },
+  "SSG": {
+    "primary": "#CE0E2D",
+    "secondary": "#FFB81C",
+    "accent": "#000000",
+    "name": "SSG 랜더스 레드"
+  },
+  "NC": {
+    "primary": "#315288",
+    "secondary": "#C4A484",
+    "accent": "#FFFFFF",
+    "name": "NC 다이노스 다크블루"
+  },
+  "DOOSAN": {
+    "primary": "#131230",
+    "secondary": "#E60013",
+    "accent": "#FFFFFF",
+    "name": "두산 베어스 네이비"
+  },
+  "KIA": {
+    "primary": "#EA0029",
+    "secondary": "#000000",
+    "accent": "#FFFFFF",
+    "name": "KIA 타이거즈 레드"
+  },
+  "SAMSUNG": {
+    "primary": "#074CA1",
+    "secondary": "#C8102E",
+    "accent": "#FFFFFF",
+    "name": "삼성 라이온즈 블루"
+  },
+  "LOTTE": {
+    "primary": "#041E42",
+    "secondary": "#ED174C",
+    "accent": "#FFFFFF",
+    "name": "롯데 자이언츠 네이비"
+  },
+  "HANWHA": {
+    "primary": "#FC4E00",
+    "secondary": "#000000",
+    "accent": "#FFFFFF",
+    "name": "한화 이글스 오렌지"
+  },
+  "KIWOOM": {
+    "primary": "#570514",
+    "secondary": "#B07B3E",
+    "accent": "#FFFFFF",
+    "name": "키움 히어로즈 버건디"
+  }
+}

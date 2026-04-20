@@ -13,9 +13,11 @@
  *             모든 팀이 같은 배경으로 떨어지는 사고를 막는다.)
  *
  *   [밤 10시 ~ 익일 06시 + 해당 팀이 이긴 경우 ONLY]
- *     1순위  /images/refs/victory/{Winning.jpg | winning2.jpg | Winning3.jpg} 중 1장
+ *     1순위  /images/refs/victory/${teamId}.{jpg|jpeg|png|webp}
+ *            (자동 생성기가 매일 22시 KST 에 떨궈둠 — scripts/generate-posters.ts)
+ *     2순위  /images/refs/victory/{Winning.jpg | winning2.jpg | Winning3.jpg} 중 1장
  *            (파일명 대/소문자 엄수, teamId+date 시드로 결정론적 픽)
- *     2순위  위 ready 풀 폴백
+ *     3순위  ready 풀 폴백
  *
  *   ⚠ /images/refs/posters/night.png 는 어떤 경로에서도 사용하지 않는다.
  * ──────────────────────────────────────────────────────────────
@@ -73,15 +75,14 @@ function pickReadyFromPool(teamId: string): string {
 }
 
 /**
- * /images/refs/ready/ 안에서 teamId 매칭 후보 경로 체인.
+ * 특정 base 폴더 안에서 teamId 매칭 후보 경로 체인.
  *   - lowercase, Capitalize, UPPERCASE 세 가지 케이스 변형
  *   - 각 케이스마다 jpg → jpeg → png → webp 순으로 시도
  * 첫 매칭이 200을 반환하면 거기서 종료.
  *
- * 지금은 실 파일이 없어 모두 404로 떨어지지만,
- * 나중에 `/images/refs/ready/lg.jpg` 같은 식으로 떨궈 두면 자동으로 1순위가 된다.
+ * scripts/generate-posters.ts 가 자동으로 떨궈 두는 파일을 그대로 픽업한다.
  */
-function readyCandidatesByTeamId(teamId: string): string[] {
+function teamIdCandidates(teamId: string, baseDir: string): string[] {
   const lower = teamId.trim().toLowerCase();
   if (!lower) return [];
   const cap = lower.charAt(0).toUpperCase() + lower.slice(1);
@@ -99,10 +100,18 @@ function readyCandidatesByTeamId(teamId: string): string[] {
   const out: string[] = [];
   for (const b of bases) {
     for (const ext of READY_EXTS) {
-      out.push(`${READY_BASE}/${b}.${ext}`);
+      out.push(`${baseDir}/${b}.${ext}`);
     }
   }
   return out;
+}
+
+function readyCandidatesByTeamId(teamId: string): string[] {
+  return teamIdCandidates(teamId, READY_BASE);
+}
+
+function victoryCandidatesByTeamId(teamId: string): string[] {
+  return teamIdCandidates(teamId, VICTORY_BASE);
 }
 
 export type PosterContext = {
@@ -124,10 +133,13 @@ export function posterCandidates(ctx: PosterContext): string[] {
   const id = ctx.teamId.trim().toLowerCase();
   const poolPick = pickReadyFromPool(id);
 
-  // 밤 10시 이후 + 이긴 팀 → Victory 우선, 그래도 안 되면 ready 풀 폴백
+  // 밤 10시 이후 + 이긴 팀
+  //   1순위: 팀 전용 victory 파일 (`/victory/${teamId}.jpg`) — 자동 생성기가 떨궈둠
+  //   2순위: 공용 victory 풀 (Winning*.jpg) 결정론적 픽
+  //   3순위: ready 풀 폴백
   if (ctx.slot === "night" && ctx.isWinner) {
-    const victory = pickVictoryImage(id, ctx.dateKey);
-    return [victory, poolPick];
+    const victoryPool = pickVictoryImage(id, ctx.dateKey);
+    return [...victoryCandidatesByTeamId(id), victoryPool, poolPick];
   }
 
   // 그 외 모든 케이스 (아침/낮 + 밤 10시 이후 패배·무·미경기 포함)

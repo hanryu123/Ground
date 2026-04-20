@@ -1,0 +1,38 @@
+{
+  "_comment": "푸시/인앱 알림 템플릿. {team_name_ko}, {copy_b}, {opponent} 등 변수 치환.",
+  "daily_open": {
+    "title": "{team_name_ko} 오늘의 한 줄",
+    "body": "{copy_b}",
+    "deeplink": "app://daily/{team_code}"
+  },
+  "before_game_3h": {
+    "title": "3시간 후, {opponent}전",
+    "body": "{copy_c}",
+    "deeplink": "app://gameday/{team_code}"
+  },
+  "win": {
+    "title": "{team_name_ko} 승.",
+    "body": "{copy_b}",
+    "deeplink": "app://recap/{team_code}/{date}"
+  },
+  "loss": {
+    "title": "내일, 다시.",
+    "body": "{copy_c}",
+    "deeplink": "app://recap/{team_code}/{date}"
+  },
+  "walkoff_win": {
+    "title": "끝냈다.",
+    "body": "{copy_b}",
+    "deeplink": "app://recap/{team_code}/{date}"
+  },
+  "streak_milestone": {
+    "title": "{streak} — 멈출 생각 없다.",
+    "body": "{copy_b}",
+    "deeplink": "app://standings"
+  },
+  "opening_day": {
+    "title": "개막. {team_name_ko}.",
+    "body": "{copy_a}",
+    "deeplink": "app://daily/{team_code}"
+  }
+}

@@ -1,0 +1,96 @@
+name: Generate Posters (cron)
+
+# 시간 정책:
+#   06:00 KST = 21:00 UTC (전일)  → "morning" 배치
+#   22:00 KST = 13:00 UTC          → "night" 배치 (todayGames.ts 승패 분기)
+#
+# GitHub Actions 크론은 분 단위 정확도를 보장하지 않으니 (몇 분~수십 분 지연 가능)
+# 06/22시 직전이 아닌 직후를 기준점으로 잡았다.
+
+on:
+  schedule:
+    - cron: "5 21 * * *" # 06:05 KST — morning
+    - cron: "5 13 * * *" # 22:05 KST — night
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "morning | night"
+        required: true
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - night
+
+concurrency:
+  group: poster-generation
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Resolve mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "5 13 * * *" ]; then
+            MODE="night"
+          else
+            MODE="morning"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Resolved mode: $MODE"
+
+      - name: Generate posters
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          REPLICATE_MODEL_VERSION: ${{ secrets.REPLICATE_MODEL_VERSION }}
+          REPLICATE_TRIGGER_WORD: ${{ secrets.REPLICATE_TRIGGER_WORD }}
+          POSTER_WIDTH: ${{ vars.POSTER_WIDTH }}
+          POSTER_HEIGHT: ${{ vars.POSTER_HEIGHT }}
+          POSTER_STEPS: ${{ vars.POSTER_STEPS }}
+          POSTER_GUIDANCE: ${{ vars.POSTER_GUIDANCE }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: npm run posters:generate
+
+      - name: Commit & push generated assets
+        run: |
+          git config user.name  "poster-bot"
+          git config user.email "poster-bot@users.noreply.github.com"
+          git add -A public/images/refs/ready public/images/refs/victory logs/generation.log
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          STAMP="$(date -u +'%Y-%m-%dT%H:%MZ')"
+          git commit -m "chore(posters): auto-generate ${{ steps.mode.outputs.mode }} ($STAMP)"
+          git push
+
+      - name: Upload log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generation-log-${{ steps.mode.outputs.mode }}
+          path: logs/generation.log
+          if-no-files-found: warn
+          retention-days: 14

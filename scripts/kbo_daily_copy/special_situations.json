@@ -1,0 +1,186 @@
+{
+  "rain_out": {
+    "label": "우천 취소",
+    "prompt_hints": [
+      "경기 없음 → 감정 유지",
+      "일상 톤보다 약간 긴장감",
+      "'내일'로 연결되는 문장 선호",
+      "날씨/비 직접 묘사는 피하고 '멈춤' 개념으로 치환"
+    ],
+    "tone_shift": "restraint"
+  },
+  "off_day": {
+    "label": "휴식일",
+    "prompt_hints": [
+      "경기 없음 → 잔잔한 결의",
+      "'쉰다'보다 '벼른다' 톤",
+      "팬 일상과 연결",
+      "너무 축 처지지 않게"
+    ],
+    "tone_shift": "quiet"
+  },
+  "opening_day": {
+    "label": "개막전",
+    "prompt_hints": [
+      "시즌 출사표 톤",
+      "'시작'을 직접 말하지 말고 자세로 보여주기",
+      "팀 DNA anchors 중 가장 강한 것 하나 선택"
+    ],
+    "tone_shift": "declare"
+  },
+  "home_opener": {
+    "label": "홈 개막전",
+    "prompt_hints": [
+      "연고 지명 활용",
+      "구장 이름 1회 허용",
+      "'돌아왔다' 프레임"
+    ],
+    "tone_shift": "welcome"
+  },
+  "walkoff_win": {
+    "label": "끝내기 승",
+    "prompt_hints": [
+      "결과 여운 유지",
+      "감탄사 금지",
+      "'끝냈다' 동사 활용",
+      "다음 경기로 빠르게 연결"
+    ],
+    "tone_shift": "sharp"
+  },
+  "blowout_win": {
+    "label": "대승",
+    "prompt_hints": [
+      "점수 직접 언급은 1회만",
+      "'눌렀다' 톤",
+      "상대 자극 금지"
+    ],
+    "tone_shift": "confident"
+  },
+  "blowout_loss": {
+    "label": "대패",
+    "prompt_hints": [
+      "변명 금지",
+      "자학 금지",
+      "'내일'로 즉시 전환",
+      "짧게 끝낼 것"
+    ],
+    "tone_shift": "regroup"
+  },
+  "sweep": {
+    "label": "스윕",
+    "prompt_hints": [
+      "상대 팀명 언급 금지",
+      "'쓸었다' 동사",
+      "다음 시리즈 예고 톤"
+    ],
+    "tone_shift": "momentum"
+  },
+  "swept": {
+    "label": "스윕당함",
+    "prompt_hints": [
+      "팩트 인정",
+      "자조 금지",
+      "반격 프레임",
+      "짧은 단문"
+    ],
+    "tone_shift": "reset"
+  },
+  "rival_game": {
+    "label": "라이벌전",
+    "prompt_hints": [
+      "상대 팀명 직접 언급은 A안만 허용",
+      "B/C는 '그들' 또는 대조 구조",
+      "역사/지역 맥락 가져오기"
+    ],
+    "tone_shift": "edge"
+  },
+  "winning_streak": {
+    "label": "연승",
+    "prompt_hints": [
+      "연승 숫자 한 번만",
+      "'멈추지 않는다' 톤",
+      "자만 금지"
+    ],
+    "tone_shift": "momentum"
+  },
+  "losing_streak": {
+    "label": "연패",
+    "prompt_hints": [
+      "숫자 직접 언급은 3패 이상일 때만",
+      "'끊는다' 프레임",
+      "자학/변명 금지"
+    ],
+    "tone_shift": "break"
+  },
+  "milestone_hr": {
+    "label": "개인 기록(홈런/안타 등)",
+    "prompt_hints": [
+      "선수명 1회 허용",
+      "숫자 1회 허용",
+      "팀 전체의 자부심으로 확장"
+    ],
+    "tone_shift": "salute"
+  },
+  "pitcher_gem": {
+    "label": "완봉/완투/QS+",
+    "prompt_hints": [
+      "투수명 1회",
+      "이닝/탈삼진 숫자 1회",
+      "'막았다' 계열 동사"
+    ],
+    "tone_shift": "stoic"
+  },
+  "comeback_win": {
+    "label": "역전승",
+    "prompt_hints": [
+      "'끌려가다가' 구조",
+      "'뒤집었다' 단일 동사로 마무리",
+      "드라마 과잉 금지"
+    ],
+    "tone_shift": "turn"
+  },
+  "anniversary": {
+    "label": "창단/우승 기념일",
+    "prompt_hints": [
+      "숫자 한 번",
+      "향수 과잉 금지",
+      "과거 → 현재 연결"
+    ],
+    "tone_shift": "continuity"
+  },
+  "postseason_clinch": {
+    "label": "PS 진출 확정",
+    "prompt_hints": [
+      "'가을' 키워드",
+      "축하 톤보다 선전포고 톤"
+    ],
+    "tone_shift": "declare"
+  },
+  "eliminated": {
+    "label": "PS 탈락",
+    "prompt_hints": [
+      "'내년' 금지 (너무 뻔함)",
+      "'다음' 허용",
+      "팬에게 먼저 말 걸기"
+    ],
+    "tone_shift": "bow"
+  },
+  "rookie_debut": {
+    "label": "신인 데뷔/1군 콜업",
+    "prompt_hints": [
+      "이름 1회",
+      "기대 과잉 금지",
+      "'시작했다' 톤"
+    ],
+    "tone_shift": "introduce"
+  },
+  "trade_deadline": {
+    "label": "트레이드/영입",
+    "prompt_hints": [
+      "영입 선수 1회",
+      "떠난 선수 원망 금지",
+      "'합류'/'가세' 동사"
+    ],
+    "tone_shift": "reload"
+  }
+}

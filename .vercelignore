@@ -1,0 +1,31 @@
+# Vercel 배포 시 업로드/번들 제외 — Next.js 런타임에 불필요한 학습/도구 자산.
+# 핵심 이슈: raw/ 폴더에 한글 파일명이 매우 길어 Vercel 빌더에서 ENAMETOOLONG 으로 빌드 실패.
+
+# LoRA 학습 데이터 / 원본 이미지
+raw/
+dataset/
+dataset.zip
+
+# 데이터 준비 스크립트 (Python)
+*.py
+players.csv
+caption_config.json
+
+# 자동 생성기 로그 (런타임 미사용)
+logs/
+
+# 로컬 빌드 산출물
+.next/
+out/
+
+# 깃/CI 메타
+.git/
+.github/
+
+# 노드 모듈 (Vercel 이 install 단계에서 직접 처리)
+node_modules/
+
+# 환경 파일은 Vercel Dashboard / CLI 로 별도 등록
+.env
+.env.*
+!.env.local.example

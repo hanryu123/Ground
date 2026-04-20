@@ -85,3 +85,13 @@
     );
   }
 }
+
+/* StandingsSection 스켈레톤 — 좌→우 쉬머 */
+@keyframes ground-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

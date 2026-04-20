@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "posters:generate": "tsx scripts/generate-posters.ts",
+    "posters:morning": "MODE=morning tsx scripts/generate-posters.ts",
+    "posters:night": "MODE=night tsx scripts/generate-posters.ts",
+    "posters:dry": "DRY_RUN=1 MODE=morning tsx scripts/generate-posters.ts"
   },
   "dependencies": {
     "framer-motion": "^11.18.0",
@@ -20,8 +24,12 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "dotenv": "^16.4.5",
     "postcss": "^8.4.49",
+    "replicate": "^1.0.1",
+    "sharp": "^0.33.5",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }
