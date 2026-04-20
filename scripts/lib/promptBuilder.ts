@@ -58,11 +58,19 @@ const COMP_STYLE = [
 /**
  * 인물 포즈/카메라 — 얼굴은 가리고 유니폼이 주인공이 되도록.
  * AI 가 만드는 얼굴은 종종 무너지거나 어색하므로 의도적으로 음영/뒷모습으로 회피.
+ *
+ * (face shadow boost)
+ *  - cap brim 으로 위에서 떨어지는 그림자가 눈/코 위를 완전히 덮음
+ *  - 강한 역광(rim light)으로 얼굴은 흑색 실루엣
+ *  - 얼굴은 화면 외곽 1/4 영역으로 cropping
  */
 const POSE_STYLE = [
   "back view of the player, viewed from behind",
   "or three-quarter rear angle",
-  "face hidden in deep shadow or turned away from camera",
+  "deep shadow under the cap brim completely covers his eyes and nose",
+  "face is in heavy chiaroscuro shadow, only jawline barely visible",
+  "strong rim backlight turns his face into a near-black silhouette",
+  "head turned away from the camera or tilted down",
   "broad shoulders and back fully visible",
   "uniform jersey and team cap clearly the focal point",
   "uniform fabric texture, stitching detail, vivid team color saturation",
@@ -181,23 +189,25 @@ export function buildPrompt(input: BuildPromptInput): string {
     // 2) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head 차단)
     "a real human male professional baseball athlete",
     "realistic human anatomy, fully human body and skin",
-    `wearing a professional ${colorPalette} team uniform with team cap`,
+    // 3) 유니폼 시각 지문 — 팀 식별의 핵심 (LoRA + 텍스트 양면 보강)
+    `wearing the official team uniform: ${meta.uniformSignature}`,
+    "uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity",
     "holding a baseball bat naturally",
-    // 3) 포즈 / 카메라 — 얼굴은 가리고 유니폼이 주인공
+    // 4) 포즈 / 카메라 — 얼굴은 가리고 유니폼이 주인공
     POSE_STYLE,
-    // 4) 팀 정체성 — 인물 뒤로 빠지는 aura + artistic device (동물 직접 묘사 X)
+    // 5) 팀 정체성 — 인물 뒤로 빠지는 aura + artistic device (동물 직접 묘사 X)
     `with a subtle cinematic aura of ${meta.spirit} in the background`,
     meta.motif,
-    // 5) 컨텍스트 (위치 / 분위기)
+    // 6) 컨텍스트 (위치 / 분위기)
     `set in ${meta.city}`,
     "KBO baseball team identity",
     `team color palette: ${colorPalette}`,
     meta.keywords.join(", "),
     MOOD_BY_MODE[mode](meta.primaryColor),
-    // 6) 스타일 / 구도
+    // 7) 스타일 / 구도
     BASE_STYLE,
     COMP_STYLE,
-    // 7) 안전 가드 — 인물 메인 + 동물은 배경 only
+    // 8) 안전 가드 — 인물 메인 + 동물은 배경 only
     "the player's uniform is the visual focal point, his face is hidden by shadow or pose",
     "no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting",
   ]

@@ -383,3 +383,106 @@
 [2026-04-20T16:49:24.688Z] Elapsed: 106.8s   finished=2026-04-20T16:49:24.688Z
 [2026-04-20T16:49:24.688Z] ==============================================================
 [2026-04-20T16:49:24.688Z] 
+[2026-04-20T18:56:29.224Z] ==============================================================
+[2026-04-20T18:56:29.224Z] Poster generation start: 2026-04-20T18:56:29.222Z
+[2026-04-20T18:56:29.224Z] mode=morning  dryRun=true  teams=[lg,kia,samsung]
+[2026-04-20T18:56:29.224Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T18:56:29.224Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T18:56:29.224Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.88
+[2026-04-20T18:56:29.224Z] ==============================================================
+[2026-04-20T18:56:29.225Z] [DRY] LG (morning) → public/images/refs/ready/lg.jpg
+[2026-04-20T18:56:29.225Z] [DRY] img2img(uniforms/lg.jpg, strength=0.88)
+[2026-04-20T18:56:29.225Z] [DRY] prompt: ground, ground.lg, ground.sunset, a real human male professional baseball athlete, realistic human anatomy, fully human body and skin, wearing the official team uniform: white home jersey with vertical thin red and black pinstripes, crimson red 'TWINS' wordmark across the chest, crimson red cap with black bill and red interlocking 'LG' logo on the front, uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity, holding a baseball bat naturally, back view of the player, viewed from behind, or three-quarter rear angle, deep shadow under the cap brim completely covers his eyes and nose, face is in heavy chiaroscuro shadow, only jawline barely visible, strong rim backlight turns his face into a near-black silhouette, head turned away from the camera or tilted down, broad shoulders and back fully visible, uniform jersey and team cap clearly the focal point, uniform fabric texture, stitching detail, vivid team color saturation, strong silhouette against the light, with a subtle cinematic aura of a majestic twin lion in the background, twin lion silhouettes carved into stadium smoke and neon haze behind him, set in Seoul Jamsil baseball stadium under the city skyline, KBO baseball team identity, team color palette: crimson red and deep black, urban neon glow, stadium night lights, regal stance, golden hour sunrise as backlight, warm rim light outlining his shoulders and cap from behind, his front is in soft shadow, peaceful pre-game tension, anticipation, calm before the storm, cinematic sports magazine cover, dramatic chiaroscuro lighting, ultra detailed, photorealistic, 35mm film grain, shot on Hasselblad H6D, 8k hyperdetailed, vertical composition, mobile poster aspect ratio 9:16, low camera angle from behind, depth of field, lens flare, magazine cover composition with negative space top and bottom for typography, the player's uniform is the visual focal point, his face is hidden by shadow or pose, no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting
+[2026-04-20T18:56:29.225Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [—, —]
+[2026-04-20T18:56:29.226Z] [DRY] KIA (morning) → public/images/refs/ready/kia.jpg
+[2026-04-20T18:56:29.226Z] [DRY] img2img(uniforms/kia.jpg, strength=0.88)
+[2026-04-20T18:56:29.226Z] [DRY] prompt: ground, ground.kia, ground.sunset, a real human male professional baseball athlete, realistic human anatomy, fully human body and skin, wearing the official team uniform: vivid red base jersey with bold black 'TIGERS' wordmark across the chest, black diagonal accent stripes on the shoulders, red cap with black bill and white tiger-stripe 'K' logo on the front, uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity, holding a baseball bat naturally, back view of the player, viewed from behind, or three-quarter rear angle, deep shadow under the cap brim completely covers his eyes and nose, face is in heavy chiaroscuro shadow, only jawline barely visible, strong rim backlight turns his face into a near-black silhouette, head turned away from the camera or tilted down, broad shoulders and back fully visible, uniform jersey and team cap clearly the focal point, uniform fabric texture, stitching detail, vivid team color saturation, strong silhouette against the light, with a subtle cinematic aura of a fierce Bengal tiger in the background, tiger stripe shadows projected across his uniform sleeves, glowing amber backlight, set in Gwangju Champions Field stadium, KBO baseball team identity, team color palette: tiger orange and jet black, dynasty banners hanging in the distance, thunderous fireworks behind, crouched predator energy, golden hour sunrise as backlight, warm rim light outlining his shoulders and cap from behind, his front is in soft shadow, peaceful pre-game tension, anticipation, calm before the storm, cinematic sports magazine cover, dramatic chiaroscuro lighting, ultra detailed, photorealistic, 35mm film grain, shot on Hasselblad H6D, 8k hyperdetailed, vertical composition, mobile poster aspect ratio 9:16, low camera angle from behind, depth of field, lens flare, magazine cover composition with negative space top and bottom for typography, the player's uniform is the visual focal point, his face is hidden by shadow or pose, no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting
+[2026-04-20T18:56:29.226Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [—, —]
+[2026-04-20T18:56:29.227Z] [DRY] SAMSUNG (morning) → public/images/refs/ready/samsung.jpg
+[2026-04-20T18:56:29.227Z] [DRY] img2img(uniforms/samsung.jpg, strength=0.88)
+[2026-04-20T18:56:29.227Z] [DRY] prompt: ground, ground.samsung, ground.sunset, a real human male professional baseball athlete, realistic human anatomy, fully human body and skin, wearing the official team uniform: white home jersey with bold royal-blue 'Lions' script wordmark across the chest, royal-blue raglan shoulders and silver-grey piping, royal-blue cap with a stylized white 'S' lion-head logo on the front, uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity, holding a baseball bat naturally, back view of the player, viewed from behind, or three-quarter rear angle, deep shadow under the cap brim completely covers his eyes and nose, face is in heavy chiaroscuro shadow, only jawline barely visible, strong rim backlight turns his face into a near-black silhouette, head turned away from the camera or tilted down, broad shoulders and back fully visible, uniform jersey and team cap clearly the focal point, uniform fabric texture, stitching detail, vivid team color saturation, strong silhouette against the light, with a subtle cinematic aura of a regal lion's aura in the background, lion mane patterns swirling within the golden light around him, faint roar in the wind, set in Daegu Samsung Lions Park, KBO baseball team identity, team color palette: royal blue and polished silver, coliseum architecture, shafts of golden light, royal majesty, golden hour sunrise as backlight, warm rim light outlining his shoulders and cap from behind, his front is in soft shadow, peaceful pre-game tension, anticipation, calm before the storm, cinematic sports magazine cover, dramatic chiaroscuro lighting, ultra detailed, photorealistic, 35mm film grain, shot on Hasselblad H6D, 8k hyperdetailed, vertical composition, mobile poster aspect ratio 9:16, low camera angle from behind, depth of field, lens flare, magazine cover composition with negative space top and bottom for typography, the player's uniform is the visual focal point, his face is hidden by shadow or pose, no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting
+[2026-04-20T18:56:29.227Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [—, —]
+[2026-04-20T18:56:29.227Z] --------------------------------------------------------------
+[2026-04-20T18:56:29.227Z] Done: 3 ok / 0 fail / 3 total
+[2026-04-20T18:56:29.227Z] Elapsed: 0.0s   finished=2026-04-20T18:56:29.227Z
+[2026-04-20T18:56:29.227Z] ==============================================================
+[2026-04-20T18:56:29.227Z] 
+[2026-04-20T18:56:58.811Z] ==============================================================
+[2026-04-20T18:56:58.811Z] Poster generation start: 2026-04-20T18:56:58.810Z
+[2026-04-20T18:56:58.811Z] mode=morning  dryRun=false  teams=[lg,kia,samsung]
+[2026-04-20T18:56:58.811Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T18:56:58.811Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T18:56:58.811Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.88
+[2026-04-20T18:56:58.811Z] ==============================================================
+[2026-04-20T18:57:08.066Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [70KB, 9.3s]
+[2026-04-20T18:57:15.759Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [109KB, 7.7s]
+[2026-04-20T18:57:23.208Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [102KB, 7.4s]
+[2026-04-20T18:57:23.208Z] --------------------------------------------------------------
+[2026-04-20T18:57:23.208Z] Done: 3 ok / 0 fail / 3 total
+[2026-04-20T18:57:23.208Z] Elapsed: 24.4s   finished=2026-04-20T18:57:23.208Z
+[2026-04-20T18:57:23.208Z] ==============================================================
+[2026-04-20T18:57:23.208Z] 
+[2026-04-20T18:58:46.367Z] ==============================================================
+[2026-04-20T18:58:46.367Z] Poster generation start: 2026-04-20T18:58:46.365Z
+[2026-04-20T18:58:46.367Z] mode=morning  dryRun=false  teams=[lg,kia,samsung]
+[2026-04-20T18:58:46.367Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T18:58:46.367Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T18:58:46.367Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.95
+[2026-04-20T18:58:46.367Z] ==============================================================
+[2026-04-20T18:58:55.727Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [89KB, 9.4s]
+[2026-04-20T18:59:03.538Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [119KB, 7.8s]
+[2026-04-20T18:59:11.493Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [117KB, 8.0s]
+[2026-04-20T18:59:11.494Z] --------------------------------------------------------------
+[2026-04-20T18:59:11.494Z] Done: 3 ok / 0 fail / 3 total
+[2026-04-20T18:59:11.494Z] Elapsed: 25.1s   finished=2026-04-20T18:59:11.494Z
+[2026-04-20T18:59:11.494Z] ==============================================================
+[2026-04-20T18:59:11.494Z] 
+[2026-04-20T19:08:47.237Z] ==============================================================
+[2026-04-20T19:08:47.237Z] Poster generation start: 2026-04-20T19:08:47.235Z
+[2026-04-20T19:08:47.237Z] mode=morning  dryRun=false  teams=[lg,kia,samsung]
+[2026-04-20T19:08:47.237Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T19:08:47.237Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T19:08:47.237Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.96
+[2026-04-20T19:08:47.237Z] ==============================================================
+[2026-04-20T19:08:56.579Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [113KB, 9.3s]
+[2026-04-20T19:09:04.359Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [120KB, 7.8s]
+[2026-04-20T19:09:13.266Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [106KB, 8.9s]
+[2026-04-20T19:09:13.266Z] --------------------------------------------------------------
+[2026-04-20T19:09:13.266Z] Done: 3 ok / 0 fail / 3 total
+[2026-04-20T19:09:13.266Z] Elapsed: 26.0s   finished=2026-04-20T19:09:13.266Z
+[2026-04-20T19:09:13.266Z] ==============================================================
+[2026-04-20T19:09:13.266Z] 
+[2026-04-20T19:58:04.685Z] ==============================================================
+[2026-04-20T19:58:04.685Z] Poster generation start: 2026-04-20T19:58:04.683Z
+[2026-04-20T19:58:04.685Z] mode=morning  dryRun=false  teams=[lg,kia,samsung]
+[2026-04-20T19:58:04.685Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T19:58:04.685Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T19:58:04.685Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.96
+[2026-04-20T19:58:04.685Z] ==============================================================
+[2026-04-20T19:58:13.891Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [88KB, 9.2s]
+[2026-04-20T19:58:21.675Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [94KB, 7.8s]
+[2026-04-20T19:58:29.475Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [105KB, 7.8s]
+[2026-04-20T19:58:29.476Z] --------------------------------------------------------------
+[2026-04-20T19:58:29.476Z] Done: 3 ok / 0 fail / 3 total
+[2026-04-20T19:58:29.476Z] Elapsed: 24.8s   finished=2026-04-20T19:58:29.476Z
+[2026-04-20T19:58:29.476Z] ==============================================================
+[2026-04-20T19:58:29.476Z] 
+[2026-04-20T20:05:26.272Z] ==============================================================
+[2026-04-20T20:05:26.272Z] Poster generation start: 2026-04-20T20:05:26.270Z
+[2026-04-20T20:05:26.272Z] mode=morning  dryRun=false  teams=[kt,ssg,nc,doosan,lotte,hanwha,kiwoom]
+[2026-04-20T20:05:26.272Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-20T20:05:26.272Z] model=hanryu123/ground.master:b4c6a90487cd22743d9714db98982a93abb489f53acc383d376a3de92b015518
+[2026-04-20T20:05:26.272Z] output: aspect=9:16, steps=28, guidance=3.5, lora=1.05, prompt_strength=0.96
+[2026-04-20T20:05:26.272Z] ==============================================================
+[2026-04-20T20:05:36.578Z] [KT] OK  (morning) → public/images/refs/ready/kt.jpg  [104KB, 10.3s]
+[2026-04-20T20:05:44.441Z] [SSG] OK  (morning) → public/images/refs/ready/ssg.jpg  [109KB, 7.9s]
+[2026-04-20T20:05:52.491Z] [NC] OK  (morning) → public/images/refs/ready/nc.jpg  [109KB, 8.0s]
+[2026-04-20T20:06:00.571Z] [DOOSAN] OK  (morning) → public/images/refs/ready/doosan.jpg  [97KB, 8.1s]
+[2026-04-20T20:06:08.504Z] [LOTTE] OK  (morning) → public/images/refs/ready/lotte.jpg  [93KB, 7.9s]
+[2026-04-20T20:06:16.825Z] [HANWHA] OK  (morning) → public/images/refs/ready/hanwha.jpg  [123KB, 8.3s]
+[2026-04-20T20:06:25.522Z] [KIWOOM] OK  (morning) → public/images/refs/ready/kiwoom.jpg  [104KB, 8.7s]
+[2026-04-20T20:06:25.523Z] --------------------------------------------------------------
+[2026-04-20T20:06:25.523Z] Done: 7 ok / 0 fail / 7 total
+[2026-04-20T20:06:25.523Z] Elapsed: 59.3s   finished=2026-04-20T20:06:25.523Z
+[2026-04-20T20:06:25.523Z] ==============================================================
+[2026-04-20T20:06:25.523Z] 

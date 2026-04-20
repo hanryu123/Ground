@@ -40,11 +40,7 @@ import sharp from "sharp";
 import { TEAM_CONFIG } from "../config/teams";
 import { isTeamWinnerToday } from "../config/todayGames";
 import { TEAM_PROMPT_META } from "../config/posterPrompts";
-import {
-  buildPrompt,
-  NEGATIVE_PROMPT,
-  type PromptMode,
-} from "./lib/promptBuilder";
+import { buildPrompt, type PromptMode } from "./lib/promptBuilder";
 import { appendLog, appendLogBlock, logBoth } from "./lib/log";
 
 // ─── env ───────────────────────────────────────────────────────────
@@ -64,6 +60,23 @@ if (MODE !== "morning" && MODE !== "night") {
 const TOKEN = process.env.REPLICATE_API_TOKEN;
 const MODEL = process.env.REPLICATE_MODEL_VERSION;
 const MASTER_TRIGGER = (process.env.REPLICATE_API_TRIGGER_WORD ?? "ground").trim();
+
+/**
+ * CLI: `--teams=lg,kia,samsung` 또는 env `TEAMS=lg,kia` 로 부분 생성.
+ * 비어있으면 전체 10팀 생성.
+ */
+function parseTeamFilter(): Set<string> | null {
+  const raw =
+    process.argv.find((a) => a.startsWith("--teams="))?.slice("--teams=".length) ??
+    process.env.TEAMS ??
+    "";
+  const list = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return list.length ? new Set(list) : null;
+}
+const TEAM_FILTER = parseTeamFilter();
 
 /**
  * 팀별 LoRA 트리거 워드 — **학습된 폴더명 그대로** 매핑.
@@ -96,10 +109,18 @@ function triggerForTeam(teamId: string): string {
   return TRIGGER_BY_TEAM[id] ?? `ground.${id}`;
 }
 
-const WIDTH = Number(process.env.POSTER_WIDTH ?? 832);
-const HEIGHT = Number(process.env.POSTER_HEIGHT ?? 1216);
-const STEPS = Number(process.env.POSTER_STEPS ?? 30);
-const GUIDANCE = Number(process.env.POSTER_GUIDANCE ?? 7.5);
+// flux-dev 계열은 guidance 가 SDXL 보다 훨씬 낮음 (3~4 가 적정). 28 step 권장.
+const STEPS = Number(process.env.POSTER_STEPS ?? 28);
+const GUIDANCE = Number(process.env.POSTER_GUIDANCE ?? 3.5);
+const ASPECT_RATIO = process.env.POSTER_ASPECT ?? "9:16";
+const LORA_SCALE = Number(process.env.POSTER_LORA_SCALE ?? 1.05);
+/**
+ * img2img 강도 — flux-dev 기준 1.0=reference 완전 무시, 0.0=완전 보존.
+ * 0.96 = "유니폼의 색/패턴/wordmark 만 흡수, 인물·포즈·얼굴·배경은 prompt 가 새로 그림".
+ *  ↳ reference 는 별도로 prepare_uniform_refs.py 가 머리 위쪽을 잘라
+ *    "유니폼 가슴 영역만" 남겨두기 때문에 얼굴/포즈가 따라올 위험 자체가 적다.
+ */
+const PROMPT_STRENGTH = Number(process.env.POSTER_PROMPT_STRENGTH ?? 0.96);
 
 if (!DRY_RUN) {
   if (!TOKEN) {
@@ -117,6 +138,21 @@ if (!DRY_RUN) {
 // ─── paths ─────────────────────────────────────────────────────────
 const READY_DIR = path.join(ROOT, "public/images/refs/ready");
 const VICTORY_DIR = path.join(ROOT, "public/images/refs/victory");
+const UNIFORM_DIR = path.join(ROOT, "public/images/refs/uniforms");
+
+/**
+ * 팀 reference 유니폼 사진을 읽어 base64 data URI 로 반환.
+ * 파일이 없으면 null → img2img 없이 text-only 생성으로 fallback.
+ */
+async function loadUniformDataUri(teamId: string): Promise<string | null> {
+  const file = path.join(UNIFORM_DIR, `${teamId.toLowerCase()}.jpg`);
+  try {
+    const buf = await fs.readFile(file);
+    return `data:image/jpeg;base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
 
 // ─── helpers ───────────────────────────────────────────────────────
 
@@ -151,6 +187,43 @@ async function downloadBuffer(url: string): Promise<Buffer> {
   }
   const ab = await res.arrayBuffer();
   return Buffer.from(ab);
+}
+
+/**
+ * 얼굴 음영 강화 — 위쪽 영역에 어두운 그라디언트를 곱하기(blend) 로 덧씌움.
+ *  ─ flux-dev 는 prompt 의 "shadow under cap brim" 을 잘 안 따라줌.
+ *  ─ 그래서 출력물에 직접 모자 챙 그림자 효과를 합성한다.
+ *  ─ 위 0~38% 구간이 점진적으로 어두워짐 → 얼굴이 자동으로 그늘에 들어감.
+ *  ─ 하단 (가슴 wordmark + 다리) 은 영향 없음 → 유니폼 식별성 유지.
+ *
+ * env `POSTER_FACE_SHADOW=0` 으로 비활성 가능. 기본 강도 0.55.
+ */
+const FACE_SHADOW_ENABLED = process.env.POSTER_FACE_SHADOW !== "0";
+const FACE_SHADOW_STRENGTH = Math.max(
+  0,
+  Math.min(0.9, Number(process.env.POSTER_FACE_SHADOW ?? 0.55))
+);
+
+async function applyFaceShadow(buf: Buffer): Promise<Buffer> {
+  if (!FACE_SHADOW_ENABLED || FACE_SHADOW_STRENGTH <= 0) return buf;
+  const meta = await sharp(buf).metadata();
+  const w = meta.width ?? 832;
+  const h = meta.height ?? 1216;
+  // 위쪽 0% (가장 어두움) → 38% 부근에서 완전 투명
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="black" stop-opacity="${FACE_SHADOW_STRENGTH.toFixed(3)}"/>
+      <stop offset="22%" stop-color="black" stop-opacity="${(FACE_SHADOW_STRENGTH * 0.6).toFixed(3)}"/>
+      <stop offset="38%" stop-color="black" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="${w}" height="${h}" fill="url(#g)"/>
+</svg>`;
+  return sharp(buf, { failOn: "none" })
+    .composite([{ input: Buffer.from(svg), blend: "multiply" }])
+    .toBuffer();
 }
 
 /**
@@ -215,12 +288,20 @@ async function generateOne(
     masterTrigger: MASTER_TRIGGER,
   });
 
+  // 팀별 reference 유니폼 사진 (img2img 시드)
+  const uniformImage = await loadUniformDataUri(teamId);
+  const hasRef = uniformImage !== null;
+
   if (DRY_RUN || !replicate) {
+    const refLabel = hasRef
+      ? `img2img(uniforms/${teamId.toLowerCase()}.jpg, strength=${PROMPT_STRENGTH})`
+      : "text-only (no uniform ref)";
     await appendLogBlock([
       `[DRY] ${teamId} (${promptMode}) → ${path.relative(ROOT, outPath)}`,
+      `[DRY] ${refLabel}`,
       `[DRY] prompt: ${prompt}`,
     ]);
-    console.log(`[${teamId}] DRY → ${path.relative(ROOT, outPath)}`);
+    console.log(`[${teamId}] DRY → ${path.relative(ROOT, outPath)}  [${refLabel}]`);
     console.log(`        ${prompt}`);
     return { teamId, promptMode, ok: true, outPath };
   }
@@ -229,25 +310,36 @@ async function generateOne(
   try {
     await ensureDir(path.dirname(outPath));
 
+    /**
+     * `hanryu123/ground.master` (flux-dev 베이스) input 스키마:
+     *   prompt, image, prompt_strength, aspect_ratio, lora_scale,
+     *   num_inference_steps, guidance_scale, output_format, output_quality, num_outputs
+     * (negative_prompt 미지원 — flux 가 reject. 부정문은 prompt 안에 양성형으로 박았음.)
+     */
+    const input: Record<string, unknown> = {
+      prompt,
+      aspect_ratio: ASPECT_RATIO,
+      num_inference_steps: STEPS,
+      guidance_scale: GUIDANCE,
+      lora_scale: LORA_SCALE,
+      output_format: "jpg",
+      output_quality: 92,
+      num_outputs: 1,
+    };
+    if (hasRef) {
+      input.image = uniformImage;
+      input.prompt_strength = PROMPT_STRENGTH;
+    }
+
     const output = await replicate.run(
       MODEL as `${string}/${string}:${string}`,
-      {
-        input: {
-          prompt,
-          negative_prompt: NEGATIVE_PROMPT,
-          width: WIDTH,
-          height: HEIGHT,
-          num_inference_steps: STEPS,
-          guidance_scale: GUIDANCE,
-          // 일부 SDXL 변형은 num_outputs / scheduler 등 추가 키를 지원하지만,
-          // 모델별 인풋 스키마가 다르므로 보수적으로 핵심 키만 보낸다.
-        },
-      }
+      { input }
     );
 
     const url = await urlFromOutput(output);
     const raw = await downloadBuffer(url);
-    const optimized = await optimizeJpeg(raw);
+    const shaded = await applyFaceShadow(raw);
+    const optimized = await optimizeJpeg(shaded);
     await fs.writeFile(outPath, optimized);
 
     const durationMs = Date.now() - t0;
@@ -276,13 +368,16 @@ async function generateOne(
 
 async function main() {
   const startedAt = new Date();
+  const filterLabel = TEAM_FILTER
+    ? `teams=[${[...TEAM_FILTER].join(",")}]`
+    : `teams=ALL(10)`;
   const header = [
     `==============================================================`,
     `Poster generation start: ${startedAt.toISOString()}`,
-    `mode=${MODE}  dryRun=${DRY_RUN}`,
+    `mode=${MODE}  dryRun=${DRY_RUN}  ${filterLabel}`,
     `trigger=master:"${MASTER_TRIGGER}" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)`,
     `model=${MODEL ?? "(unset)"}`,
-    `output: ${WIDTH}x${HEIGHT}, steps=${STEPS}, guidance=${GUIDANCE}`,
+    `output: aspect=${ASPECT_RATIO}, steps=${STEPS}, guidance=${GUIDANCE}, lora=${LORA_SCALE}, prompt_strength=${PROMPT_STRENGTH}`,
     `==============================================================`,
   ];
   console.log(header.join("\n"));
@@ -291,7 +386,14 @@ async function main() {
   const replicate =
     DRY_RUN || !TOKEN ? null : new Replicate({ auth: TOKEN! });
 
-  const teamIds = Object.keys(TEAM_CONFIG);
+  const allTeamIds = Object.keys(TEAM_CONFIG);
+  const teamIds = TEAM_FILTER
+    ? allTeamIds.filter((t) => TEAM_FILTER.has(t.toLowerCase()))
+    : allTeamIds;
+  if (teamIds.length === 0) {
+    console.error(`[fatal] team filter matched 0 teams. available=${allTeamIds.join(",")}`);
+    process.exit(1);
+  }
   const results: Result[] = [];
 
   // 직렬 처리 — Replicate 동시 호출 폭주 방지 + rate limit 안전
