@@ -112,9 +112,13 @@ const SHADOW_CORE = [
 
 /**
  * 액션 컷 강제 — "증명사진 + 멈춰있는 포즈" 동시 퇴출.
- *  - extremely dynamic action pose, diving, mid-swing, powerful motion 풀세트
- *  - 투구 / 타격 / 주루 / 수비 중 한 가지의 mid-action 으로만 그리게 유도
- *  - 모든 액션은 자연스럽게 얼굴을 옆/아래/등으로 돌리는 구도와 결합
+ *
+ *  ※ 부정형(`absolutely never a static …`) 키워드는 의도적으로 삭제했다.
+ *    flux-dev 의 T5 텍스트 인코더는 "no/never" 같은 부정어를 의미적으로
+ *    처리하지 못하고, 뒤에 붙은 "static / standing still / facing camera"
+ *    토큰만 컨디셔닝에 들어가서 **오히려 정적 포즈 확률을 끌어올린다**.
+ *    → 같은 의도를 양성문(explosive motion / body torqued / mid-air)
+ *      으로만 표현해서 "정적 포즈" 토큰 자체를 프롬프트에서 제거.
  */
 const ACTION_STYLE = [
   "extremely dynamic action pose",
@@ -122,26 +126,35 @@ const ACTION_STYLE = [
   "mid-swing",
   "powerful motion",
   "captured in explosive mid-action sports moment",
+  "body fully extended in motion",
   "either a powerful pitching wind-up with body torqued and face turned toward the catcher away from the camera",
   "or mid-swing batting with hips rotated and the cap brim casting a deep shadow over his eyes",
   "or sprinting toward base photographed from behind kicking up dust and dirt",
   "or a low-crouch fielding stance from rear three-quarter angle",
   "or a full-body horizontal diving catch with arms outstretched",
   "motion blur on the bat or glove suggesting kinetic energy",
-  "absolutely never a static studio pose, never standing still, never facing the camera, never a portrait crop",
+  "every limb caught in mid-action",
 ].join(", ");
 
 /**
- * 환경 강제 — 흰 배경 / 스튜디오 컷 구조적 차단.
- *  스타디움 또는 야구장 환경이 반드시 배경에 들어가도록 유도.
+ * 환경 강제 — 스타디움 환경으로 화면을 100% 채워버린다 (흰배경 토큰 자체 제거).
+ *
+ *  ※ 직전 버전엔 "absolutely no white background, no plain backdrop" 같은
+ *    부정문이 들어 있었는데, flux 인코더가 "white background / plain
+ *    backdrop" 토큰을 그대로 흡수해서 **오히려 흰 배경을 유도**하는
+ *    역효과가 확인됨. → 부정문 제거하고, 그 자리를 양성문으로 가득 채워
+ *    프레임 전체를 stadium 톤으로 압도한다.
  */
 const DYNAMIC_ENV = [
-  "dramatic stadium background",
-  "atmospheric environment",
-  "real baseball stadium with crowd silhouettes and floodlights",
-  "dirt infield and outfield grass visible",
-  "swirling dust, stadium haze, and volumetric light shafts",
-  "absolutely no white background, no plain backdrop",
+  "background completely filled with a real outdoor baseball stadium at dusk",
+  "deep navy night sky overhead",
+  "massive stadium floodlights cutting volumetric light shafts through dust haze",
+  "blurred crowd silhouettes packing the stands behind him",
+  "dirt infield, chalk lines, and outfield grass visible in the lower frame",
+  "swirling stadium dust, atmospheric fog, and warm sodium-vapor stadium glow",
+  "stadium architecture and floodlight rigs framing the background edges",
+  "background occupies the entire frame from edge to edge",
+  "every pixel of the background is stadium environment",
 ].join(", ");
 
 /**
@@ -199,43 +212,34 @@ const MOOD_BY_MODE: Record<PromptMode, (color: string) => string> = {
 };
 
 /**
- * 베이크된 네거티브 — flux-dev 는 negative_prompt 입력을 안 받기 때문에
- * "absolutely no …" 형식의 양성문으로 prompt 끝에 박는다. flux 가 의외로
- * 이 패턴을 잘 따라준다. (사장님 면접사진 퇴출 오더 반영)
+ * POSITIVE_GUARDS — (구) BAKED_NEGATIVES 를 전면 양성문으로 재작성.
+ *
+ *  ── 왜 부정문을 다 들어냈나 ──
+ *   flux-dev 는 negative_prompt 파라미터를 받지 않는다. 그래서 직전 버전엔
+ *   "no white background, no headless, no static pose" 같은 부정문 22개를
+ *   prompt 끝에 박아뒀는데, T5 인코더가 "no" 를 구문으로 인식하지 못해
+ *   "white background / headless / static pose" 토큰만 컨디셔닝에 들어가서
+ *   **오히려 그 컨셉이 강화**되는 역효과가 출력물에서 확인됨 (LG 흰배경 케이스).
+ *   → 같은 의미를 전부 양성문으로만 표현. 금지하고 싶은 단어는 프롬프트에
+ *     아예 등장시키지 않는 게 핵심 룰.
  */
-const BAKED_NEGATIVES = [
-  // ── (NEW) 사람 증발 버그 — 유니폼만 둥둥 떠다니는 hallucination 차단
-  "absolutely no headless figure",
-  "no invisible person",
-  "no empty uniform",
-  "no floating clothes without a body",
-  "no ghost-like transparent body",
-  // ── (NEW) 화이트 배경 / 스튜디오 컷 퇴출
-  "no white background",
-  "no plain background",
-  "no solid color background",
-  "no studio shot",
-  "no seamless paper backdrop",
-  // ── (NEW) 증명사진 / 정적 포즈 퇴출 (강도 ↑)
-  "no clear face",
-  "no bright fully-lit face",
-  "no looking at camera",
-  "no passport photo",
-  "no headshot",
-  "no standing still",
-  "no static pose",
-  // ── 기존 가드 (얼굴 노출 / 캐릭터 / 텍스트)
-  "absolutely no front-facing portrait shot",
-  "absolutely no portrait crop framing",
-  "no eye contact with the camera",
-  "no smiling toward the camera",
-  "no plastic CGI render look",
-  "no cartoon style",
-  "no animal head on a human body",
-  "no furry creature features",
-  "no team mascot costume",
-  "no extra limbs or deformed anatomy",
-  "no watermark or logo overlay text",
+const POSITIVE_GUARDS = [
+  // 사람 증발 방지 — 빈 유니폼 hallucination 의 반대 묘사
+  "single complete human athletic body fully present in the center of the frame",
+  "broad muscular shoulders and torso solidly attached to the visible head and neck",
+  "the player's entire body from head to mid-thigh is rendered as one continuous figure",
+  // 정면 헤드샷 / 증명사진 회피 — "어떤 카메라 각도냐" 양성 묘사
+  "framed as an action sports photograph captured from behind or side",
+  "three-quarter back angle composition",
+  "the figure is part of a wider environmental shot, not a tight head crop",
+  // 동물 hybrid 회피 — "사람 얼굴 / 사람 피부" 양성 묘사
+  "natural human skin texture on his face and arms",
+  "human jawline and human ear visible under the cap",
+  // 마스코트 / 카툰 회피 — "사실적 사진" 양성 묘사
+  "photorealistic baseball uniform fabric, real cotton-polyester twill",
+  "captured by a professional sports photographer with a real camera",
+  // 손/팔 hallucination 회피
+  "five fingers per hand, anatomically correct human arms holding the bat or glove",
 ].join(", ");
 
 /**
@@ -369,11 +373,13 @@ export function buildPrompt(input: BuildPromptInput): string {
     // 10) 스타일 / 구도
     BASE_STYLE,
     COMP_STYLE,
-    // 11) 안전 가드 — 인물 메인 + 동물은 배경 only
+    // 11) 안전 가드 — 인물 메인 + 동물은 배경 only (전부 양성문으로 표현)
     "the player's uniform is the visual focal point, his face is hidden by shadow or pose, but his body is solid and complete",
-    "no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting",
-    // 12) 베이크된 네거티브 — flux-dev 가 negative_prompt 미지원이라 prompt 안에 박음
-    BAKED_NEGATIVES,
+    "any animal motif appears only as an atmospheric silhouette woven into the background stadium smoke or floodlight glow, behind the player",
+    // 12) POSITIVE_GUARDS — (구) BAKED_NEGATIVES 를 양성문으로 재작성한 가드.
+    //     flux T5 인코더가 부정어를 의미적으로 처리 못 하므로, 금지 의도는
+    //     반대 의미의 양성 묘사로만 표현해야 의도가 모델에 전달된다.
+    POSITIVE_GUARDS,
   ]
     .filter(Boolean)
     .join(", ");

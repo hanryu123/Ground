@@ -131,11 +131,17 @@ const UPSCALE_MODEL =
 const UPSCALE_FACTOR = Number(process.env.POSTER_UPSCALE_FACTOR ?? 4);
 /**
  * img2img 강도 — flux-dev 기준 1.0=reference 완전 무시, 0.0=완전 보존.
- * 0.96 = "유니폼의 색/패턴/wordmark 만 흡수, 인물·포즈·얼굴·배경은 prompt 가 새로 그림".
- *  ↳ reference 는 별도로 prepare_uniform_refs.py 가 머리 위쪽을 잘라
- *    "유니폼 가슴 영역만" 남겨두기 때문에 얼굴/포즈가 따라올 위험 자체가 적다.
+ *
+ *  ── 1.0 으로 상향한 이유 (LG 흰배경 사고 후속) ──
+ *   reference 인 `public/images/refs/uniforms/<team>.jpg` 가 흰 배경 상품컷
+ *   (빈 유니폼만 떠 있는 쇼핑몰 사진) 이라, prompt_strength=0.96 에서도
+ *   배경 흰색과 "사람 없는 빈 옷" 컴포지션이 출력에 살아남았다.
+ *   → 1.0 으로 올려 reference 의 픽셀 영향을 거의 0 으로 만들고, 유니폼
+ *     식별은 LoRA 학습 + prompt 의 uniformSignature 텍스트로만 처리한다.
+ *   장기적으론 reference 이미지 자체를 어두운 stadium 배경에 선수가 입은
+ *   컷으로 교체하는 게 맞다.
  */
-const PROMPT_STRENGTH = Number(process.env.POSTER_PROMPT_STRENGTH ?? 0.96);
+const PROMPT_STRENGTH = Number(process.env.POSTER_PROMPT_STRENGTH ?? 1.0);
 
 if (!DRY_RUN) {
   if (!TOKEN) {
