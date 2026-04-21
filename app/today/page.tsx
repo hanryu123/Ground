@@ -5,6 +5,7 @@ import DirectorNav from "@/components/DirectorNav";
 import StandingsSection from "@/components/StandingsSection";
 import { useMyTeam } from "@/lib/useMyTeam";
 import { useDirectorMode } from "@/lib/director";
+import { useKboToday } from "@/lib/useKboToday";
 
 /**
  * /today — 메인 화면.
@@ -21,6 +22,8 @@ import { useDirectorMode } from "@/lib/director";
 export default function TodayPage() {
   const team = useMyTeam();
   const directorOn = useDirectorMode();
+  // 라이브 KBO standings → StandingsSection 에 주입 (HeroCard 도 동일 훅을 사용)
+  const live = useKboToday();
 
   return (
     <div className="relative">
@@ -29,8 +32,12 @@ export default function TodayPage() {
         <HeroCard team={team} />
       </div>
 
-      {/* StandingsSection — HeroCard 아래로 스크롤하면 등장 */}
-      <StandingsSection myTeamId={team.id} />
+      {/* StandingsSection — 라이브 standings 가 있으면 우선 사용, 없으면 mock 폴백 */}
+      <StandingsSection
+        myTeamId={team.id}
+        rows={live?.standings}
+        loading={!live}
+      />
 
       {directorOn && <DirectorNav />}
     </div>

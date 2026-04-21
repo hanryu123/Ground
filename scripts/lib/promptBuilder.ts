@@ -24,7 +24,25 @@ export type BuildPromptInput = {
   triggerWord?: string;
   /** 마스터 LoRA 트리거 — env `REPLICATE_API_TRIGGER_WORD`. 보통 "ground". */
   masterTrigger?: string;
+  /**
+   * 선발 투수 이름 (라이브 KBO 데이터 주입).
+   *  - 값이 있으면        → "a professional baseball pitcher named <X>" 토큰
+   *  - null/undefined 면 → 범용 카리스마 에이스 실루엣 토큰으로 자동 폴백
+   *  - 빈 문자열 / "미정" / "TBD" 도 폴백 대상 (kbo.safeStarter 와 동일 정책)
+   */
+  starterName?: string | null;
 };
+
+/** 선발 투수 토큰 — 데이터 유무에 따라 안전 분기 (사장님 오더 반영) */
+function starterToken(name?: string | null): string {
+  const t = (name ?? "").trim();
+  if (!t || t === "미정" || t === "TBD" || t === "未定") {
+    // 미정 일 때: 특정 인물을 지칭하지 않는 범용 에이스 실루엣
+    return "a charismatic professional baseball player in a dynamic action pose";
+  }
+  // 선발 확정 시: 인물 이름 부착. flux 는 한국어 이름도 토큰으로 받아준다.
+  return `a professional baseball pitcher named ${t}`;
+}
 
 /**
  * 모드별 보조 트리거 — `expand_dataset_with_refs.py` 가 학습시킨 카테고리.
@@ -228,7 +246,7 @@ export const NEGATIVE_PROMPT = [
 ].join(", ");
 
 export function buildPrompt(input: BuildPromptInput): string {
-  const { meta, mode, triggerWord, masterTrigger } = input;
+  const { meta, mode, triggerWord, masterTrigger, starterName } = input;
   const colorPalette = meta.secondaryColor
     ? `${meta.primaryColor} and ${meta.secondaryColor}`
     : meta.primaryColor;
@@ -253,6 +271,8 @@ export function buildPrompt(input: BuildPromptInput): string {
     // 3) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head 차단)
     "a real human male professional baseball athlete",
     "realistic human anatomy, fully human body and skin",
+    // 3.1) 선발 투수 — 라이브 KBO 데이터 주입. 데이터 없으면 자동 폴백 토큰.
+    starterToken(starterName),
     // 4) 유니폼 시각 지문 — 팀 식별의 핵심 (LoRA + 텍스트 양면 보강)
     `wearing the official team uniform: ${meta.uniformSignature}`,
     "uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity",

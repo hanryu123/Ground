@@ -42,6 +42,12 @@ import { isTeamWinnerToday } from "../config/todayGames";
 import { TEAM_PROMPT_META } from "../config/posterPrompts";
 import { buildPrompt, type PromptMode } from "./lib/promptBuilder";
 import { appendLog, appendLogBlock, logBoth } from "./lib/log";
+import {
+  fetchKboTodayGames,
+  getTeamGame,
+  type LiveGame,
+  type TeamGameView,
+} from "../lib/kbo";
 
 // ─── env ───────────────────────────────────────────────────────────
 const ROOT = process.cwd();
@@ -253,14 +259,23 @@ async function optimizeJpeg(buf: Buffer, upscaled = false): Promise<Buffer> {
     .toBuffer();
 }
 
-function pickPromptMode(teamId: string): PromptMode {
-  if (MODE === "morning") return "morning";
-  return isTeamWinnerToday(teamId) ? "night-victory" : "night-default";
+/**
+ * 승리 판정 — 라이브 KBO 데이터(view)가 있으면 그것을 1순위로 보고,
+ * 없으면 기존 static todayGames 폴백. 승리 트리거(ground.victory) 자동 부착의 단일 출처.
+ */
+function isWinnerNow(teamId: string, view?: TeamGameView | null): boolean {
+  if (view) return view.isWinner;
+  return isTeamWinnerToday(teamId);
 }
 
-function pickOutputPath(teamId: string): string {
+function pickPromptMode(teamId: string, view?: TeamGameView | null): PromptMode {
+  if (MODE === "morning") return "morning";
+  return isWinnerNow(teamId, view) ? "night-victory" : "night-default";
+}
+
+function pickOutputPath(teamId: string, view?: TeamGameView | null): string {
   const file = `${teamId.toLowerCase()}.jpg`;
-  if (MODE === "night" && isTeamWinnerToday(teamId)) {
+  if (MODE === "night" && isWinnerNow(teamId, view)) {
     return path.join(VICTORY_DIR, file);
   }
   return path.join(READY_DIR, file);
@@ -280,7 +295,8 @@ type Result = {
 
 async function generateOne(
   replicate: Replicate | null,
-  teamId: string
+  teamId: string,
+  liveView: TeamGameView | null = null
 ): Promise<Result> {
   const meta = TEAM_PROMPT_META[teamId];
   if (!meta) {
@@ -292,8 +308,8 @@ async function generateOne(
     };
   }
 
-  const promptMode = pickPromptMode(teamId);
-  const outPath = pickOutputPath(teamId);
+  const promptMode = pickPromptMode(teamId, liveView);
+  const outPath = pickOutputPath(teamId, liveView);
   const triggerWord = triggerForTeam(teamId);
   const prompt = buildPrompt({
     teamId,
@@ -301,6 +317,7 @@ async function generateOne(
     meta,
     triggerWord,
     masterTrigger: MASTER_TRIGGER,
+    starterName: liveView?.starter ?? null,
   });
 
   // 팀별 reference 유니폼 사진 (img2img 시드)
@@ -421,6 +438,32 @@ async function main() {
   const replicate =
     DRY_RUN || !TOKEN ? null : new Replicate({ auth: TOKEN! });
 
+  // ── 라이브 KBO 컨텍스트 1회 fetch (실패 시 정적 폴백) ─────────────
+  let liveGames: LiveGame[] = [];
+  try {
+    liveGames = await fetchKboTodayGames();
+    const fmt = liveGames
+      .map(
+        (g) =>
+          `  ${g.time}  ${g.awayId.toUpperCase()}@${g.homeId.toUpperCase()}  ` +
+          `[${g.status}]  starter: ${g.awayPitcher} vs ${g.homePitcher}` +
+          (g.result
+            ? `  → ${g.result.awayScore}-${g.result.homeScore} (winner=${g.result.winnerId ?? "draw"})`
+            : "")
+      )
+      .join("\n");
+    const liveBlock = [
+      "── LIVE KBO context ──",
+      `games(${liveGames.length}):`,
+      fmt || "  (none)",
+      "──────────────────────",
+    ];
+    console.log(liveBlock.join("\n"));
+    await appendLogBlock(liveBlock);
+  } catch (e) {
+    console.warn(`[live] failed: ${(e as Error).message} — proceeding without`);
+  }
+
   const allTeamIds = Object.keys(TEAM_CONFIG);
   const teamIds = TEAM_FILTER
     ? allTeamIds.filter((t) => TEAM_FILTER.has(t.toLowerCase()))
@@ -433,8 +476,12 @@ async function main() {
 
   // 직렬 처리 — Replicate 동시 호출 폭주 방지 + rate limit 안전
   for (const teamId of teamIds) {
-    process.stdout.write(`[${teamId}] generating...\n`);
-    const r = await generateOne(replicate, teamId);
+    const view = getTeamGame(liveGames, teamId);
+    const liveLabel = view
+      ? `starter=${view.starter ?? "미정"} winner=${view.isWinner}`
+      : "no-game-today";
+    process.stdout.write(`[${teamId}] generating... (${liveLabel})\n`);
+    const r = await generateOne(replicate, teamId, view);
     results.push(r);
 
     if (r.ok) {

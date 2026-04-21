@@ -9,6 +9,8 @@ import {
   type Game,
 } from "@/lib/games";
 import { findTeam } from "@/lib/teams";
+import { useKboSchedule } from "@/lib/useKboSchedule";
+import { starterLabel, type LiveGame } from "@/lib/kbo";
 
 type Section = {
   /** 정렬용 ISO 날짜 */
@@ -19,7 +21,8 @@ type Section = {
   badge: "PAST" | "TODAY" | "TOMORROW";
   /** 과거 일자 vs 오늘/미래 vs 오늘에 따라 톤 다르게 */
   tone: "past" | "today" | "future";
-  games: Game[];
+  /** Game 또는 LiveGame (LiveGame 은 status 필드 추가) */
+  games: (Game | LiveGame)[];
 };
 
 const KO_DOW = ["일", "월", "화", "수", "목", "금", "토"];
@@ -33,25 +36,35 @@ function formatDateLabel(iso: string): string {
   return `${month}월 ${day}일 · ${dow}`;
 }
 
-/** PAST_GAMES 를 날짜별로 묶어 ascending(오래된→최신) 으로 반환 */
-function groupPastByDate(games: Game[]): Array<{ date: string; games: Game[] }> {
-  const map = new Map<string, Game[]>();
+/** 같은 날짜끼리 묶어 ascending(오래된→최신) 으로 반환 */
+function groupByDate<T extends { date: string }>(
+  games: T[]
+): Array<{ date: string; games: T[] }> {
+  const map = new Map<string, T[]>();
   for (const g of games) {
     const arr = map.get(g.date) ?? [];
     arr.push(g);
     map.set(g.date, arr);
   }
   return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b)) // 오래된 → 최신
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, games]) => ({ date, games }));
 }
 
 export default function SchedulePage() {
   const todayRef = useRef<HTMLDivElement | null>(null);
 
-  // 모든 섹션을 데이터에서 동적으로 빌드. 모듈 캐시된 정적 배열만 다루므로 비용 미미.
+  // ── 라이브 KBO 데이터 (5분 폴링, 실패 시 정적 폴백) ──
+  const live = useKboSchedule();
+
+  // 라이브 데이터가 도착하면 그것을, 아니면 정적 mock 으로 빌드.
+  // 두 경로 모두 같은 Section 구조 → 아래 렌더 코드는 단일 경로 유지.
   const sections = useMemo<Section[]>(() => {
-    const past = groupPastByDate(PAST_GAMES).map(
+    const sourcePast: (Game | LiveGame)[] = live?.past ?? PAST_GAMES;
+    const sourceToday: (Game | LiveGame)[] = live?.today ?? TODAY_GAMES;
+    const sourceTomorrow: (Game | LiveGame)[] = live?.tomorrow ?? TOMORROW_GAMES;
+
+    const past = groupByDate(sourcePast).map(
       ({ date, games }): Section => ({
         date,
         dateLabel: formatDateLabel(date),
@@ -61,30 +74,28 @@ export default function SchedulePage() {
       })
     );
 
-    const today: Section | null =
-      TODAY_GAMES[0]
-        ? {
-            date: TODAY_GAMES[0].date,
-            dateLabel: formatDateLabel(TODAY_GAMES[0].date),
-            badge: "TODAY",
-            tone: "today",
-            games: TODAY_GAMES,
-          }
-        : null;
+    // today / tomorrow 도 날짜별 그룹핑(다일치 라이브 fetch 대비) — 보통은 1그룹.
+    const todaySections = groupByDate(sourceToday).map(
+      ({ date, games }): Section => ({
+        date,
+        dateLabel: formatDateLabel(date),
+        badge: "TODAY",
+        tone: "today",
+        games,
+      })
+    );
+    const tomorrowSections = groupByDate(sourceTomorrow).map(
+      ({ date, games }): Section => ({
+        date,
+        dateLabel: formatDateLabel(date),
+        badge: "TOMORROW",
+        tone: "future",
+        games,
+      })
+    );
 
-    const tomorrow: Section | null =
-      TOMORROW_GAMES[0]
-        ? {
-            date: TOMORROW_GAMES[0].date,
-            dateLabel: formatDateLabel(TOMORROW_GAMES[0].date),
-            badge: "TOMORROW",
-            tone: "future",
-            games: TOMORROW_GAMES,
-          }
-        : null;
-
-    return [...past, ...(today ? [today] : []), ...(tomorrow ? [tomorrow] : [])];
-  }, []);
+    return [...past, ...todaySections, ...tomorrowSections];
+  }, [live]);
 
   // 페이지(window) 스크롤을 TODAY 섹션 상단으로 즉시 점프.
   // BottomNav 가 fixed 라서 내부 overflow 컨테이너 없이 body 스크롤만 사용 → 더 빠르고 단순.
@@ -179,10 +190,17 @@ function DaySection({
   );
 }
 
-function GameRow({ game, muted }: { game: Game; muted?: boolean }) {
+function GameRow({
+  game,
+  muted,
+}: {
+  game: Game | LiveGame;
+  muted?: boolean;
+}) {
   const home = findTeam(game.homeId);
   const away = findTeam(game.awayId);
   const result = game.result;
+  const liveStatus = (game as LiveGame).status;
 
   const text = muted ? "text-white/55" : "text-white";
   const subtext = muted ? "text-white/30" : "text-white/55";
@@ -305,13 +323,48 @@ function GameRow({ game, muted }: { game: Game; muted?: boolean }) {
             )
           ) : (
             <>
-              {game.awayPitcher}
+              <span className="text-white/40" style={{ fontWeight: 600 }}>
+                선발
+              </span>{" "}
+              {starterLabel(game.awayPitcher)}
               <span className="mx-1.5 text-white/20">vs</span>
-              {game.homePitcher}
+              {starterLabel(game.homePitcher)}
             </>
           )}
         </p>
       </div>
+
+      {/* LIVE 뱃지 — 라이브 데이터에 status=LIVE 인 경기에만 노출 */}
+      {liveStatus === "LIVE" && !result && (
+        <span
+          className="ml-2 inline-flex items-center gap-1 self-start rounded-full px-2 py-[2px] text-[8.5px] uppercase"
+          style={{
+            fontWeight: 800,
+            letterSpacing: "0.2em",
+            color: "#ff4d4d",
+            background: "rgba(255,77,77,0.12)",
+          }}
+        >
+          <span
+            className="inline-block h-1 w-1 animate-pulse rounded-full"
+            style={{ backgroundColor: "#ff4d4d" }}
+          />
+          LIVE
+        </span>
+      )}
+      {liveStatus === "CANCEL" && !result && (
+        <span
+          className="ml-2 self-start rounded-full px-2 py-[2px] text-[8.5px] uppercase"
+          style={{
+            fontWeight: 800,
+            letterSpacing: "0.2em",
+            color: "rgba(255,255,255,0.4)",
+            background: "rgba(255,255,255,0.06)",
+          }}
+        >
+          CXL
+        </span>
+      )}
     </li>
   );
 }

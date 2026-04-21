@@ -14,6 +14,8 @@ import { useWeather, type WeatherInfo } from "@/lib/useWeather";
 import { posterCandidates, POSTER_FINAL_FALLBACK } from "@/lib/posterImage";
 import { useTodaySlot } from "@/lib/useTodaySlot";
 import { isTeamWinnerToday } from "@/config/todayGames";
+import { useKboToday } from "@/lib/useKboToday";
+import { getTeamGame, starterLabel, type LiveGame } from "@/lib/kbo";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -21,8 +23,12 @@ type Props = {
   team: Team;
 };
 
-function getTodayMatch(team: Team) {
-  const game = TODAY_GAMES.find(
+function getTodayMatch(team: Team, liveGames?: LiveGame[] | null) {
+  // 1순위: 라이브 KBO 데이터에 오늘 경기가 있으면 그쪽 사용 (점수/상태 포함)
+  // 2순위: 정적 더미 TODAY_GAMES 폴백 (시즌 데이터 부재 시)
+  const liveGame =
+    liveGames?.find((g) => g.awayId === team.id || g.homeId === team.id) ?? null;
+  const game = liveGame ?? TODAY_GAMES.find(
     (g) => g.awayId === team.id || g.homeId === team.id
   );
   if (!game) return null;
@@ -30,7 +36,7 @@ function getTodayMatch(team: Team) {
   const homeTeam = findTeam(game.homeId);
   const awayTeam = findTeam(game.awayId);
   const opponent = isHome ? awayTeam : homeTeam;
-  return { game, homeTeam, awayTeam, opponent, isHome };
+  return { game, homeTeam, awayTeam, opponent, isHome, isLive: Boolean(liveGame) };
 }
 
 /** OpenWeather condition(영문 main) → 짧은 한글 라벨 */
@@ -104,7 +110,23 @@ function writePosterCache(cacheKey: string, src: string): void {
 }
 
 export default function HeroCard({ team }: Props) {
-  const match = useMemo(() => getTodayMatch(team), [team]);
+  // ── 라이브 KBO 데이터 (60s 폴링, 실패 시 폴백) ──
+  const live = useKboToday();
+  const match = useMemo(
+    () => getTodayMatch(team, live?.games),
+    [team, live?.games]
+  );
+  // 라이브 view — 점수/상태/승리 정보 추출용
+  const liveView = useMemo(
+    () => (live ? getTeamGame(live.games, team.id) : null),
+    [live, team.id]
+  );
+  // 우리 팀 순위 — 라이브 standings 에서 lookup
+  const rankRow = useMemo(() => {
+    if (!live) return null;
+    const id = team.id.toLowerCase();
+    return live.standings.find((r) => r.teamId === id) ?? null;
+  }, [live, team.id]);
 
   // ── 날씨 — 구장 좌표 기반 ──
   const weather = useWeather(match?.game.stadium);
@@ -116,7 +138,8 @@ export default function HeroCard({ team }: Props) {
   //                                   → 없으면 ready 풀에서 teamId 해시로 결정론적 픽
   //  Night(22:00~05:59) + 승리만   → /images/refs/victory/${teamId}.jpg → 공용 풀
   const slot = useTodaySlot();
-  const isWinner = isTeamWinnerToday(team.id);
+  // 라이브 승리 정보가 있으면 1순위, 없으면 정적 폴백
+  const isWinner = liveView?.isWinner ?? isTeamWinnerToday(team.id);
   const dateKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const candidates = useMemo(
     () => posterCandidates({ teamId: team.id, slot, isWinner, dateKey }),
@@ -317,6 +340,32 @@ export default function HeroCard({ team }: Props) {
           className="absolute inset-x-0 bottom-0 z-20 flex flex-col px-7 pb-10 text-white"
           style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}
         >
+          {/* −1. 라이브 순위 배지 — 라이브 데이터 있을 때만 노출 */}
+          {rankRow && (
+            <div
+              className="mb-2 inline-flex items-center gap-1.5 self-start rounded-full border border-white/15 bg-black/35 px-2.5 py-1 backdrop-blur-md"
+              style={{
+                fontFamily:
+                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+                fontSize: "11px",
+                fontWeight: 600,
+                letterSpacing: "0.02em",
+                color: "rgba(255,255,255,0.92)",
+              }}
+            >
+              <span style={{ color: team.accent }}>현재 {rankRow.rank}위</span>
+              <span style={{ color: "rgba(255,255,255,0.28)" }}>·</span>
+              <span
+                className="tabular-nums"
+                style={{ color: "rgba(255,255,255,0.78)", fontWeight: 500 }}
+              >
+                {rankRow.wins}승{" "}
+                {rankRow.draws > 0 ? `${rankRow.draws}무 ` : ""}
+                {rankRow.losses}패
+              </span>
+            </div>
+          )}
+
           {/* 0. 오늘 날짜 — 장소/시간과 동일한 톤·크기로 매치업 위에 작게 */}
           {dateLabel && (
             <div
@@ -331,6 +380,26 @@ export default function HeroCard({ team }: Props) {
               }}
             >
               {dateLabel}
+              {liveView?.game.status === "LIVE" && (
+                <span
+                  className="ml-2 inline-flex items-center gap-1 align-middle"
+                  style={{ color: "#ff4d4d", fontWeight: 700 }}
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 animate-pulse rounded-full"
+                    style={{ backgroundColor: "#ff4d4d" }}
+                  />
+                  LIVE
+                </span>
+              )}
+              {liveView?.game.status === "RESULT" && (
+                <span
+                  className="ml-2 align-middle"
+                  style={{ color: "rgba(255,255,255,0.4)", fontWeight: 600 }}
+                >
+                  종료
+                </span>
+              )}
             </div>
           )}
 
@@ -353,18 +422,43 @@ export default function HeroCard({ team }: Props) {
             >
               {match.awayTeam.short}
             </span>
-            <span
-              className="italic"
-              style={{
-                fontFamily:
-                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                fontSize: "15px",
-                fontWeight: 300,
-                color: "rgba(255,255,255,0.32)",
-              }}
-            >
-              vs
-            </span>
+            {/* RESULT/LIVE 시: 스코어 / 그 외: vs */}
+            {liveView?.game.result ? (
+              <span
+                className="tabular-nums"
+                style={{
+                  fontFamily:
+                    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+                  fontSize: "26px",
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  color: "rgba(255,255,255,0.95)",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {liveView.game.result.awayScore}
+                <span
+                  className="mx-1.5"
+                  style={{ color: "rgba(255,255,255,0.32)", fontWeight: 300 }}
+                >
+                  :
+                </span>
+                {liveView.game.result.homeScore}
+              </span>
+            ) : (
+              <span
+                className="italic"
+                style={{
+                  fontFamily:
+                    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+                  fontSize: "15px",
+                  fontWeight: 300,
+                  color: "rgba(255,255,255,0.32)",
+                }}
+              >
+                vs
+              </span>
+            )}
             <span
               style={{
                 fontFamily:
@@ -384,7 +478,7 @@ export default function HeroCard({ team }: Props) {
             </span>
           </div>
 
-          {/* 2. 선발투수 — 덜 강조 (away · home 순) */}
+          {/* 2. 선발투수 — "선발: 김광현 · 고영표" 또는 "선발: 미정" 폴백 */}
           <div
             className="mt-2.5 inline-flex items-baseline gap-2"
             style={{
@@ -396,7 +490,17 @@ export default function HeroCard({ team }: Props) {
               color: "rgba(255,255,255,0.72)",
             }}
           >
-            <span>{match.game.awayPitcher}</span>
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                color: "rgba(255,255,255,0.4)",
+              }}
+            >
+              선발
+            </span>
+            <span>{starterLabel(match.game.awayPitcher)}</span>
             <span
               style={{
                 fontSize: "12px",
@@ -406,7 +510,7 @@ export default function HeroCard({ team }: Props) {
             >
               ·
             </span>
-            <span>{match.game.homePitcher}</span>
+            <span>{starterLabel(match.game.homePitcher)}</span>
           </div>
 
           {/* 3. 장소 · 시간 · 날씨 — 가장 작게 */}
