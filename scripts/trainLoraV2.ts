@@ -152,28 +152,16 @@ async function main() {
   }
 
   // zip 업로드 (Replicate Files API)
-  console.log(`⬆️  zip 업로드 중…`);
+  //  ── SDK v1.x 의 files.create 는 Blob | File | Buffer 만 받음.
+  //     fs.createReadStream() 같은 Node Stream 은 "Invalid file argument" 로 거절.
+  //     → 통째로 Buffer 로 읽어서 Blob 으로 감싸 업로드. (12MB 정도라 메모리 OK)
   const stat = await fsp.stat(zipPath);
-  const stream = fs.createReadStream(zipPath);
-  // SDK v1: replicate.files.create(input, metadata?)
-  // 일부 환경에서 stream 대신 Blob 를 요구하는 경우가 있어 fallback 도 준비.
-  let fileUrl: string;
-  try {
-    // @ts-expect-error — SDK 타입은 좁지만 stream 도 통과
-    const file = await replicate.files.create(stream, {
-      filename: path.basename(zipPath),
-    });
-    fileUrl = file.urls.get;
-  } catch (e) {
-    console.warn(`   stream 업로드 실패 (${(e as Error).message}) → Blob 재시도`);
-    const buf = await fsp.readFile(zipPath);
-    const blob = new Blob([buf], { type: "application/zip" });
-    const file = await replicate.files.create(blob);
-    fileUrl = file.urls.get;
-  }
-  console.log(
-    `   ✓ uploaded (${(stat.size / 1024 / 1024).toFixed(2)} MB) → ${fileUrl.slice(0, 80)}…`
-  );
+  console.log(`⬆️  zip 업로드 중… (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
+  const buffer = fs.readFileSync(zipPath);
+  const blob = new Blob([buffer], { type: "application/zip" });
+  const file = await replicate.files.create(blob);
+  const fileUrl = file.urls.get;
+  console.log(`   ✓ uploaded → ${fileUrl.slice(0, 80)}…`);
 
   // 학습 입력
   const input: Record<string, unknown> = {
