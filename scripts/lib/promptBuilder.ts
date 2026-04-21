@@ -75,7 +75,9 @@ const BASE_STYLE = [
   "dynamic illustrative sports art",
   "stylized hero poster style",
   "cinematic sports illustration style",
+  "charged with electric energy streaks (blue and red)",
   "charged with electric energy streaks in vivid blue and red conveying intense motion and energy",
+  "dynamic particle effects",
   "dynamic particle effects swirling around the player",
   "abstract red and blue light streaks trailing behind his motion",
   "rich painterly depth and volumetric shading on the rendered figure",
@@ -106,6 +108,7 @@ const COMP_STYLE = [
  *  ※ 모든 모드에 공통 적용. 기존 POSE_STYLE / MOOD 보다 우선순위 높음.
  */
 const SHADOW_CORE = [
+  "face heavily obscured by deep shadow cast by cap brim",
   "face heavily obscured by deep shadow",
   "cinematic rim lighting",
   "dark mysterious silhouette",
@@ -166,8 +169,9 @@ const BODY_PRESENCE = [
 /** 스타일 전환 키워드 — 요청한 문구를 프롬프트 앞단에 고정 */
 const ILLUSTRATIVE_FRONT_STYLE = [
   "dynamic illustrative hero sports art",
-  "charged with electric energy streaks",
-  "particle effects",
+  "stylized hero poster style",
+  "charged with electric energy streaks (blue and red)",
+  "dynamic particle effects",
   "mysterious face shadowed by cap",
 ].join(", ");
 
@@ -307,6 +311,7 @@ export const NEGATIVE_PROMPT = [
   // 증명사진 / 정적 포즈 (사장님 2차 오더)
   "clear face",
   "bright face",
+  "photorealistic",
   "plain photo",
   "looking at camera",
   "passport photo",
@@ -335,6 +340,7 @@ export const NEGATIVE_PROMPT = [
   "werewolf",
   "mascot costume",
   "team mascot suit",
+  "cartoon",
   "cartoon character",
   "non-human face",
   "multiple heads",
