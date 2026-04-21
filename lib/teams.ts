@@ -131,5 +131,27 @@ export const TEAMS: Team[] = [
   },
 ];
 
+/**
+ * /today 히어로 매치업에서 **좌측 열 팀명 위**에만 붙는 수식어.
+ * (응원팀이 항상 좌측에 오므로, 한 팀만 표기)
+ */
+/** 팀 숏네임과 겹치지 않게 수식어만 (팀명은 히어로 타이틀에 별도 표기) */
+const HERO_LEFT_EPITHET: Record<string, string> = {
+  lg: "무적",
+  samsung: "최강",
+  doosan: "최강",
+  kia: "최강",
+  hanwha: "최강",
+  lotte: "최강",
+  ssg: "인천",
+  nc: "공룡군단",
+  kiwoom: "영웅군단",
+  kt: "마법의",
+};
+
+export function heroLeftEpithetLabel(teamId: string): string | null {
+  return HERO_LEFT_EPITHET[teamId.toLowerCase()] ?? null;
+}
+
 export const findTeam = (id: string) =>
   TEAMS.find((t) => t.id === id) ?? TEAMS[0];

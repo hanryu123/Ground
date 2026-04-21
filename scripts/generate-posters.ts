@@ -40,7 +40,11 @@ import sharp from "sharp";
 import { TEAM_CONFIG } from "../config/teams";
 import { isTeamWinnerToday } from "../config/todayGames";
 import { TEAM_PROMPT_META } from "../config/posterPrompts";
-import { buildPrompt, type PromptMode } from "./lib/promptBuilder";
+import {
+  buildPrompt,
+  type PromptMode,
+  type PromptStylePreset,
+} from "./lib/promptBuilder";
 import { appendLog, appendLogBlock, logBoth } from "./lib/log";
 import {
   fetchKboTodayGames,
@@ -57,9 +61,20 @@ dotenv.config(); // .env fallback
 type Mode = "morning" | "night";
 const MODE = (process.env.MODE ?? "morning") as Mode;
 const DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
+const STYLE_PRESET = (process.env.POSTER_STYLE_PRESET ?? "balanced").trim();
 
 if (MODE !== "morning" && MODE !== "night") {
   console.error(`MODE must be "morning" or "night" (got "${MODE}")`);
+  process.exit(1);
+}
+if (
+  STYLE_PRESET !== "balanced" &&
+  STYLE_PRESET !== "anime-boost" &&
+  STYLE_PRESET !== "uniform-realism"
+) {
+  console.error(
+    `POSTER_STYLE_PRESET must be balanced | anime-boost | uniform-realism (got "${STYLE_PRESET}")`
+  );
   process.exit(1);
 }
 
@@ -320,6 +335,7 @@ async function generateOne(
   const prompt = buildPrompt({
     teamId,
     mode: promptMode,
+    stylePreset: STYLE_PRESET as PromptStylePreset,
     meta,
     triggerWord,
     masterTrigger: MASTER_TRIGGER,
@@ -433,6 +449,7 @@ async function main() {
     `Poster generation start: ${startedAt.toISOString()}`,
     `mode=${MODE}  dryRun=${DRY_RUN}  ${filterLabel}`,
     `trigger=master:"${MASTER_TRIGGER}" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)`,
+    `stylePreset=${STYLE_PRESET}`,
     `model=${MODEL ?? "(unset)"}`,
     `output: aspect=${ASPECT_RATIO} ${MEGAPIXELS}MP, steps=${STEPS}, guidance=${GUIDANCE}, lora=${LORA_SCALE}, prompt_strength=${PROMPT_STRENGTH}`,
     `upscale: ${UPSCALE_ENABLED ? `Real-ESRGAN x${UPSCALE_FACTOR} → resize 2048w` : "OFF"}`,

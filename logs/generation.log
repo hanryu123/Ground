@@ -714,3 +714,34 @@
 [2026-04-21T05:20:44.895Z] Elapsed: 3.9s   finished=2026-04-21T05:20:44.895Z
 [2026-04-21T05:20:44.895Z] ==============================================================
 [2026-04-21T05:20:44.895Z] 
+[2026-04-21T05:22:57.782Z] ==============================================================
+[2026-04-21T05:22:57.782Z] Poster generation start: 2026-04-21T05:22:57.781Z
+[2026-04-21T05:22:57.782Z] mode=morning  dryRun=false  teams=ALL(10)
+[2026-04-21T05:22:57.782Z] trigger=master:"ground" + per-team(TRIGGER_BY_TEAM) + per-mode(MODE_TRIGGER)
+[2026-04-21T05:22:57.782Z] model=hanryu123/ground.master:dde979f05ce9bf66f0d741136cf8651a48bc5f087d57c1c7ff8fd477c0e30bb6
+[2026-04-21T05:22:57.782Z] output: aspect=9:16 1MP, steps=50, guidance=4.5, lora=1, prompt_strength=1
+[2026-04-21T05:22:57.782Z] upscale: Real-ESRGAN x4 → resize 2048w
+[2026-04-21T05:22:57.782Z] ==============================================================
+[2026-04-21T05:23:01.605Z] ── LIVE KBO context ──
+[2026-04-21T05:23:01.605Z] games(5):
+[2026-04-21T05:23:01.605Z]   18:30  HANWHA@LG  [BEFORE]  starter: 미정 vs 미정
+  18:30  KIA@KT  [BEFORE]  starter: 미정 vs 미정
+  18:30  NC@KIWOOM  [BEFORE]  starter: 미정 vs 미정
+  18:30  DOOSAN@LOTTE  [BEFORE]  starter: 미정 vs 미정
+  18:30  SSG@SAMSUNG  [BEFORE]  starter: 미정 vs 미정
+[2026-04-21T05:23:01.605Z] ──────────────────────
+[2026-04-21T05:23:56.213Z] [LG] OK  (morning) → public/images/refs/ready/lg.jpg  [560KB, 54.6s]
+[2026-04-21T05:24:48.762Z] [KIA] OK  (morning) → public/images/refs/ready/kia.jpg  [463KB, 52.5s]
+[2026-04-21T05:25:50.821Z] [KT] OK  (morning) → public/images/refs/ready/kt.jpg  [497KB, 62.1s]
+[2026-04-21T05:27:18.996Z] [SSG] OK  (morning) → public/images/refs/ready/ssg.jpg  [539KB, 88.2s]
+[2026-04-21T05:28:14.605Z] [NC] OK  (morning) → public/images/refs/ready/nc.jpg  [508KB, 55.6s]
+[2026-04-21T05:29:24.358Z] [DOOSAN] OK  (morning) → public/images/refs/ready/doosan.jpg  [450KB, 69.7s]
+[2026-04-21T05:30:17.598Z] [SAMSUNG] OK  (morning) → public/images/refs/ready/samsung.jpg  [478KB, 53.2s]
+[2026-04-21T05:31:26.363Z] [LOTTE] OK  (morning) → public/images/refs/ready/lotte.jpg  [458KB, 68.8s]
+[2026-04-21T05:32:36.212Z] [HANWHA] OK  (morning) → public/images/refs/ready/hanwha.jpg  [454KB, 69.8s]
+[2026-04-21T05:33:28.293Z] [KIWOOM] OK  (morning) → public/images/refs/ready/kiwoom.jpg  [487KB, 52.1s]
+[2026-04-21T05:33:28.295Z] --------------------------------------------------------------
+[2026-04-21T05:33:28.295Z] Done: 10 ok / 0 fail / 10 total
+[2026-04-21T05:33:28.295Z] Elapsed: 630.5s   finished=2026-04-21T05:33:28.295Z
+[2026-04-21T05:33:28.295Z] ==============================================================
+[2026-04-21T05:33:28.295Z] 

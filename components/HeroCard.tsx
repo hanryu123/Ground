@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { Cormorant_Garamond } from "next/font/google";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CloudRain } from "lucide-react";
-import { findTeam, type Team } from "@/lib/teams";
+import { CloudRain, User } from "lucide-react";
+import { findTeam, heroLeftEpithetLabel, type Team } from "@/lib/teams";
 import { TODAY_GAMES } from "@/lib/games";
 import { pickSlogan, splitSloganForDisplay } from "@/config/teams";
 import NotificationBell from "@/components/NotificationBell";
@@ -18,6 +19,25 @@ import { useKboToday } from "@/lib/useKboToday";
 import { getTeamGame, starterLabel, type LiveGame } from "@/lib/kbo";
 
 const ease = [0.22, 1, 0.36, 1] as const;
+
+/** 영문 슬로건 · VS · 스코어 — 포스터형 세리프 */
+const displaySerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+/** 한글 슬로건 줄만 Pretendard 유지, 영문 줄은 Cormorant(displaySerif) */
+function hasHangul(s: string): boolean {
+  return /[\u3131-\u318E\uAC00-\uD7A3]/.test(s);
+}
+
+/** 팀명 공통 메트릭 — globals.css 의 Black Han Sans(한글 포함 전체 서브셋) */
+const TEAM_SHORT_STYLE = {
+  fontSize: "clamp(28px, 7.2vw, 46px)",
+  lineHeight: 0.92,
+  letterSpacing: "-0.05em",
+} as const;
 
 type Props = {
   team: Team;
@@ -65,10 +85,24 @@ function formatWeather(w: WeatherInfo): string | null {
   return label;
 }
 
-/** 풀네임 구장명에서 첫 어절(도시/지역)만 추출. 예: "수원 KT 위즈 파크" → "수원" */
-function shortStadium(name: string | undefined | null): string {
-  if (!name) return "";
-  const head = name.trim().split(/\s+/)[0];
+/**
+ * 구장 풀네임 → 짧은 **도시/지역** 라벨만 (경기장 풀명 제외).
+ * 예: 잠실 구장 → "잠실", 사직 → "부산", "수원 KT 위즈 파크" → "수원"
+ */
+function venueCityOnly(stadium: string | undefined | null): string {
+  if (!stadium) return "";
+  const s = stadium.trim();
+  if (s.includes("잠실")) return "잠실";
+  if (s.includes("사직")) return "부산";
+  if (s.includes("고척")) return "고척";
+  if (s.includes("수원")) return "수원";
+  if (s.includes("대구")) return "대구";
+  if (s.includes("창원")) return "창원";
+  if (s.includes("대전")) return "대전";
+  if (s.includes("광주")) return "광주";
+  if (s.includes("문학")) return "인천";
+  if (s.includes("울산")) return "울산";
+  const head = s.split(/\s+/)[0];
   return head ?? "";
 }
 
@@ -83,6 +117,41 @@ function formatMatchDate(iso: string | undefined | null): string {
   const day = d.getUTCDate();
   const dow = KO_DOW[d.getUTCDay()];
   return `${month}월 ${day}일 · ${dow}`;
+}
+
+/** YYYY-MM-DD + HH:mm → KST 시작 시각(ms, UTC 기준 타임스탬프) */
+function gameStartMsKst(date: string, time: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+  if (!date || !m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (
+    !Number.isFinite(hh) ||
+    !Number.isFinite(mm) ||
+    hh < 0 ||
+    hh > 23 ||
+    mm < 0 ||
+    mm > 59
+  ) {
+    return null;
+  }
+  const iso = `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+09:00`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** 남은 초 → `HH:MM:SS` (표시 상한 99:59:59) */
+function formatCountdownHms(totalSeconds: number): string {
+  const cap = 99 * 3600 + 59 * 60 + 59;
+  const sec = Math.min(cap, Math.max(0, Math.floor(totalSeconds)));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
 /** sessionStorage 키 — (candidates 동일하면 재방문 시 즉시 hit) */
@@ -199,9 +268,58 @@ export default function HeroCard({ team }: Props) {
   const sloganText =
     pickSlogan(team.id, "ready", isRainy) ?? team.manifestoEn;
   const lines = splitSloganForDisplay(sloganText);
+  const sloganOneLine =
+    lines.length === 0
+      ? ""
+      : sloganText.includes("\n")
+        ? lines.join(" · ")
+        : lines.join(" ");
 
-  const stadiumShort = shortStadium(match?.game.stadium);
   const dateLabel = formatMatchDate(match?.game.date);
+
+  const gameStartMs = useMemo(() => {
+    if (!match?.game.date || !match.game.time) return null;
+    return gameStartMsKst(match.game.date, match.game.time);
+  }, [match?.game.date, match?.game.time]);
+
+  const showHeroCountdown =
+    Boolean(match) &&
+    liveView?.game.status !== "LIVE" &&
+    liveView?.game.status !== "RESULT" &&
+    liveView?.game.status !== "CANCEL" &&
+    !liveView?.game.result &&
+    !match?.game.result;
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!showHeroCountdown || gameStartMs == null) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [showHeroCountdown, gameStartMs, match?.game.id]);
+
+  const countdownHms =
+    showHeroCountdown && gameStartMs != null
+      ? formatCountdownHms(Math.floor((gameStartMs - nowMs) / 1000))
+      : null;
+
+  /** 응원팀(team) 항상 좌측, 상대 우측 */
+  const heroMatch = useMemo(() => {
+    if (!match) return null;
+    const leftIsAway = team.id === match.awayTeam.id;
+    return {
+      leftTeam: leftIsAway ? match.awayTeam : match.homeTeam,
+      rightTeam: leftIsAway ? match.homeTeam : match.awayTeam,
+      leftPitcher: leftIsAway ? match.game.awayPitcher : match.game.homePitcher,
+      rightPitcher: leftIsAway ? match.game.homePitcher : match.game.awayPitcher,
+      leftIsAway,
+      venueCity: venueCityOnly(match.game.stadium),
+    };
+  }, [match, team.id]);
+
+  const leftHeroEpithet = heroMatch
+    ? heroLeftEpithetLabel(heroMatch.leftTeam.id)
+    : null;
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
@@ -234,39 +352,39 @@ export default function HeroCard({ team }: Props) {
       </AnimatePresence>
 
       {/*
-        텍스트/하단 UI 가독성 확보용 — 아주 얇은 검정 그라데이션 한 장.
-        상/하단만 어둡게 떨어뜨려 중앙 슬로건과 하단 매치업이 떠 보이게 한다.
+        하단 웅장한 암부 그라데이션 — 패널 없이 텍스트만 얹어도 대비 확보.
       */}
       <div
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 z-[1]"
         style={{
-          background:
-            "linear-gradient(180deg, rgba(0,0,0,0.45) 0%, transparent 28%, transparent 62%, rgba(0,0,0,0.6) 100%)",
+          background: [
+            "linear-gradient(180deg, rgba(0,0,0,0.32) 0%, transparent 24%)",
+            "linear-gradient(0deg, #000000 0%, rgba(0,0,0,0.94) 12%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.35) 45%, transparent 62%)",
+          ].join(", "),
         }}
       />
 
-      {/*
-        ── 좌상단: MY CTA ──
-        로고 자리에 눈에 과하게 띄지 않는 심플 텍스트 버튼만 남긴다.
-        탭하면 /my 로 이동 (응원팀 변경 진입점).
-      */}
+      {/* ── 좌상단: 프로필 (/my) — 공유·알림과 동일 터치 타겟 h-11 w-11 ── */}
       <motion.div
         initial={{ opacity: 0, scale: 0.92 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.7, ease, delay: 0.15 }}
         className="absolute left-5 top-5 z-30"
       >
-        <Link
-          href="/my"
-          aria-label="응원팀 변경"
-          className="inline-flex h-8 items-center justify-center rounded-full border border-white/20 bg-black/18 px-4 text-[10px] uppercase tracking-[0.22em] text-white/78 backdrop-blur-sm transition hover:text-white/88 active:scale-95"
-          style={{
-            fontWeight: 600,
-            boxShadow: "inset 0 0 0 0.4px rgba(255,255,255,0.05)",
-          }}
-        >
-          MY
-        </Link>
+        <motion.div whileTap={{ scale: 0.9 }}>
+          <Link
+            href="/my"
+            aria-label="응원팀 변경"
+            className="flex h-11 w-11 items-center justify-center rounded-full"
+          >
+            <User
+              size={21}
+              strokeWidth={1.5}
+              className="text-white/85"
+              style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))" }}
+            />
+          </Link>
+        </motion.div>
       </motion.div>
 
       {/* ── 우상단: 공유 (벨 옆에 살짝 왼쪽) ── */}
@@ -295,248 +413,247 @@ export default function HeroCard({ team }: Props) {
         <NotificationBell accent={team.accent} />
       </motion.div>
 
-      {/* ── 중앙: 슬로건 ── */}
-      <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-7">
-        <motion.h1
-          key={team.id + "-" + sloganText}
-          initial={{ opacity: 0, y: -4, letterSpacing: "0.55em" }}
-          animate={{ opacity: 1, y: 0, letterSpacing: "0.42em" }}
-          transition={{ duration: 1.2, ease, delay: 0.25 }}
-          className="text-center text-white"
-          style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-            fontWeight: 300,
-            fontSize: "clamp(15px, 4.4vw, 23px)",
-            lineHeight: 1.5,
-            letterSpacing: "0.42em",
-            textShadow: isRainy
-              ? "0 1px 6px rgba(0,0,0,0.7), 0 0 14px rgba(140,180,220,0.45), 0 0 32px rgba(80,120,170,0.35), 0 0 3px rgba(0,0,0,0.55)"
-              : "0 1px 6px rgba(0,0,0,0.55), 0 0 24px rgba(0,0,0,0.35)",
-            filter: isRainy ? "blur(0.25px)" : undefined,
-            textTransform: "uppercase",
-            color: isRainy ? "rgba(232,240,250,0.92)" : "rgba(255,255,255,0.95)",
-          }}
+      {/* ── 경기 없음: 하단 그라데이션 위 중앙 스택 (글래스 없음) ── */}
+      {!match && (
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.85, ease, delay: 0.18 }}
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-7 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] pt-[18vh] text-center"
         >
-          {lines.join("  ·  ")}
-        </motion.h1>
-      </div>
+          <div className="flex max-w-md flex-col items-center">
+            <motion.p
+              key={`${team.id}-${sloganText}-1l`}
+              initial={{
+                opacity: 0,
+                letterSpacing: hasHangul(sloganOneLine) ? "-0.02em" : "0.2em",
+              }}
+              animate={{
+                opacity: 1,
+                letterSpacing: hasHangul(sloganOneLine) ? "-0.02em" : "0.1em",
+              }}
+              transition={{ duration: 1.05, ease, delay: 0.12 }}
+              className={
+                hasHangul(sloganOneLine)
+                  ? "text-white"
+                  : `text-white ${displaySerif.className}`
+              }
+              style={{
+                fontWeight: hasHangul(sloganOneLine) ? 700 : 600,
+                fontSize: hasHangul(sloganOneLine)
+                  ? "clamp(18px, 5.07vw, 26px)"
+                  : "clamp(21px, 5.98vw, 34px)",
+                lineHeight: 1.35,
+                textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
+                filter: isRainy ? "blur(0.2px)" : undefined,
+              }}
+            >
+              {sloganOneLine}
+            </motion.p>
+          </div>
+        </motion.div>
+      )}
 
       {/*
-        ── 하단 정보 — 위→아래 우선순위 ──
-          0) 오늘 날짜 · 시간 (4월 19일 · 일 · 18:30) — 라이브 상태 뱃지 inline
-          1) 팀 매치업 (NC vs 두산)                  — 가장 강조
-          2) 선발투수 (임찬규 · 곽빈)                — 덜 강조
-          3) 장소 · 날씨                             — 가장 작게
-
-        위치: bottom-0 + pb-[24vh] 로 화면 하단에서 24% 위에 떠 있게.
-        → 슬로건/날짜/매치업/선발/장소까지 viewport 한 화면 안에 들어옴.
-        ※ 직전 버전엔 "현재 N위" 배지가 매치업 위에 별도 라인으로 있었으나
-          /rank 탭 신설로 정보 중복이라 제거.
+        경기 있음: 응원팀 좌측 · 팀명·선발 · 슬로건 · 날짜 · 날씨 · 맨 아래 도시만
       */}
-      {match && (
+      {match && heroMatch && (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease, delay: 0.45 }}
-          className="absolute inset-x-0 bottom-0 z-20 flex flex-col px-7 pb-[24vh] text-white"
-          style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}
+          transition={{ duration: 0.8, ease, delay: 0.22 }}
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-6 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] pt-[10vh] text-center"
         >
-          {/* 0. 오늘 날짜 + 시간 — 매치업 위에 작게 (시간 합쳐서 한 줄) */}
-          {dateLabel && (
-            <div
-              className="mb-2"
+          <div className="max-w-md px-1">
+            <motion.p
+              key={`${team.id}-${sloganText}-hero-top`}
+              initial={{
+                opacity: 0,
+                letterSpacing: hasHangul(sloganOneLine) ? "-0.02em" : "0.18em",
+              }}
+              animate={{
+                opacity: 1,
+                letterSpacing: hasHangul(sloganOneLine) ? "-0.02em" : "0.08em",
+              }}
+              transition={{ duration: 0.95, ease, delay: 0.08 }}
+              className={
+                hasHangul(sloganOneLine)
+                  ? "text-white/88"
+                  : `text-white/85 ${displaySerif.className}`
+              }
               style={{
-                fontFamily:
-                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                fontSize: "11.5px",
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-                color: "rgba(255,255,255,0.55)",
+                fontWeight: hasHangul(sloganOneLine) ? 600 : 550,
+                fontSize: hasHangul(sloganOneLine)
+                  ? "clamp(16px, 4.16vw, 20px)"
+                  : "clamp(16px, 4.29vw, 21px)",
+                lineHeight: 1.45,
+                textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
               }}
             >
-              <span>{dateLabel}</span>
-              <span
-                className="mx-1.5 tabular-nums"
-                style={{ color: "rgba(255,255,255,0.22)" }}
-              >
-                ·
-              </span>
-              <span className="tabular-nums">{match.game.time}</span>
-              {liveView?.game.status === "LIVE" && (
-                <span
-                  className="ml-2 inline-flex items-center gap-1 align-middle"
-                  style={{ color: "#ff4d4d", fontWeight: 700 }}
-                >
-                  <span
-                    className="inline-block h-1.5 w-1.5 animate-pulse rounded-full"
-                    style={{ backgroundColor: "#ff4d4d" }}
-                  />
-                  LIVE
-                </span>
-              )}
-              {liveView?.game.status === "RESULT" && (
-                <span
-                  className="ml-2 align-middle"
-                  style={{ color: "rgba(255,255,255,0.4)", fontWeight: 600 }}
-                >
-                  종료
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* 1. 팀 매치업 — 거대 (away vs home, 응원팀에 옅은 글로우) */}
-          <div className="flex items-baseline gap-2.5">
-            <span
-              style={{
-                fontFamily:
-                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                fontSize: "34px",
-                fontWeight: 800,
-                lineHeight: 1,
-                letterSpacing: "-0.02em",
-                color: "rgba(255,255,255,0.98)",
-                textShadow:
-                  match.awayTeam.id === team.id
-                    ? `0 0 22px ${team.accent}88, 0 1px 6px rgba(0,0,0,0.65)`
-                    : "0 1px 6px rgba(0,0,0,0.65)",
-              }}
-            >
-              {match.awayTeam.short}
-            </span>
-            {/* RESULT/LIVE 시: 스코어 / 그 외: vs */}
-            {liveView?.game.result ? (
-              <span
-                className="tabular-nums"
-                style={{
-                  fontFamily:
-                    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                  fontSize: "26px",
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  color: "rgba(255,255,255,0.95)",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {liveView.game.result.awayScore}
-                <span
-                  className="mx-1.5"
-                  style={{ color: "rgba(255,255,255,0.32)", fontWeight: 300 }}
-                >
-                  :
-                </span>
-                {liveView.game.result.homeScore}
-              </span>
-            ) : (
-              <span
-                className="italic"
-                style={{
-                  fontFamily:
-                    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                  fontSize: "15px",
-                  fontWeight: 300,
-                  color: "rgba(255,255,255,0.32)",
-                }}
-              >
-                vs
-              </span>
-            )}
-            <span
-              style={{
-                fontFamily:
-                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                fontSize: "34px",
-                fontWeight: 800,
-                lineHeight: 1,
-                letterSpacing: "-0.02em",
-                color: "rgba(255,255,255,0.98)",
-                textShadow:
-                  match.homeTeam.id === team.id
-                    ? `0 0 22px ${team.accent}88, 0 1px 6px rgba(0,0,0,0.65)`
-                    : "0 1px 6px rgba(0,0,0,0.65)",
-              }}
-            >
-              {match.homeTeam.short}
-            </span>
-          </div>
-
-          {/* 2. 선발투수 — "선발: 김광현 · 고영표" 또는 "선발: 미정" 폴백 */}
-          <div
-            className="mt-2.5 inline-flex items-baseline gap-2"
-            style={{
-              fontFamily:
-                '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-              fontSize: "16px",
-              fontWeight: 500,
-              letterSpacing: "-0.005em",
-              color: "rgba(255,255,255,0.72)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: 600,
-                letterSpacing: "0.04em",
-                color: "rgba(255,255,255,0.4)",
-              }}
-            >
-              선발
-            </span>
-            <span>{starterLabel(match.game.awayPitcher)}</span>
-            <span
-              style={{
-                fontSize: "12px",
-                fontWeight: 300,
-                color: "rgba(255,255,255,0.28)",
-              }}
-            >
-              ·
-            </span>
-            <span>{starterLabel(match.game.homePitcher)}</span>
+              {sloganOneLine}
+            </motion.p>
           </div>
 
           {/*
-            3. 장소 · 날씨 — 가장 작게
-            (시간은 위 날짜 라인으로 이동 — 중복 제거)
+            max-content 3열 — 1fr 대칭이 아니라 내용 너비만 쓰고 VS 를 가운데에 두어
+            팀명 길이가 달라도 "팀 · VS · 팀" 이 한 덩어로 중앙에 모인다.
           */}
-          <div
-            className="mt-3 inline-flex items-center gap-1.5 tabular-nums"
-            style={{
-              fontFamily:
-                '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-              fontSize: "11.5px",
-              fontWeight: 400,
-              letterSpacing: "0.01em",
-              color: "rgba(255,255,255,0.5)",
-            }}
-          >
-            <span>{stadiumShort || match.game.stadium}</span>
-            {weatherLabel && (
-              <>
-                <span style={{ color: "rgba(255,255,255,0.22)" }}>·</span>
-                <motion.span
-                  key={weatherLabel}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.5, ease, delay: 0.65 }}
-                  title={weather.description || undefined}
+          <div className="mx-auto mt-7 w-max max-w-[min(100%,36rem)]">
+            <div className="grid grid-cols-[max-content_auto_max-content] grid-rows-[auto_auto] items-end gap-x-4 gap-y-2 sm:gap-x-5">
+              <div className="min-w-0 justify-self-end text-right">
+                <div className="flex flex-col items-end justify-end gap-0 leading-none">
+                  {leftHeroEpithet ? (
+                    <p
+                      className="mb-1.5 w-full text-left text-[clamp(11px,2.6vw,17px)] leading-none tracking-[0.02em] text-white/58"
+                      style={{ fontWeight: 200 }}
+                    >
+                      {leftHeroEpithet}
+                    </p>
+                  ) : null}
+                  <span
+                    className="inline-block origin-bottom font-['Black_Han_Sans',sans-serif] text-white"
+                    style={{
+                      ...TEAM_SHORT_STYLE,
+                      transform: "skewX(-9deg)",
+                      textShadow: `0 0 28px ${team.accent}88, 0 3px 14px rgba(0,0,0,0.65)`,
+                    }}
+                  >
+                    {heroMatch.leftTeam.short}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex min-h-[2.75rem] items-end justify-center self-end px-1 pb-0.5">
+                {liveView?.game.result ? (
+                  <span
+                    className={`tabular-nums text-white/95 ${displaySerif.className}`}
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "clamp(20px, 5.2vw, 30px)",
+                      letterSpacing: "0.04em",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {heroMatch.leftIsAway
+                      ? liveView.game.result.awayScore
+                      : liveView.game.result.homeScore}
+                    <span className="mx-2 font-light text-white/28">:</span>
+                    {heroMatch.leftIsAway
+                      ? liveView.game.result.homeScore
+                      : liveView.game.result.awayScore}
+                  </span>
+                ) : (
+                  <span
+                    className={`${displaySerif.className} uppercase text-white/36`}
+                    style={{
+                      fontWeight: 500,
+                      fontSize: "9px",
+                      letterSpacing: "0.38em",
+                      lineHeight: 1,
+                    }}
+                  >
+                    vs
+                  </span>
+                )}
+              </div>
+
+              <div className="min-w-0 justify-self-start text-left">
+                <span
+                  className="inline-block origin-bottom font-['Black_Han_Sans',sans-serif] text-white/92"
+                  style={{
+                    ...TEAM_SHORT_STYLE,
+                    transform: "skewX(-9deg)",
+                    textShadow: "0 2px 20px rgba(0,0,0,0.55)",
+                  }}
                 >
-                  {weatherLabel}
-                </motion.span>
-              </>
+                  {heroMatch.rightTeam.short}
+                </span>
+              </div>
+
+              <div className="flex min-h-[1.35rem] items-start justify-end justify-self-end">
+                <span className="text-right text-[11px] font-semibold leading-snug tracking-wide text-white/72">
+                  {starterLabel(heroMatch.leftPitcher)}
+                </span>
+              </div>
+              <div aria-hidden className="min-h-[1.35rem]" />
+              <div className="flex min-h-[1.35rem] items-start justify-start justify-self-start">
+                <span className="text-left text-[11px] font-semibold leading-snug tracking-wide text-white/68">
+                  {starterLabel(heroMatch.rightPitcher)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {countdownHms ? (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.55, ease, delay: 0.32 }}
+              className="mt-6 text-[11px] font-medium tabular-nums tracking-[0.32em] text-white/52"
+              aria-label="경기 시작까지 남은 시간"
+            >
+              {countdownHms}
+            </motion.p>
+          ) : null}
+
+          <div
+            className={`max-w-md text-[11px] font-normal uppercase tracking-[0.22em] text-white/58 ${countdownHms ? "mt-8" : "mt-10"}`}
+            style={{ fontWeight: 400 }}
+          >
+            <p className="tabular-nums">
+              {dateLabel ? (
+                <>
+                  <span>{dateLabel}</span>
+                  <span className="mx-2 text-white/25">·</span>
+                </>
+              ) : null}
+              <span>{match.game.time}</span>
+              {liveView?.game.status === "LIVE" && (
+                <>
+                  <span className="mx-2 text-white/25">·</span>
+                  <span className="inline-flex items-center gap-1.5 font-medium tracking-[0.18em] text-[#ff5c5c]">
+                    <span
+                      className="inline-block h-1 w-1 animate-pulse rounded-full bg-[#ff5c5c]"
+                      aria-hidden
+                    />
+                    LIVE
+                  </span>
+                </>
+              )}
+              {liveView?.game.status === "RESULT" && (
+                <>
+                  <span className="mx-2 text-white/25">·</span>
+                  <span className="text-white/45">종료</span>
+                </>
+              )}
+            </p>
+          </div>
+
+          <div
+            className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/38"
+          >
+            {weatherLabel && (
+              <motion.span
+                key={weatherLabel}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.45, ease, delay: 0.4 }}
+                title={weather.description || undefined}
+              >
+                {weatherLabel}
+              </motion.span>
             )}
             {isRainy && (
               <motion.span
-                initial={{ opacity: 0, x: -4 }}
+                initial={{ opacity: 0, x: -3 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6, ease, delay: 0.75 }}
-                className="ml-0.5 inline-flex items-center"
+                transition={{ duration: 0.5, ease, delay: 0.5 }}
+                className="ml-1 inline-flex items-center"
                 aria-label="수중전 진행 중"
                 title="수중전 진행 중"
               >
                 <motion.span
-                  animate={{ opacity: [0.55, 1, 0.55] }}
+                  animate={{ opacity: [0.5, 1, 0.5] }}
                   transition={{
                     duration: 2.2,
                     repeat: Infinity,
@@ -545,17 +662,22 @@ export default function HeroCard({ team }: Props) {
                 >
                   <CloudRain
                     size={11}
-                    strokeWidth={1.6}
+                    strokeWidth={1.5}
+                    className="text-sky-300/70"
                     style={{
-                      color: "rgba(180,210,235,0.85)",
-                      filter:
-                        "drop-shadow(0 0 4px rgba(140,180,220,0.55))",
+                      filter: "drop-shadow(0 0 3px rgba(140,180,220,0.35))",
                     }}
                   />
                 </motion.span>
               </motion.span>
             )}
           </div>
+
+          {heroMatch.venueCity ? (
+            <p className="mt-5 text-[12px] font-medium tracking-[0.14em] text-white/52">
+              {heroMatch.venueCity}
+            </p>
+          ) : null}
         </motion.div>
       )}
     </div>

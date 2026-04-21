@@ -28,7 +28,7 @@ const TARGET_WIDTH = 2048;
  *     teamId : "LG" | "KIA" | ...
  *     file   : image binary (jpg | png | webp)
  *
- *  → public/images/refs/ready/<teamId>.jpg 로 덮어쓰기 (Publish 도 이 한 번으로 끝)
+ *  → public/images/refs/ready/<teamId>.jpg 로 덮어쓰기 (이 요청 한 번이 곧 프로덕션 반영)
  *  → 다른 확장자(.png/.webp/.jpeg) 잔존 파일은 동시에 정리해서 충돌 방지
  *
  *  ⚠ Vercel serverless 환경에서 public/ 는 read-only 라 운영 배포에서는 동작하지 않는다.

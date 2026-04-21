@@ -10,6 +10,7 @@ type TeamRow = {
   sizeBytes: number | null;
   mtimeMs: number | null;
 };
+type StylePreset = "balanced" | "anime-boost" | "uniform-realism";
 
 function formatKB(b: number | null): string {
   if (b == null) return "—";
@@ -100,8 +101,8 @@ export function AdminDashboard() {
             메인 화면 큐레이션
           </h1>
           <p className="mt-2 text-sm text-neutral-400 leading-relaxed">
-            아래 카드의 [업로드 → Publish] 한 번이면, 유저가 보는 메인 화면의
-            해당 팀 화보가 즉시 교체됩니다.
+            아래 카드에서 AI 생성 버튼 또는「메인 화보 교체」를 눌러 파일을 고르면,
+            곧바로 프로덕션 경로에 덮어써져 유저 앱의 해당 팀 메인 화보가 바뀝니다.
             <br />
             현재 출력 경로: <code className="text-neutral-300">/images/refs/ready/&lt;teamId&gt;.jpg</code>
           </p>
@@ -125,7 +126,13 @@ export function AdminDashboard() {
                   setTeams((prev) =>
                     prev.map((p) => (p.teamId === updated.teamId ? updated : p))
                   );
-                  showToast(`${updated.teamId} 메인 출력 완료`);
+                  showToast(`${updated.teamId} 프로덕션 화보 교체 완료`);
+                }}
+                onGenerated={(updated) => {
+                  setTeams((prev) =>
+                    prev.map((p) => (p.teamId === updated.teamId ? updated : p))
+                  );
+                  showToast(`${updated.teamId} AI 생성 후 즉시 반영 완료`);
                 }}
                 onError={(msg) => showToast(`실패: ${msg}`)}
               />
@@ -159,10 +166,12 @@ function SkeletonGrid() {
 function TeamCard({
   row,
   onUploaded,
+  onGenerated,
   onError,
 }: {
   row: TeamRow;
   onUploaded: (r: TeamRow) => void;
+  onGenerated: (r: TeamRow) => void;
   onError: (msg: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -172,7 +181,7 @@ function TeamCard({
   async function uploadFile(file: File) {
     if (!file) return;
     setBusy(true);
-    setProgress("업로드 중…");
+    setProgress("프로덕션에 반영 중…");
     try {
       const fd = new FormData();
       fd.append("teamId", row.teamId);
@@ -197,6 +206,42 @@ function TeamCard({
       setBusy(false);
       setProgress(null);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function generatePoster(stylePreset: StylePreset) {
+    setBusy(true);
+    setProgress(
+      stylePreset === "anime-boost"
+        ? "AI 생성 중… (애니 강화, 30~90초)"
+        : stylePreset === "uniform-realism"
+          ? "AI 생성 중… (유니폼 현실 강화, 30~90초)"
+          : "AI 생성 중… (기본 밸런스, 30~90초)"
+    );
+    try {
+      const res = await fetch("/api/admin/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teamId: row.teamId, stylePreset }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error ?? `${res.status}`);
+      }
+      const updated = (await res.json()) as TeamRow & { ok: true };
+      onGenerated({
+        teamId: updated.teamId,
+        fullName: row.fullName,
+        readyFile: updated.readyFile,
+        publicUrl: updated.publicUrl,
+        sizeBytes: updated.sizeBytes,
+        mtimeMs: updated.mtimeMs,
+      });
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -254,7 +299,31 @@ function TeamCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            onClick={() => void generatePoster("balanced")}
+            disabled={busy}
+            className="rounded-lg border border-cyan-300/35 bg-cyan-300/8 text-cyan-100 text-[11px] font-medium py-2.5 hover:bg-cyan-300/14 transition disabled:opacity-40"
+          >
+            AI 생성
+          </button>
+          <button
+            onClick={() => void generatePoster("anime-boost")}
+            disabled={busy}
+            className="rounded-lg border border-violet-300/35 bg-violet-300/8 text-violet-100 text-[11px] font-medium py-2.5 hover:bg-violet-300/14 transition disabled:opacity-40"
+          >
+            애니 강화
+          </button>
+          <button
+            onClick={() => void generatePoster("uniform-realism")}
+            disabled={busy}
+            className="rounded-lg border border-emerald-300/35 bg-emerald-300/8 text-emerald-100 text-[11px] font-medium py-2.5 hover:bg-emerald-300/14 transition disabled:opacity-40"
+          >
+            유니폼 현실
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -263,12 +332,16 @@ function TeamCard({
             onChange={onFileChosen}
           />
           <button
+            type="button"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            className="flex-1 rounded-lg bg-white text-black text-xs font-medium py-2.5 hover:bg-neutral-200 transition disabled:opacity-40"
+            className="rounded-lg bg-white text-black text-xs font-medium py-2.5 hover:bg-neutral-200 transition disabled:opacity-40"
           >
-            업로드 → Publish
+            메인 화보 교체
           </button>
+        </div>
+
+        <div className="flex items-center gap-2">
           {row.publicUrl && (
             <a
               href={row.publicUrl}
@@ -282,8 +355,9 @@ function TeamCard({
         </div>
 
         <div className="text-[10px] text-neutral-600 leading-relaxed">
-          파일을 카드에 드롭해도 됩니다 · jpg/png/webp · 최대 50MB · 자동으로
-          2048px 와이드 progressive JPEG 로 변환되어 메인에 즉시 반영됩니다.
+          파일을 카드에 드롭해도 됩니다 · jpg/png/webp · 최대 50MB · 선택 즉시{" "}
+          <code className="text-neutral-500">/images/refs/ready/&lt;팀&gt;.jpg</code>
+          로 저장되어 앱 프로덕션 화보가 바뀝니다.
         </div>
       </div>
     </div>

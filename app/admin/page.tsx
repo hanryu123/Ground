@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "GROUND · Admin",
-  description: "Curate the home screen poster — Master & Publish.",
+  description: "Curate the home screen poster — replace production assets in one step.",
 };
 
 export default async function AdminPage() {

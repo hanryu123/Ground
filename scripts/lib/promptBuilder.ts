@@ -15,10 +15,16 @@
 import type { TeamPromptMeta } from "../../config/posterPrompts";
 
 export type PromptMode = "morning" | "night-victory" | "night-default";
+export type PromptStylePreset =
+  | "balanced"
+  | "anime-boost"
+  | "uniform-realism";
 
 export type BuildPromptInput = {
   teamId: string;
   mode: PromptMode;
+  /** 스타일 프리셋 (기본 balanced) */
+  stylePreset?: PromptStylePreset;
   meta: TeamPromptMeta;
   /** 팀별 LoRA 트리거 — 학습 시 폴더명. 예: "ground.lg", "ground. KT". */
   triggerWord?: string;
@@ -173,6 +179,26 @@ const ILLUSTRATIVE_FRONT_STYLE = [
   "charged with electric energy streaks (blue and red)",
   "dynamic particle effects",
   "mysterious face shadowed by cap",
+].join(", ");
+
+/** 비현실/애니 방향 가속 프리셋 */
+const ANIME_BOOST_STYLE = [
+  "anime key visual sports illustration",
+  "stylized cel-shaded rendering with painterly ink edges",
+  "exaggerated foreshortening and extreme perspective",
+  "dynamic speed lines and kinetic arc trails",
+  "surreal lighting bloom and graphic novel contrast",
+  "impossible action exaggeration while preserving body continuity",
+].join(", ");
+
+/** 유니폼 현실 앵커 프리셋 (스타일은 유지하되 유니폼 정확도만 강화) */
+const UNIFORM_REALISM_STYLE = [
+  "authentic professional baseball jersey construction",
+  "accurate chest wordmark placement and lettering proportions",
+  "real stitched seams, piping, and embroidery details",
+  "fabric tension and natural wrinkles driven by body motion",
+  "realistic cap logo embroidery and brim structure",
+  "true-to-team color blocking and trim balance",
 ].join(", ");
 
 /**
@@ -375,6 +401,7 @@ export const NEGATIVE_PROMPT = [
 
 export function buildPrompt(input: BuildPromptInput): string {
   const { meta, mode, triggerWord, masterTrigger, starterName } = input;
+  const stylePreset = input.stylePreset ?? "balanced";
   const colorPalette = meta.secondaryColor
     ? `${meta.primaryColor} and ${meta.secondaryColor}`
     : meta.primaryColor;
@@ -390,6 +417,12 @@ export function buildPrompt(input: BuildPromptInput): string {
       ].filter((t): t is string => Boolean(t && t.length))
     )
   );
+  const stylePresetBlock =
+    stylePreset === "anime-boost"
+      ? ANIME_BOOST_STYLE
+      : stylePreset === "uniform-realism"
+        ? UNIFORM_REALISM_STYLE
+        : "";
 
   return [
     // 1) 트리거 군집 — master + team + mode-action (LoRA 토큰 가중치 최우선)
@@ -424,6 +457,7 @@ export function buildPrompt(input: BuildPromptInput): string {
     meta.keywords.join(", "),
     MOOD_BY_MODE[mode](meta.primaryColor),
     // 10) 스타일 / 구도
+    stylePresetBlock,
     BASE_STYLE,
     COMP_STYLE,
     // 11) 안전 가드 — 인물 메인 + 동물은 배경 only (전부 양성문으로 표현)

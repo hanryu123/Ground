@@ -8,6 +8,8 @@
  * 추후 KBO 결과 API 연결 시 PAST_GAMES 만 fetch 결과로 교체하면 된다 (인터페이스 동일).
  */
 
+import { findTeam } from "@/lib/teams";
+
 export type GameResult = {
   awayScore: number;
   homeScore: number;
@@ -32,6 +34,8 @@ export type Game = {
   awayPitcher: string;
   /** 경기가 종료된 경우에만 존재. 미경기/예정엔 undefined. */
   result?: GameResult;
+  /** 종료 경기 하이라이트(유튜브 등). 없으면 UI에서 숨김. */
+  highlightUrl?: string;
 };
 
 // ───────────────────────────────────────────────────────────────────────
@@ -167,6 +171,29 @@ function djb2(s: string): number {
   return Math.abs(h);
 }
 
+/**
+ * 공식 영상 ID가 없을 때 — 유튜브 **검색**으로 연결 (가짜 watch?v= 링크는 영상 없음).
+ * 날짜·원정·홈 약칭으로 쿼리를 고정해 같은 경기면 항상 같은 검색 URL.
+ */
+export function youtubeKboHighlightSearchUrl(
+  game: Pick<Game, "date" | "awayId" | "homeId">
+): string {
+  const away = findTeam(game.awayId).short;
+  const home = findTeam(game.homeId).short;
+  const q = `KBO ${game.date} ${away} ${home} 하이라이트`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+}
+
+/**
+ * 스케줄 등에서 쓰는 종료 경기 하이라이트 링크 — 현재는 유튜브 검색(위 함수와 동일).
+ * 나중에 네이버/유튜브 고정 VOD URL 필드가 생기면 그 값을 우선 쓰고, 없을 때만 이걸 붙이면 된다.
+ */
+export function highlightUrlForFinishedGame(
+  game: Pick<Game, "date" | "awayId" | "homeId">
+): string {
+  return youtubeKboHighlightSearchUrl(game);
+}
+
 /** UTC 기준 ISO 날짜를 일자 단위로 이동 (시간대 영향 없음) */
 function shiftIsoDate(iso: string, deltaDays: number): string {
   const d = new Date(iso + "T00:00:00Z");
@@ -236,6 +263,11 @@ function buildPastGames(): Game[] {
           winningPitcher,
           losingPitcher,
         },
+        highlightUrl: youtubeKboHighlightSearchUrl({
+          date,
+          awayId: away,
+          homeId: home,
+        }),
       });
     });
   }

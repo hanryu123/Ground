@@ -30,8 +30,10 @@ export default function RootLayout({
           풀스크린 팀 선택 화면이 우선된다.
         */}
         <OnboardingGate>
-          <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-black">
-            <main className="flex-1 pb-24">{children}</main>
+          <div className="mx-auto flex h-dvh max-h-dvh min-h-0 w-full max-w-md flex-col overflow-hidden bg-black">
+            <main className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24">
+              {children}
+            </main>
             <BottomNav />
           </div>
         </OnboardingGate>

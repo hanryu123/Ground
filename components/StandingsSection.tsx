@@ -9,16 +9,13 @@ import {
   formatGamesBehind,
   type StandingRow,
 } from "@/config/standings";
-import LogoImage from "./LogoImage";
-
 const ease = [0.22, 1, 0.36, 1] as const;
 
 /**
- * 그리드 컬럼: 순위(20) · 로고(28) · 팀명(1fr) · 승(28) · 패(28) · 무(24) · 승률(46) · 게임차(40)
- *  - 한글 헤더("승/패/무")가 뭉치지 않도록 분리 컬럼.
- *  - 게임차는 "1.5" / "0" 같이 문자열 폭이 균일하지 않으니 우정렬 + 충분한 폭.
+ * 그리드 컬럼: 순위(20) · 팀명(1fr) · 승(28) · 패(28) · 무(24) · 승률(46) · 게임차(40)
+ *  - 로고 없이 팀 약칭(한글/영문)만 표기.
  */
-const STANDINGS_GRID = "20px 28px 1fr 28px 28px 24px 46px 40px";
+const STANDINGS_GRID = "20px 1fr 28px 28px 24px 46px 40px";
 
 type Props = {
   /** 응원팀 id — 행 하이라이트 (acccent tint + bold) */
@@ -80,7 +77,6 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
         }}
       >
         <span className="text-center">순위</span>
-        <span />
         <span>팀</span>
         <span className="text-right">승</span>
         <span className="text-right">패</span>
@@ -180,31 +176,15 @@ function Row({
           {row.rank}
         </span>
 
-        {/* 로고 */}
-        <span className="flex h-7 w-7 items-center justify-center">
-          <LogoImage
-            teamId={row.teamId}
-            alt={t.nameEn}
-            size={28}
-            priority
-            className="h-7 w-7"
-            style={{
-              filter: isMe
-                ? `drop-shadow(0 0 6px ${t.accent}88)`
-                : "drop-shadow(0 1px 2px rgba(0,0,0,0.4))",
-            }}
-          />
-        </span>
-
-        {/* 팀명 */}
+        {/* 팀명 (로고 대신 텍스트만) */}
         <span
           className="min-w-0 truncate"
           style={{
             fontFamily: NUM_FONT,
             fontWeight: isMe ? 800 : 600,
-            fontSize: 13.5,
-            letterSpacing: "-0.005em",
-            color: isMe ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.85)",
+            fontSize: 14,
+            letterSpacing: "-0.02em",
+            color: isMe ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.88)",
           }}
         >
           {t.short}
@@ -289,8 +269,7 @@ function SkeletonList() {
             style={{ gridTemplateColumns: STANDINGS_GRID }}
           >
             <ShimmerBar w={10} h={10} className="mx-auto rounded-sm" />
-            <ShimmerBar w={24} h={24} className="rounded-full" />
-            <ShimmerBar w={`${50 + ((i * 7) % 30)}%`} h={11} className="rounded" />
+            <ShimmerBar w={`${48 + ((i * 7) % 28)}%`} h={12} className="rounded" />
             <ShimmerBar w={18} h={10} className="ml-auto rounded" />
             <ShimmerBar w={18} h={10} className="ml-auto rounded" />
             <ShimmerBar w={14} h={10} className="ml-auto rounded" />

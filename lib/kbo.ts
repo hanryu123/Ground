@@ -10,7 +10,12 @@
  *    클라이언트는 /api/kbo/today 또는 /api/kbo/standings 호출.
  */
 
-import { TODAY_GAMES, type Game, type GameResult } from "@/lib/games";
+import {
+  TODAY_GAMES,
+  highlightUrlForFinishedGame,
+  type Game,
+  type GameResult,
+} from "@/lib/games";
 import { STANDINGS, type StandingRow } from "@/config/standings";
 
 const NAVER_BASE = "https://api-gw.sports.naver.com";
@@ -304,6 +309,14 @@ export type ScheduleBundle = {
   fallback: boolean;
 };
 
+/** 스케줄 API에 하이라이트 필드가 없어도, 종료 경기엔 결정론적 유튜브 형식 URL 부여 */
+function withFinishedGameHighlights(games: LiveGame[]): LiveGame[] {
+  return games.map((g) => {
+    if (!g.result || g.highlightUrl) return g;
+    return { ...g, highlightUrl: highlightUrlForFinishedGame(g) };
+  });
+}
+
 /**
  * Schedule 탭용 통합 fetch — D-7 ~ D+6 한 방.
  *  - 1차: 네이버 range 쿼리 (단일 호출, size=200 으로 14일치 ≈ 70경기 커버)
@@ -339,10 +352,10 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
     // 라이브가 살아있는 한 빈 날(월요일·휴식일)은 빈 배열로 정직하게 반환.
     return {
       date: base,
-      past: pastEnriched,
-      today: today_,
-      tomorrow,
-      upcoming,
+      past: withFinishedGameHighlights(pastEnriched),
+      today: withFinishedGameHighlights(today_),
+      tomorrow: withFinishedGameHighlights(tomorrow),
+      upcoming: withFinishedGameHighlights(upcoming),
       fallback: false,
     };
   } catch (err) {

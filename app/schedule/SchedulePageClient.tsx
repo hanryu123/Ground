@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronUp, Play } from "lucide-react";
 import {
   PAST_GAMES,
   TODAY_GAMES,
@@ -340,9 +340,12 @@ function GameRow({
           </span>
 
           {result && (
-            <ResultBadge
-              winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"}
-            />
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5 self-baseline">
+              <ResultBadge
+                winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"}
+              />
+              <HighlightLink url={game.highlightUrl} muted={muted} />
+            </div>
           )}
         </div>
 
@@ -421,7 +424,7 @@ function ResultBadge({
   const label = winnerSide === "draw" ? "DRAW" : "FT";
   return (
     <span
-      className="ml-auto rounded-full px-2 py-[2px] text-[8.5px] uppercase"
+      className="rounded-full px-2 py-[2px] text-[8.5px] uppercase"
       style={{
         fontWeight: 700,
         letterSpacing: "0.24em",
@@ -431,5 +434,42 @@ function ResultBadge({
     >
       {label}
     </span>
+  );
+}
+
+/** 유튜브 하이라이트 — 빨간 브랜드 없음, Play + HIGHLIGHT 만 */
+function HighlightLink({
+  url,
+  muted,
+}: {
+  url?: string;
+  muted?: boolean;
+}) {
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={[
+        "inline-flex items-center gap-1.5 bg-transparent",
+        "text-[8px] font-medium uppercase tracking-[0.28em]",
+        "transition-colors duration-200 ease-out",
+        "focus-visible:rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-white/25",
+        muted ? "text-white/40 hover:text-white" : "text-white/50 hover:text-white",
+      ].join(" ")}
+      style={{
+        fontFamily:
+          'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      }}
+    >
+      <Play
+        size={11}
+        strokeWidth={1.15}
+        className="shrink-0 opacity-90"
+        aria-hidden
+      />
+      <span>HIGHLIGHT</span>
+    </a>
   );
 }
