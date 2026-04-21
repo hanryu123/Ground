@@ -13,6 +13,13 @@ import LogoImage from "./LogoImage";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+/**
+ * 그리드 컬럼: 순위(20) · 로고(28) · 팀명(1fr) · 승(28) · 패(28) · 무(24) · 승률(46) · 게임차(40)
+ *  - 한글 헤더("승/패/무")가 뭉치지 않도록 분리 컬럼.
+ *  - 게임차는 "1.5" / "0" 같이 문자열 폭이 균일하지 않으니 우정렬 + 충분한 폭.
+ */
+const STANDINGS_GRID = "20px 28px 1fr 28px 28px 24px 46px 40px";
+
 type Props = {
   /** 응원팀 id — 행 하이라이트 (acccent tint + bold) */
   myTeamId: string;
@@ -64,20 +71,22 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
         </span>
       </div>
 
-      {/* ── 컬럼 가이드 (얇은 텍스트만) ── */}
+      {/* ── 컬럼 가이드 (한글 약식) ── */}
       <div
-        className="mb-2 grid items-baseline gap-2 px-3 text-[9.5px] uppercase tracking-[0.28em] text-white/35"
+        className="mb-2 grid items-baseline gap-3 px-3 text-[10px] tracking-[0.05em] text-white/35"
         style={{
           fontWeight: 600,
-          gridTemplateColumns: "20px 28px 1fr 56px 44px 32px",
+          gridTemplateColumns: STANDINGS_GRID,
         }}
       >
-        <span className="text-center">#</span>
+        <span className="text-center">순위</span>
         <span />
-        <span>Team</span>
-        <span className="text-right tracking-[0.22em]">W·L·D</span>
-        <span className="text-right">PCT</span>
-        <span className="text-right">GB</span>
+        <span>팀</span>
+        <span className="text-right">승</span>
+        <span className="text-right">패</span>
+        <span className="text-right">무</span>
+        <span className="text-right">승률</span>
+        <span className="text-right">게임차</span>
       </div>
 
       {/* ── 본문 ── */}
@@ -101,7 +110,7 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
         className="mt-7 text-center text-[9.5px] uppercase tracking-[0.32em] text-white/25"
         style={{ fontWeight: 600 }}
       >
-        Updated · Mock data — 실시간 KBO 연동 예정
+        Source · Naver Sports
       </p>
     </section>
   );
@@ -130,13 +139,18 @@ function Row({
     [index]
   );
 
+  const NUM_FONT =
+    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif';
+  const numColor = isMe ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.62)";
+  const subNumColor = isMe ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.30)";
+
   return (
     <li>
       <motion.div
         {...enter}
-        className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
+        className="relative grid items-center gap-3 rounded-2xl px-3 py-3"
         style={{
-          gridTemplateColumns: "20px 28px 1fr 56px 44px 32px",
+          gridTemplateColumns: STANDINGS_GRID,
           backgroundColor: isMe ? `${t.accent}1a` : "transparent",
         }}
       >
@@ -156,8 +170,7 @@ function Row({
         <span
           className="text-center tabular-nums"
           style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+            fontFamily: NUM_FONT,
             fontWeight: isMe ? 800 : 600,
             fontSize: 13,
             color: isMe ? t.accent : "rgba(255,255,255,0.55)",
@@ -187,8 +200,7 @@ function Row({
         <span
           className="min-w-0 truncate"
           style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+            fontFamily: NUM_FONT,
             fontWeight: isMe ? 800 : 600,
             fontSize: 13.5,
             letterSpacing: "-0.005em",
@@ -198,66 +210,70 @@ function Row({
           {t.short}
         </span>
 
-        {/* W · L · D */}
-        <span
-          className="text-right tabular-nums"
-          style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-            fontSize: 12.5,
-            fontWeight: isMe ? 700 : 500,
-            color: isMe ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.62)",
-            letterSpacing: "-0.005em",
-          }}
-        >
-          {row.wins}
-          <span className="mx-0.5" style={{ color: "rgba(255,255,255,0.22)" }}>
-            ·
-          </span>
-          {row.losses}
-          {row.draws > 0 && (
-            <>
-              <span
-                className="mx-0.5"
-                style={{ color: "rgba(255,255,255,0.22)" }}
-              >
-                ·
-              </span>
-              {row.draws}
-            </>
-          )}
-        </span>
+        {/* 승 */}
+        <NumCell value={row.wins} color={numColor} bold={isMe} />
+        {/* 패 */}
+        <NumCell value={row.losses} color={numColor} bold={isMe} />
+        {/* 무 — 0 이면 한 단계 더 흐리게 */}
+        <NumCell
+          value={row.draws}
+          color={row.draws === 0 ? subNumColor : numColor}
+          bold={isMe}
+        />
 
         {/* 승률 */}
         <span
           className="text-right tabular-nums"
           style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-            fontSize: 12,
-            fontWeight: isMe ? 700 : 500,
-            color: isMe ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.5)",
+            fontFamily: NUM_FONT,
+            fontSize: 12.5,
+            fontWeight: isMe ? 700 : 600,
+            color: isMe ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.78)",
             letterSpacing: "0.005em",
           }}
         >
           {formatWinRate(row.winRate)}
         </span>
 
-        {/* GB */}
+        {/* 게임차 */}
         <span
           className="text-right tabular-nums"
           style={{
-            fontFamily:
-              '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-            fontSize: 11.5,
+            fontFamily: NUM_FONT,
+            fontSize: 12,
             fontWeight: 500,
-            color: isMe ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.32)",
+            color: isMe ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.42)",
           }}
         >
           {formatGamesBehind(row.gamesBehind)}
         </span>
       </motion.div>
     </li>
+  );
+}
+
+function NumCell({
+  value,
+  color,
+  bold,
+}: {
+  value: number;
+  color: string;
+  bold?: boolean;
+}) {
+  return (
+    <span
+      className="text-right tabular-nums"
+      style={{
+        fontFamily: '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
+        fontSize: 12.5,
+        fontWeight: bold ? 700 : 500,
+        color,
+        letterSpacing: "-0.005em",
+      }}
+    >
+      {value}
+    </span>
   );
 }
 
@@ -269,15 +285,17 @@ function SkeletonList() {
       {Array.from({ length: 10 }).map((_, i) => (
         <li key={i}>
           <div
-            className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
-            style={{ gridTemplateColumns: "20px 28px 1fr 56px 44px 32px" }}
+            className="relative grid items-center gap-3 rounded-2xl px-3 py-3"
+            style={{ gridTemplateColumns: STANDINGS_GRID }}
           >
             <ShimmerBar w={10} h={10} className="mx-auto rounded-sm" />
             <ShimmerBar w={24} h={24} className="rounded-full" />
             <ShimmerBar w={`${50 + ((i * 7) % 30)}%`} h={11} className="rounded" />
-            <ShimmerBar w={44} h={10} className="ml-auto rounded" />
+            <ShimmerBar w={18} h={10} className="ml-auto rounded" />
+            <ShimmerBar w={18} h={10} className="ml-auto rounded" />
+            <ShimmerBar w={14} h={10} className="ml-auto rounded" />
             <ShimmerBar w={32} h={10} className="ml-auto rounded" />
-            <ShimmerBar w={20} h={10} className="ml-auto rounded" />
+            <ShimmerBar w={24} h={10} className="ml-auto rounded" />
           </div>
         </li>
       ))}

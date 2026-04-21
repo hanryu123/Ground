@@ -8,6 +8,7 @@ import {
   TOMORROW_GAMES,
   type Game,
 } from "@/lib/games";
+const EMPTY_GAMES: Game[] = [];
 import { findTeam } from "@/lib/teams";
 import { useKboSchedule } from "@/lib/useKboSchedule";
 import { starterLabel, type LiveGame } from "@/lib/kbo";
@@ -17,8 +18,8 @@ type Section = {
   date: string;
   /** 화면 라벨 (예: "4월 18일 · 금") */
   dateLabel: string;
-  /** 상단 작은 뱃지 (PAST / TODAY / TOMORROW) */
-  badge: "PAST" | "TODAY" | "TOMORROW";
+  /** 상단 작은 뱃지 */
+  badge: "PAST" | "TODAY" | "TOMORROW" | "UPCOMING";
   /** 과거 일자 vs 오늘/미래 vs 오늘에 따라 톤 다르게 */
   tone: "past" | "today" | "future";
   /** Game 또는 LiveGame (LiveGame 은 status 필드 추가) */
@@ -65,6 +66,7 @@ export default function SchedulePage() {
     const sourcePast: (Game | LiveGame)[] = live?.past ?? PAST_GAMES;
     const sourceToday: (Game | LiveGame)[] = live?.today ?? TODAY_GAMES;
     const sourceTomorrow: (Game | LiveGame)[] = live?.tomorrow ?? TOMORROW_GAMES;
+    const sourceUpcoming: (Game | LiveGame)[] = live?.upcoming ?? EMPTY_GAMES;
 
     const past = groupByDate(sourcePast).map(
       ({ date, games }): Section => ({
@@ -108,8 +110,17 @@ export default function SchedulePage() {
         games,
       })
     );
+    const upcomingSections = groupByDate(sourceUpcoming).map(
+      ({ date, games }): Section => ({
+        date,
+        dateLabel: formatDateLabel(date),
+        badge: "UPCOMING",
+        tone: "future",
+        games,
+      })
+    );
 
-    return [...past, ...todaySections, ...tomorrowSections];
+    return [...past, ...todaySections, ...tomorrowSections, ...upcomingSections];
   }, [live]);
 
   // 페이지(window) 스크롤을 TODAY 섹션 상단으로 점프.
@@ -186,7 +197,7 @@ function DaySection({
       <div className="mb-5">
         <div className="mb-2 flex items-center gap-1.5 text-white/45">
           {section.badge === "PAST" && <ChevronUp size={12} strokeWidth={2.4} />}
-          {section.badge === "TOMORROW" && (
+          {(section.badge === "TOMORROW" || section.badge === "UPCOMING") && (
             <ChevronDown size={12} strokeWidth={2.4} />
           )}
           <span

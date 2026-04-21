@@ -145,8 +145,8 @@ export function formatWinRate(r: number): string {
     .padStart(3, "0")}`;
 }
 
-/** 게임차 표시 — 1위는 "-" */
+/** 게임차 표시 — 1위는 "—" (전각 대시), 0.5 단위까지. */
 export function formatGamesBehind(gb: number): string {
-  if (gb === 0) return "-";
-  return Number.isInteger(gb) ? `${gb}.0` : gb.toFixed(1);
+  if (gb <= 0) return "—";
+  return Number.isInteger(gb) ? `${gb}` : gb.toFixed(1);
 }

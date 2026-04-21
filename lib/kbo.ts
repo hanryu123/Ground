@@ -223,40 +223,43 @@ export type ScheduleBundle = {
   past: LiveGame[];
   /** 오늘 경기 */
   today: LiveGame[];
-  /** 내일 경기 */
+  /** 내일 경기 (D+1) */
   tomorrow: LiveGame[];
+  /** 모레 ~ D+6 (UI 에서 미래 일정 스크롤) */
+  upcoming: LiveGame[];
   /** 라이브 fetch 실패 시 true */
   fallback: boolean;
 };
 
 /**
- * Schedule 탭용 통합 fetch — D-7 ~ D+1 한 방.
- *  - 1차: 네이버 range 쿼리 (단일 호출로 9일치)
- *  - 실패: 정적 PAST/TODAY/TOMORROW 폴백 + fallback=true 표시
+ * Schedule 탭용 통합 fetch — D-7 ~ D+6 한 방.
+ *  - 1차: 네이버 range 쿼리 (단일 호출, size=200 으로 14일치 ≈ 70경기 커버)
+ *  - 실패: 정적 PAST/TODAY/TOMORROW 폴백 (upcoming 은 비움) + fallback=true
  */
 export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> {
   const base = today ?? todayKstDate();
   const from = addDaysKst(base, -7);
-  const to = addDaysKst(base, +1);
+  const to = addDaysKst(base, +6);
+  const tomorrowDate = addDaysKst(base, +1);
+  const sortByDateTime = (a: LiveGame, b: LiveGame) =>
+    a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date);
   try {
     const all = await fetchKboGamesRange(from, to);
-    const past = all
-      .filter((g) => g.date < base)
-      .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
+    const past = all.filter((g) => g.date < base).sort(sortByDateTime);
     const today_ = all
       .filter((g) => g.date === base)
       .sort((a, b) => a.time.localeCompare(b.time));
     const tomorrow = all
-      .filter((g) => g.date > base)
-      .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
-    // 라이브가 살아있는 한 today/tomorrow 가 비어있어도 그대로 빈 배열 반환.
-    // (월요일·올스타 휴식 등 정상적으로 경기가 없는 날을 정적 mock 으로 채우면
-    //  TODAY 뱃지가 stale 한 과거 날짜에 박혀서 anchor·라벨이 다 깨진다.)
+      .filter((g) => g.date === tomorrowDate)
+      .sort((a, b) => a.time.localeCompare(b.time));
+    const upcoming = all.filter((g) => g.date > tomorrowDate).sort(sortByDateTime);
+    // 라이브가 살아있는 한 빈 날(월요일·휴식일)은 빈 배열로 정직하게 반환.
     return {
       date: base,
       past,
       today: today_,
       tomorrow,
+      upcoming,
       fallback: false,
     };
   } catch (err) {
@@ -275,72 +278,150 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
       past: PAST_GAMES.map(stamp),
       today: TODAY_GAMES.map(stamp),
       tomorrow: TOMORROW_GAMES.map(stamp),
+      upcoming: [],
       fallback: true,
     };
   }
 }
 
 // ────────────────────────────────────────────────────────────────────
-// 네이버 어댑터 — 순위표
+// 순위표 — 시즌 전체 일정에서 직접 derive (네이버 ranking 엔드포인트가 404)
 // ────────────────────────────────────────────────────────────────────
 
-type NaverRankingRow = {
-  rank?: number;
-  teamCode?: string;
-  gameCount?: number;
-  win?: number;
-  lose?: number;
-  drawn?: number;
-  wra?: number;        // 승률 0~1
-  gameBehind?: number;
-  recentGameResult?: string; // "WLWLW"
+/**
+ * KBO 정규시즌 개막일 (KST). 시범경기를 제외하기 위한 기준.
+ *  - 매년 3월 말 개막. 2026 시즌은 3/22 개막 (네이버 일정 기준).
+ *  - 새 시즌엔 이 값만 갱신하면 됨.
+ */
+const KBO_SEASON_OPENER: Record<number, string> = {
+  2026: "2026-03-22",
 };
 
-function adaptNaverRanking(raw: NaverRankingRow): StandingRow | null {
-  const teamId = NAVER_TEAM_MAP[(raw.teamCode ?? "").toUpperCase()];
-  if (!teamId) return null;
-  const recent = (raw.recentGameResult ?? "").toUpperCase().slice(-5);
-  return {
-    rank: raw.rank ?? 0,
-    teamId,
-    games: raw.gameCount ?? 0,
-    wins: raw.win ?? 0,
-    losses: raw.lose ?? 0,
-    draws: raw.drawn ?? 0,
-    winRate: typeof raw.wra === "number" ? raw.wra : 0,
-    gamesBehind: typeof raw.gameBehind === "number" ? raw.gameBehind : 0,
-    streak: recent || "—",
-  };
+function seasonOpenerForYear(year: number): string {
+  return KBO_SEASON_OPENER[year] ?? `${year}-03-22`;
 }
 
-/** KBO 정규시즌 순위. 네이버 우선 → 실패 시 정적 STANDINGS 폴백. */
+/**
+ * 시즌 전체(1/1~12/31) 일정 → size=1000 한 방으로 가져옴 (KBO 시즌 ≈ 720경기).
+ * 5분 캐시.
+ */
+async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
+  const url =
+    `${NAVER_BASE}/schedule/games` +
+    `?fields=basic,statusInfo` +
+    `&upperCategoryId=kbaseball&categoryId=kbo` +
+    `&fromDate=${year}-01-01&toDate=${year}-12-31&size=1000`;
+  const res = await fetch(url, {
+    headers: {
+      "user-agent": UA,
+      accept: "application/json",
+      referer: "https://m.sports.naver.com/",
+    },
+    next: { revalidate: 300 },
+  });
+  if (!res.ok) throw new Error(`naver season HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    result?: { games?: NaverScheduleGame[] };
+  };
+  const raw = json?.result?.games ?? [];
+  const games = raw
+    .map((g) => adaptNaverGame(g, `${year}-01-01`))
+    .filter((g): g is LiveGame => Boolean(g));
+  return games;
+}
+
+/**
+ * 정규시즌 결과(RESULT) 만 필터링 → 팀별 W/L/D/streak 누적 → 순위 계산.
+ *  - 승률(winRate) = W / (W+L)  · 무승부 제외 (KBO 공식)
+ *  - 게임차(GB) = ((1위.W - 본인.W) + (본인.L - 1위.L)) / 2
+ *  - 정렬: 승률 desc → 승수 desc
+ *  - 최근 연속(streak): 최근 5경기 결과 문자열 (예: "WWLWW")
+ */
+function deriveStandingsFromGames(games: LiveGame[]): StandingRow[] {
+  type Stat = {
+    wins: number;
+    losses: number;
+    draws: number;
+    /** 시간순 결과 — 마지막 5개를 streak 로 노출 */
+    recent: ("W" | "L" | "D")[];
+  };
+  const stats = new Map<string, Stat>();
+  for (const teamId of Object.values(NAVER_TEAM_MAP)) {
+    if (!stats.has(teamId)) {
+      stats.set(teamId, { wins: 0, losses: 0, draws: 0, recent: [] });
+    }
+  }
+  // 시간 오름차순 — recent 가 자연스럽게 시간 순서
+  const finished = games
+    .filter((g) => g.status === "RESULT" && g.result)
+    .sort((a, b) =>
+      a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)
+    );
+  for (const g of finished) {
+    const r = g.result!;
+    const home = stats.get(g.homeId);
+    const away = stats.get(g.awayId);
+    if (!home || !away) continue;
+    if (r.winnerId == null) {
+      home.draws++;
+      away.draws++;
+      home.recent.push("D");
+      away.recent.push("D");
+    } else if (r.winnerId === g.homeId) {
+      home.wins++;
+      away.losses++;
+      home.recent.push("W");
+      away.recent.push("L");
+    } else {
+      away.wins++;
+      home.losses++;
+      away.recent.push("W");
+      home.recent.push("L");
+    }
+  }
+  const rows: StandingRow[] = [];
+  for (const [teamId, s] of stats.entries()) {
+    const decided = s.wins + s.losses;
+    const winRate = decided === 0 ? 0 : s.wins / decided;
+    rows.push({
+      rank: 0,
+      teamId,
+      games: s.wins + s.losses + s.draws,
+      wins: s.wins,
+      losses: s.losses,
+      draws: s.draws,
+      winRate,
+      gamesBehind: 0,
+      streak: s.recent.slice(-5).join("") || "—",
+    });
+  }
+  rows.sort((a, b) => {
+    if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+    return b.wins - a.wins;
+  });
+  rows.forEach((r, i) => (r.rank = i + 1));
+  if (rows.length > 0) {
+    const top = rows[0];
+    for (const r of rows) {
+      r.gamesBehind = (top.wins - r.wins + (r.losses - top.losses)) / 2;
+    }
+  }
+  return rows;
+}
+
+/** KBO 정규시즌 순위. 네이버 schedule 일정 → 결과 누적 derive. 실패 시 정적 STANDINGS. */
 export async function fetchKboStandings(): Promise<StandingRow[]> {
   try {
-    const seasonCode = String(new Date().getFullYear());
-    const url =
-      `${NAVER_BASE}/team/rankings` +
-      `?categoryId=kbo&seasonCode=${seasonCode}&type=jjasica`;
-    const res = await fetch(url, {
-      headers: {
-        "user-agent": UA,
-        accept: "application/json",
-        referer: "https://m.sports.naver.com/",
-      },
-      next: { revalidate: 300 },
-    });
-    if (!res.ok) throw new Error(`naver standings HTTP ${res.status}`);
-    const json = (await res.json()) as {
-      result?: { teams?: NaverRankingRow[] };
-    };
-    const rows = (json?.result?.teams ?? [])
-      .map(adaptNaverRanking)
-      .filter((r): r is StandingRow => Boolean(r));
-    if (rows.length === 0) throw new Error("naver standings returned 0");
-    rows.sort((a, b) => a.rank - b.rank);
+    const year = parseInt(todayKstDate().slice(0, 4), 10);
+    const all = await fetchKboSeasonGames(year);
+    const opener = seasonOpenerForYear(year);
+    const regular = all.filter((g) => g.date >= opener);
+    const rows = deriveStandingsFromGames(regular);
+    if (rows.length === 0) throw new Error("derived 0 rows");
     return rows;
   } catch (err) {
     console.warn(
-      `[kbo] standings fetch failed (${(err as Error).message}); falling back to static STANDINGS`
+      `[kbo] standings derive failed (${(err as Error).message}); falling back to static STANDINGS`
     );
     return STANDINGS;
   }
