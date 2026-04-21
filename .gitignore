@@ -16,6 +16,11 @@ out
 raw/
 dataset/
 dataset.zip
+ground_dataset.zip
+public/images/ground_dataset.zip
 *.py
 players.csv
 caption_config.json
+
+# tsc 증분 빌드 캐시
+tsconfig.tsbuildinfo

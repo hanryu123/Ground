@@ -95,18 +95,53 @@ const COMP_STYLE = [
 ].join(", ");
 
 /**
- * 액션 컷 강제 — "증명사진 퇴출". 정적 스튜디오 포즈를 구조적으로 차단.
+ * SHADOW_CORE — 사장님 2차 학습 데이터의 핵심 시각 코드.
+ *  프롬프트 최앞단(트리거 직후)에 박아 LoRA 가 학습한 "묵직한 음영" 토큰을
+ *  무조건 점화시킨다. 이게 빠지면 flux 가 종종 밝고 평탄한 노출로 회귀.
+ *
+ *  ※ 모든 모드에 공통 적용. 기존 POSE_STYLE / MOOD 보다 우선순위 높음.
+ */
+const SHADOW_CORE = [
+  "face heavily obscured by deep shadow",
+  "cinematic rim lighting",
+  "dark mysterious silhouette",
+  "low-key lighting",
+  "moody chiaroscuro",
+  "high contrast cinematic shadow language",
+].join(", ");
+
+/**
+ * 액션 컷 강제 — "증명사진 + 멈춰있는 포즈" 동시 퇴출.
+ *  - extremely dynamic action pose, diving, mid-swing, powerful motion 풀세트
  *  - 투구 / 타격 / 주루 / 수비 중 한 가지의 mid-action 으로만 그리게 유도
  *  - 모든 액션은 자연스럽게 얼굴을 옆/아래/등으로 돌리는 구도와 결합
  */
 const ACTION_STYLE = [
-  "captured in dynamic mid-action sports moment",
+  "extremely dynamic action pose",
+  "diving",
+  "mid-swing",
+  "powerful motion",
+  "captured in explosive mid-action sports moment",
   "either a powerful pitching wind-up with body torqued and face turned toward the catcher away from the camera",
   "or mid-swing batting with hips rotated and the cap brim casting a deep shadow over his eyes",
   "or sprinting toward base photographed from behind kicking up dust and dirt",
   "or a low-crouch fielding stance from rear three-quarter angle",
+  "or a full-body horizontal diving catch with arms outstretched",
   "motion blur on the bat or glove suggesting kinetic energy",
-  "absolutely never a static studio pose, never facing the camera, never a portrait crop",
+  "absolutely never a static studio pose, never standing still, never facing the camera, never a portrait crop",
+].join(", ");
+
+/**
+ * 환경 강제 — 흰 배경 / 스튜디오 컷 구조적 차단.
+ *  스타디움 또는 야구장 환경이 반드시 배경에 들어가도록 유도.
+ */
+const DYNAMIC_ENV = [
+  "dramatic stadium background",
+  "atmospheric environment",
+  "real baseball stadium with crowd silhouettes and floodlights",
+  "dirt infield and outfield grass visible",
+  "swirling dust, stadium haze, and volumetric light shafts",
+  "absolutely no white background, no plain backdrop",
 ].join(", ");
 
 /**
@@ -169,13 +204,31 @@ const MOOD_BY_MODE: Record<PromptMode, (color: string) => string> = {
  * 이 패턴을 잘 따라준다. (사장님 면접사진 퇴출 오더 반영)
  */
 const BAKED_NEGATIVES = [
+  // ── (NEW) 사람 증발 버그 — 유니폼만 둥둥 떠다니는 hallucination 차단
+  "absolutely no headless figure",
+  "no invisible person",
+  "no empty uniform",
+  "no floating clothes without a body",
+  "no ghost-like transparent body",
+  // ── (NEW) 화이트 배경 / 스튜디오 컷 퇴출
+  "no white background",
+  "no plain background",
+  "no solid color background",
+  "no studio shot",
+  "no seamless paper backdrop",
+  // ── (NEW) 증명사진 / 정적 포즈 퇴출 (강도 ↑)
+  "no clear face",
+  "no bright fully-lit face",
+  "no looking at camera",
+  "no passport photo",
+  "no headshot",
+  "no standing still",
+  "no static pose",
+  // ── 기존 가드 (얼굴 노출 / 캐릭터 / 텍스트)
   "absolutely no front-facing portrait shot",
-  "absolutely no headshot composition",
-  "absolutely no passport-photo framing",
-  "no clear bright fully-lit face",
+  "absolutely no portrait crop framing",
   "no eye contact with the camera",
   "no smiling toward the camera",
-  "no static studio backdrop",
   "no plastic CGI render look",
   "no cartoon style",
   "no animal head on a human body",
@@ -192,6 +245,27 @@ const BAKED_NEGATIVES = [
  *  - 텍스트 / 로고 / 품질 이슈 방지
  */
 export const NEGATIVE_PROMPT = [
+  // 사람 증발 / 유니폼만 둥둥 (사장님 2차 오더)
+  "headless",
+  "invisible person",
+  "empty uniform",
+  "floating clothes",
+  "ghost body",
+  "missing person",
+  // 화이트 배경 / 스튜디오 컷 (사장님 2차 오더)
+  "white background",
+  "plain background",
+  "solid color background",
+  "studio shot",
+  "seamless backdrop",
+  // 증명사진 / 정적 포즈 (사장님 2차 오더)
+  "clear face",
+  "bright face",
+  "looking at camera",
+  "passport photo",
+  "headshot",
+  "standing still",
+  "static pose",
   // 사람-동물 hybrid 방지
   "anthropomorphic",
   "furry",
@@ -264,36 +338,41 @@ export function buildPrompt(input: BuildPromptInput): string {
   );
 
   return [
-    // 1) 트리거 군집 — master + team + mode-action
+    // 1) 트리거 군집 — master + team + mode-action (LoRA 토큰 가중치 최우선)
     ...triggers,
-    // 2) 액션 컷 강제 — 증명사진 차단 (사장님 오더)
+    // 2) SHADOW_CORE — 2차 학습 데이터의 핵심 시각 코드 (사장님 최우선 오더)
+    //    얼굴 음영·림라이트·실루엣을 프롬프트 앞단에 박아 분위기 강제 점화.
+    SHADOW_CORE,
+    // 3) 액션 컷 강제 — 증명사진 + 정적 포즈 동시 차단
     ACTION_STYLE,
-    // 3) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head 차단)
-    "a real human male professional baseball athlete",
-    "realistic human anatomy, fully human body and skin",
-    // 3.1) 선발 투수 — 라이브 KBO 데이터 주입. 데이터 없으면 자동 폴백 토큰.
+    // 4) 환경 강제 — 흰 배경 / 스튜디오 컷 구조적 차단
+    DYNAMIC_ENV,
+    // 5) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head + headless 차단)
+    "a real human male professional baseball athlete with a clearly visible body, head and arms",
+    "realistic human anatomy, fully human body and skin, head firmly attached to the body",
+    // 5.1) 선발 투수 — 라이브 KBO 데이터 주입. 데이터 없으면 자동 폴백 토큰.
     starterToken(starterName),
-    // 4) 유니폼 시각 지문 — 팀 식별의 핵심 (LoRA + 텍스트 양면 보강)
+    // 6) 유니폼 시각 지문 — 팀 식별의 핵심 (LoRA + 텍스트 양면 보강)
     `wearing the official team uniform: ${meta.uniformSignature}`,
     "uniform colors and chest wordmark are sharp, saturated and clearly readable as the team's identity",
-    // 5) 포즈 / 카메라 — 얼굴은 가리고 유니폼이 주인공
+    // 7) 포즈 / 카메라 — 얼굴은 가리고 유니폼이 주인공
     POSE_STYLE,
-    // 6) 팀 정체성 — 인물 뒤로 빠지는 aura + artistic device (동물 직접 묘사 X)
+    // 8) 팀 정체성 — 인물 뒤로 빠지는 aura + artistic device (동물 직접 묘사 X)
     `with a subtle cinematic aura of ${meta.spirit} in the background`,
     meta.motif,
-    // 7) 컨텍스트 (위치 / 분위기)
+    // 9) 컨텍스트 (위치 / 분위기)
     `set in ${meta.city}`,
     "KBO baseball team identity",
     `team color palette: ${colorPalette}`,
     meta.keywords.join(", "),
     MOOD_BY_MODE[mode](meta.primaryColor),
-    // 8) 스타일 / 구도
+    // 10) 스타일 / 구도
     BASE_STYLE,
     COMP_STYLE,
-    // 9) 안전 가드 — 인물 메인 + 동물은 배경 only
-    "the player's uniform is the visual focal point, his face is hidden by shadow or pose",
+    // 11) 안전 가드 — 인물 메인 + 동물은 배경 only
+    "the player's uniform is the visual focal point, his face is hidden by shadow or pose, but his body is solid and complete",
     "no animal creatures in the foreground, only their atmospheric silhouettes in the background smoke or stadium lighting",
-    // 10) 베이크된 네거티브 — flux-dev 가 negative_prompt 미지원이라 prompt 안에 박음
+    // 12) 베이크된 네거티브 — flux-dev 가 negative_prompt 미지원이라 prompt 안에 박음
     BAKED_NEGATIVES,
   ]
     .filter(Boolean)

@@ -10,7 +10,9 @@
     "posters:generate": "tsx scripts/generate-posters.ts",
     "posters:morning": "MODE=morning tsx scripts/generate-posters.ts",
     "posters:night": "MODE=night tsx scripts/generate-posters.ts",
-    "posters:dry": "DRY_RUN=1 MODE=morning tsx scripts/generate-posters.ts"
+    "posters:dry": "DRY_RUN=1 MODE=morning tsx scripts/generate-posters.ts",
+    "train:lora-v2": "tsx scripts/trainLoraV2.ts",
+    "train:lora-v2:dry": "DRY_RUN=1 tsx scripts/trainLoraV2.ts"
   },
   "dependencies": {
     "framer-motion": "^11.18.0",
