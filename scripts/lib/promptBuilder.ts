@@ -59,30 +59,34 @@ const MODE_TRIGGERS: Record<PromptMode, string[]> = {
 };
 
 /**
- * 2026 프리미엄 화보 — flux-dev 가 자연어에 강하게 반응하므로
- * 풀 문장 + 키워드 양쪽으로 detail 을 강제한다. SDXL 의 단어 나열형보다
- * flux 는 진짜 사진 metadata 풍 묘사("shot on…", "lit by…") 에 더 잘 반응.
+ * 2026 프리미엄 화보 — 사장님 결정으로 photo-realism → "에너지 폭발 일러스트
+ * 히어로 포스터" 로 스타일 피벗. ground_05 학습 캡션
+ * ("abstract red and blue light streaks conveying intense motion and energy,
+ * cinematic sports illustration style") 의 어휘를 그대로 차용해 LoRA 가
+ * 학습한 일러스트 시각 코드를 정확히 점화시킨다.
+ *
+ *  ※ 의도적으로 "photorealistic / kodak portra / Phase One / 35mm film grain"
+ *    같은 photoreal 강제 토큰을 전부 제거. flux T5 인코더는 등장한 토큰을
+ *    그대로 컨디셔닝에 흡수하므로, 피벗 후엔 단어 자체가 prompt 에 등장하면
+ *    안 된다 ("photoreal" 단어 한 줄이 나머지 일러스트 가중치를 깎아먹음).
  */
 const BASE_STYLE = [
-  // 핵심 quality 키워드 (사장님 오더 반영)
-  "hyper-realistic",
-  "highly detailed",
-  "8k resolution",
-  "sharp focus",
-  "professional sports illustrated cover photography",
-  "extremely intricate textures",
-  "ultra detailed fine fabric stitching on the jersey",
-  "skin pore microdetail",
-  "individual eyelash and stubble detail",
-  // 카메라 / 조명 (할리우드 영화 톤)
-  "cinematic lighting",
-  "dramatic rim backlight wrapping his shoulders",
-  "hollywood film contrast",
-  "deep blacks and clean highlights",
-  "shallow depth of field with creamy bokeh",
-  "shot on Phase One IQ4 medium format with Schneider 80mm f/1.4",
-  "kodak portra 400 film color science",
-  "fine 35mm film grain",
+  // 핵심 스타일 정의 (사장님 오더 — image_13.png 톤)
+  "dynamic illustrative sports art",
+  "stylized hero poster style",
+  "cinematic sports illustration style",
+  "charged with electric energy streaks in vivid blue and red conveying intense motion and energy",
+  "dynamic particle effects swirling around the player",
+  "abstract red and blue light streaks trailing behind his motion",
+  "rich painterly depth and volumetric shading on the rendered figure",
+  "three-dimensional sculpted body rendering with strong form lighting",
+  "highly detailed illustrative texture on the uniform fabric and team cap",
+  "8k resolution sharp linework",
+  // 무드 / 색감
+  "mysterious mood, heroic and intense atmosphere",
+  "dramatic rim backlight wrapping his shoulders and arms",
+  "deep blacks and saturated highlights",
+  "high-contrast cinematic chiaroscuro shading",
 ].join(", ");
 
 const COMP_STYLE = [
@@ -122,6 +126,9 @@ const SHADOW_CORE = [
  */
 const ACTION_STYLE = [
   "extremely dynamic action pose",
+  "extremely dynamic physiology",
+  "explosive motion",
+  "follow-through stance after a powerful swing or pitch",
   "diving",
   "mid-swing",
   "powerful motion",
@@ -134,6 +141,34 @@ const ACTION_STYLE = [
   "or a full-body horizontal diving catch with arms outstretched",
   "motion blur on the bat or glove suggesting kinetic energy",
   "every limb caught in mid-action",
+].join(", ");
+
+/**
+ * BODY_PRESENCE — "투명 인간 / 빈 유니폼" hallucination 의 양성형 카운터.
+ *
+ *  사장님 3차 오더: 가끔 사람 없이 유니폼만 둥둥 뜨는 ghost-uniform 버그가
+ *  나옴. flux 가 negative prompt 를 못 받기 때문에 "empty uniform / floating
+ *  clothes" 같은 단어를 prompt 에 넣으면 오히려 그 컨셉이 강화됨.
+ *  → 반대 의미("실재하는 근육질 신체가 유니폼 안에 명확히 존재한다")를
+ *    가장 앞단(트리거+SHADOW_CORE 직후)에 박아 신체 존재를 강제 점화.
+ */
+const BODY_PRESENCE = [
+  "a single complete athletic male baseball player",
+  "dynamic athletic body physique",
+  "muscular body definition under uniform",
+  "broad shoulders, defined chest, strong arms and powerful legs visible inside the jersey and pants",
+  "the uniform is worn by a real, physically present athlete with clear human proportions",
+  "head, neck, torso, arms and legs all rendered as one continuous solid figure",
+  "human jawline visible just beneath the cap brim shadow",
+  "weight, mass and balance of a living athlete in motion",
+].join(", ");
+
+/** 스타일 전환 키워드 — 요청한 문구를 프롬프트 앞단에 고정 */
+const ILLUSTRATIVE_FRONT_STYLE = [
+  "dynamic illustrative hero sports art",
+  "charged with electric energy streaks",
+  "particle effects",
+  "mysterious face shadowed by cap",
 ].join(", ");
 
 /**
@@ -179,7 +214,7 @@ const POSE_STYLE = [
   "head turned away from the camera or tilted down",
   "broad shoulders and back fully visible",
   "uniform jersey and team cap clearly the focal point",
-  "uniform fabric texture, stitching detail, vivid team color saturation",
+  "vivid team color saturation across the jersey, painterly fabric folds",
   "low-key cinematic lighting, mysterious moody atmosphere",
 ].join(", ");
 
@@ -224,21 +259,21 @@ const MOOD_BY_MODE: Record<PromptMode, (color: string) => string> = {
  *     아예 등장시키지 않는 게 핵심 룰.
  */
 const POSITIVE_GUARDS = [
-  // 사람 증발 방지 — 빈 유니폼 hallucination 의 반대 묘사
+  // 사람 증발 방지 — empty uniform / floating clothes / garment only / no human form
+  //                및 headless/disembodied/torso-only 계열의 양성형 카운터
   "single complete human athletic body fully present in the center of the frame",
-  "broad muscular shoulders and torso solidly attached to the visible head and neck",
-  "the player's entire body from head to mid-thigh is rendered as one continuous figure",
-  // 정면 헤드샷 / 증명사진 회피 — "어떤 카메라 각도냐" 양성 묘사
-  "framed as an action sports photograph captured from behind or side",
-  "three-quarter back angle composition",
-  "the figure is part of a wider environmental shot, not a tight head crop",
-  // 동물 hybrid 회피 — "사람 얼굴 / 사람 피부" 양성 묘사
-  "natural human skin texture on his face and arms",
-  "human jawline and human ear visible under the cap",
-  // 마스코트 / 카툰 회피 — "사실적 사진" 양성 묘사
-  "photorealistic baseball uniform fabric, real cotton-polyester twill",
-  "captured by a professional sports photographer with a real camera",
-  // 손/팔 hallucination 회피
+  "the player's full body from head to legs is rendered as one continuous solid human figure",
+  "uniform is clearly worn by a physically present athlete, not a hollow garment",
+  "defined neck connects the head naturally to the torso and shoulders",
+  "both arms and both legs are visible with anatomically coherent human joints",
+  "clear human silhouette with natural weight and balance in motion",
+  // 인물 중심 구도 강제
+  "framed as a full-body or three-quarter-body action shot, not a cropped torso portrait",
+  "the figure occupies the visual center as the main subject in motion",
+  // 얼굴 무드 + 스타일 유지
+  "mysterious face shadowed by cap brim in dramatic low-key lighting",
+  "dynamic illustrative hero sports art with charged electric energy streaks and particle effects",
+  // 손/팔 hallucination 보정
   "five fingers per hand, anatomically correct human arms holding the bat or glove",
 ].join(", ");
 
@@ -252,8 +287,15 @@ export const NEGATIVE_PROMPT = [
   // 사람 증발 / 유니폼만 둥둥 (사장님 2차 오더)
   "headless",
   "invisible person",
+  "disembodied",
   "empty uniform",
   "floating clothes",
+  "garment only",
+  "no human form",
+  "hollow",
+  "mannequin",
+  "torso only",
+  "no body",
   "ghost body",
   "missing person",
   // 화이트 배경 / 스튜디오 컷 (사장님 2차 오더)
@@ -265,11 +307,13 @@ export const NEGATIVE_PROMPT = [
   // 증명사진 / 정적 포즈 (사장님 2차 오더)
   "clear face",
   "bright face",
+  "plain photo",
   "looking at camera",
   "passport photo",
   "headshot",
   "standing still",
   "static pose",
+  "flat style",
   // 사람-동물 hybrid 방지
   "anthropomorphic",
   "furry",
@@ -344,17 +388,20 @@ export function buildPrompt(input: BuildPromptInput): string {
   return [
     // 1) 트리거 군집 — master + team + mode-action (LoRA 토큰 가중치 최우선)
     ...triggers,
-    // 2) SHADOW_CORE — 2차 학습 데이터의 핵심 시각 코드 (사장님 최우선 오더)
-    //    얼굴 음영·림라이트·실루엣을 프롬프트 앞단에 박아 분위기 강제 점화.
+    // 2) 스타일 피벗 + 얼굴 음영을 앞단에 배치
+    ILLUSTRATIVE_FRONT_STYLE,
+    // 3) SHADOW_CORE — 2차 학습 데이터의 핵심 시각 코드
     SHADOW_CORE,
-    // 3) 액션 컷 강제 — 증명사진 + 정적 포즈 동시 차단
+    // 4) 신체 존재 강제 — 투명 인간/빈 유니폼 카운터
+    BODY_PRESENCE,
+    // 5) 액션 컷 강제 — 증명사진 + 정적 포즈 동시 차단
     ACTION_STYLE,
-    // 4) 환경 강제 — 흰 배경 / 스튜디오 컷 구조적 차단
+    // 6) 환경 강제 — 흰 배경 / 스튜디오 컷 구조적 차단
     DYNAMIC_ENV,
-    // 5) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head + headless 차단)
+    // 7) 메인 피사체 — 사람 (가중치 우위 + furry/animal-head + headless 차단)
     "a real human male professional baseball athlete with a clearly visible body, head and arms",
     "realistic human anatomy, fully human body and skin, head firmly attached to the body",
-    // 5.1) 선발 투수 — 라이브 KBO 데이터 주입. 데이터 없으면 자동 폴백 토큰.
+    // 7.1) 선발 투수 — 라이브 KBO 데이터 주입. 데이터 없으면 자동 폴백 토큰.
     starterToken(starterName),
     // 6) 유니폼 시각 지문 — 팀 식별의 핵심 (LoRA + 텍스트 양면 보강)
     `wearing the official team uniform: ${meta.uniformSignature}`,

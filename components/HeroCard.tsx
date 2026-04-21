@@ -247,10 +247,8 @@ export default function HeroCard({ team }: Props) {
 
       {/*
         ── 좌상단: MY CTA ──
-        기존 구단 로고 자리를 응원팀 칩 + "MY" 라벨로 대체.
-        탭하면 /my 로 이동 (BottomNav 의 MY 와 동일 동작 — 이번 라운드에서
-        BottomNav 의 MY 가 RANK 로 빠지면서 응원팀 변경 진입점이 사라지는 걸
-        상단 CTA 가 흡수한다).
+        로고 자리에 눈에 과하게 띄지 않는 심플 텍스트 버튼만 남긴다.
+        탭하면 /my 로 이동 (응원팀 변경 진입점).
       */}
       <motion.div
         initial={{ opacity: 0, scale: 0.92 }}
@@ -261,30 +259,13 @@ export default function HeroCard({ team }: Props) {
         <Link
           href="/my"
           aria-label="응원팀 변경"
-          className="flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-2.5 py-1.5 backdrop-blur-md transition active:scale-95"
+          className="inline-flex h-8 items-center justify-center rounded-full border border-white/20 bg-black/18 px-4 text-[10px] uppercase tracking-[0.22em] text-white/78 backdrop-blur-sm transition hover:text-white/88 active:scale-95"
           style={{
-            boxShadow:
-              "0 2px 8px rgba(0,0,0,0.35), inset 0 0 0 0.5px rgba(255,255,255,0.04)",
+            fontWeight: 600,
+            boxShadow: "inset 0 0 0 0.4px rgba(255,255,255,0.05)",
           }}
         >
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] tabular-nums"
-            style={{
-              backgroundColor: team.accent,
-              color: "#fff",
-              fontWeight: 900,
-              letterSpacing: "-0.03em",
-              boxShadow: `0 0 6px ${team.accent}88`,
-            }}
-          >
-            {team.short}
-          </span>
-          <span
-            className="text-[10px] uppercase tracking-[0.28em] text-white/85"
-            style={{ fontWeight: 700 }}
-          >
-            MY
-          </span>
+          MY
         </Link>
       </motion.div>
 

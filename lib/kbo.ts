@@ -193,14 +193,87 @@ async function fetchKboGamesRange(
 }
 
 /**
+ * 단일 게임 상세 (선발투수 포함) — `/schedule/games/{gameId}`.
+ *
+ * 네이버 schedule(list) 응답에는 `homeStarterName/awayStarterName` 필드 자체가
+ * 빠져 있다 (fields= 어떤 조합을 줘도 미노출, 시즌 무관 동일).
+ * 반면 단일 game 엔드포인트는 `result.game.homeStarterName` 형태로 직접 노출.
+ *  → today/tomorrow 카드/포스터에서 "미정" 으로 박히는 문제 해결용.
+ */
+type NaverGameDetail = {
+  result?: {
+    game?: {
+      homeStarterName?: string | null;
+      awayStarterName?: string | null;
+      homeCurrentPitcherName?: string | null;
+      awayCurrentPitcherName?: string | null;
+    };
+  };
+};
+
+async function fetchGameStarters(
+  gameId: string
+): Promise<{ home: string | null; away: string | null }> {
+  try {
+    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}`, {
+      headers: {
+        "user-agent": UA,
+        accept: "application/json",
+        referer: "https://m.sports.naver.com/",
+      },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return { home: null, away: null };
+    const j = (await res.json()) as NaverGameDetail;
+    const g = j?.result?.game;
+    return {
+      home:
+        safeStarter(g?.homeStarterName) ??
+        safeStarter(g?.homeCurrentPitcherName),
+      away:
+        safeStarter(g?.awayStarterName) ??
+        safeStarter(g?.awayCurrentPitcherName),
+    };
+  } catch {
+    return { home: null, away: null };
+  }
+}
+
+/**
+ * 비어있는 선발투수("미정")만 단일 game 엔드포인트로 보강.
+ *  - 호출 비용 절약: starter 가 이미 채워진 game 은 스킵.
+ *  - 병렬 fetch (Promise.all) — 보통 동시 5건 이내.
+ */
+async function enrichStarters(games: LiveGame[]): Promise<LiveGame[]> {
+  const need = games.filter(
+    (g) => g.homePitcher === "미정" || g.awayPitcher === "미정"
+  );
+  if (need.length === 0) return games;
+  const results = await Promise.all(
+    need.map(async (g) => [g.id, await fetchGameStarters(g.id)] as const)
+  );
+  const map = new Map(results);
+  return games.map((g) => {
+    const s = map.get(g.id);
+    if (!s) return g;
+    return {
+      ...g,
+      homePitcher: g.homePitcher !== "미정" ? g.homePitcher : s.home ?? "미정",
+      awayPitcher: g.awayPitcher !== "미정" ? g.awayPitcher : s.away ?? "미정",
+    };
+  });
+}
+
+/**
  * 오늘(KST) 의 KBO 경기 리스트.
- *  - 1차: 네이버 schedule API
+ *  - 1차: 네이버 schedule API + 단일 game endpoint 로 선발 보강
  *  - 실패 / 0건 시: 정적 TODAY_GAMES 폴백 (status 는 BEFORE 로 표기)
  */
 export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
   try {
-    return await fetchKboGamesRange(target, target);
+    const games = await fetchKboGamesRange(target, target);
+    return await enrichStarters(games);
   } catch (err) {
     console.warn(
       `[kbo] live games fetch failed (${(err as Error).message}); falling back to static TODAY_GAMES`
@@ -246,17 +319,27 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
   try {
     const all = await fetchKboGamesRange(from, to);
     const past = all.filter((g) => g.date < base).sort(sortByDateTime);
-    const today_ = all
+    const todayRaw = all
       .filter((g) => g.date === base)
       .sort((a, b) => a.time.localeCompare(b.time));
-    const tomorrow = all
+    const tomorrowRaw = all
       .filter((g) => g.date === tomorrowDate)
       .sort((a, b) => a.time.localeCompare(b.time));
-    const upcoming = all.filter((g) => g.date > tomorrowDate).sort(sortByDateTime);
+    const upcomingRaw = all
+      .filter((g) => g.date > tomorrowDate)
+      .sort(sortByDateTime);
+    // 14일치 전부 단일 game 엔드포인트로 선발 보강.
+    // 취미·학습 프로젝트라 호출 비용 신경 안 씀 (ISR 60s 캐시로 분당 1회 수준).
+    const [pastEnriched, today_, tomorrow, upcoming] = await Promise.all([
+      enrichStarters(past),
+      enrichStarters(todayRaw),
+      enrichStarters(tomorrowRaw),
+      enrichStarters(upcomingRaw),
+    ]);
     // 라이브가 살아있는 한 빈 날(월요일·휴식일)은 빈 배열로 정직하게 반환.
     return {
       date: base,
-      past,
+      past: pastEnriched,
       today: today_,
       tomorrow,
       upcoming,
