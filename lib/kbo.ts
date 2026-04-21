@@ -249,29 +249,16 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
     const tomorrow = all
       .filter((g) => g.date > base)
       .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
-    // 라이브가 살아있더라도 today/tomorrow 가 비어있으면(시즌 일정 미공개 등) 정적으로 보강.
-    // 과거 결과만 살리고 미래 슬롯은 mock 으로 채워 UX 빈공간 방지.
-    let bundle: ScheduleBundle = {
+    // 라이브가 살아있는 한 today/tomorrow 가 비어있어도 그대로 빈 배열 반환.
+    // (월요일·올스타 휴식 등 정상적으로 경기가 없는 날을 정적 mock 으로 채우면
+    //  TODAY 뱃지가 stale 한 과거 날짜에 박혀서 anchor·라벨이 다 깨진다.)
+    return {
       date: base,
       past,
       today: today_,
       tomorrow,
       fallback: false,
     };
-    if (today_.length === 0 || tomorrow.length === 0) {
-      const { TODAY_GAMES, TOMORROW_GAMES } = await import("@/lib/games");
-      const stamp = (g: import("@/lib/games").Game): LiveGame => ({
-        ...g,
-        status: g.result ? "RESULT" : "BEFORE",
-      });
-      bundle = {
-        ...bundle,
-        today: today_.length === 0 ? TODAY_GAMES.map(stamp) : today_,
-        tomorrow:
-          tomorrow.length === 0 ? TOMORROW_GAMES.map(stamp) : tomorrow,
-      };
-    }
-    return bundle;
   } catch (err) {
     console.warn(
       `[kbo] schedule fetch failed (${(err as Error).message}); falling back to static`

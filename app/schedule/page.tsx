@@ -53,6 +53,8 @@ function groupByDate<T extends { date: string }>(
 
 export default function SchedulePage() {
   const todayRef = useRef<HTMLDivElement | null>(null);
+  // 라이브 도착 후 한 번만 anchor 재조정. 5분 폴링마다 점프하면 사용자 스크롤 위치가 박살남.
+  const didLiveScrollRef = useRef(false);
 
   // ── 라이브 KBO 데이터 (5분 폴링, 실패 시 정적 폴백) ──
   const live = useKboSchedule();
@@ -75,7 +77,7 @@ export default function SchedulePage() {
     );
 
     // today / tomorrow 도 날짜별 그룹핑(다일치 라이브 fetch 대비) — 보통은 1그룹.
-    const todaySections = groupByDate(sourceToday).map(
+    let todaySections = groupByDate(sourceToday).map(
       ({ date, games }): Section => ({
         date,
         dateLabel: formatDateLabel(date),
@@ -84,6 +86,19 @@ export default function SchedulePage() {
         games,
       })
     );
+    // 월요일·휴식일 등 today 경기 0건이라도 anchor 잡을 수 있게 placeholder 1섹션.
+    // 라이브 응답의 base 날짜를 그대로 라벨링 → "오늘 경기 없음" 메시지가 정확한 날짜로 노출.
+    if (todaySections.length === 0 && live?.date) {
+      todaySections = [
+        {
+          date: live.date,
+          dateLabel: formatDateLabel(live.date),
+          badge: "TODAY",
+          tone: "today",
+          games: [],
+        },
+      ];
+    }
     const tomorrowSections = groupByDate(sourceTomorrow).map(
       ({ date, games }): Section => ({
         date,
@@ -97,14 +112,30 @@ export default function SchedulePage() {
     return [...past, ...todaySections, ...tomorrowSections];
   }, [live]);
 
-  // 페이지(window) 스크롤을 TODAY 섹션 상단으로 즉시 점프.
-  // BottomNav 가 fixed 라서 내부 overflow 컨테이너 없이 body 스크롤만 사용 → 더 빠르고 단순.
+  // 페이지(window) 스크롤을 TODAY 섹션 상단으로 점프.
+  // 1) mount 시 static 데이터 기준으로 한 번 (대략적 위치 잡기 — UX 깜빡임 최소화)
+  // 2) 라이브 데이터가 처음 도착했을 때 한 번 더 (실제 today 날짜로 보정).
+  //    이걸 안 하면 콘텐츠가 reflow 되면서 viewport 가 미래(TOMORROW) 쪽으로 흘러내림.
   useEffect(() => {
     const target = todayRef.current;
     if (!target) return;
     const top = target.getBoundingClientRect().top + window.scrollY - 12;
     window.scrollTo({ top, behavior: "auto" });
   }, []);
+
+  useEffect(() => {
+    if (didLiveScrollRef.current) return;
+    if (!live) return;
+    // sections 는 useMemo([live]) 로 동기 갱신됨 → 다음 paint 직전에 위치 측정.
+    const raf = requestAnimationFrame(() => {
+      const target = todayRef.current;
+      if (!target) return;
+      const top = target.getBoundingClientRect().top + window.scrollY - 12;
+      window.scrollTo({ top, behavior: "auto" });
+      didLiveScrollRef.current = true;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [live]);
 
   return (
     <section className="px-0 pb-10">
