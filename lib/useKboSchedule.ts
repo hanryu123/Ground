@@ -5,10 +5,15 @@ import type { ScheduleBundle } from "@/lib/kbo";
 
 /**
  * /api/kbo/schedule 5분 마다 폴링.
- * 첫 로드 직전엔 null 만 반환 — 페이지에서 정적 폴백 또는 스켈레톤으로 처리.
+ *
+ *  - `initial` 을 넘기면 SSR 로 받아온 번들로 바로 시작 → 첫 paint 부터 라이브 데이터.
+ *    (이전엔 null 로 시작해 클라 fetch 가 끝날 때까지 정적 fallback 이 잠깐 보임.)
+ *  - 첫 로드 직후 한 번 더 백그라운드 fetch 해서 SSR 시점과의 시차(최대 60초) 보정.
  */
-export function useKboSchedule(): ScheduleBundle | null {
-  const [data, setData] = useState<ScheduleBundle | null>(null);
+export function useKboSchedule(
+  initial?: ScheduleBundle | null
+): ScheduleBundle | null {
+  const [data, setData] = useState<ScheduleBundle | null>(initial ?? null);
 
   useEffect(() => {
     let cancelled = false;
