@@ -1,13 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloudRain } from "lucide-react";
 import { findTeam, type Team } from "@/lib/teams";
 import { TODAY_GAMES } from "@/lib/games";
 import { pickSlogan, splitSloganForDisplay } from "@/config/teams";
-import LogoImage from "@/components/LogoImage";
 import NotificationBell from "@/components/NotificationBell";
 import ShareButton from "@/components/ShareButton";
 import { useWeather, type WeatherInfo } from "@/lib/useWeather";
@@ -121,12 +121,7 @@ export default function HeroCard({ team }: Props) {
     () => (live ? getTeamGame(live.games, team.id) : null),
     [live, team.id]
   );
-  // 우리 팀 순위 — 라이브 standings 에서 lookup
-  const rankRow = useMemo(() => {
-    if (!live) return null;
-    const id = team.id.toLowerCase();
-    return live.standings.find((r) => r.teamId === id) ?? null;
-  }, [live, team.id]);
+  // (구) "현재 N위" 배지는 /rank 탭으로 이전되어 HeroCard 에서는 더 이상 표기 X.
 
   // ── 날씨 — 구장 좌표 기반 ──
   const weather = useWeather(match?.game.stadium);
@@ -250,27 +245,48 @@ export default function HeroCard({ team }: Props) {
         }}
       />
 
-      {/* ── 좌상단: 실제 구단 로고 ── */}
-      <div className="absolute left-5 top-5 z-30">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.92 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.7, ease, delay: 0.15 }}
-          className="h-12 w-12"
+      {/*
+        ── 좌상단: MY CTA ──
+        기존 구단 로고 자리를 응원팀 칩 + "MY" 라벨로 대체.
+        탭하면 /my 로 이동 (BottomNav 의 MY 와 동일 동작 — 이번 라운드에서
+        BottomNav 의 MY 가 RANK 로 빠지면서 응원팀 변경 진입점이 사라지는 걸
+        상단 CTA 가 흡수한다).
+      */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.7, ease, delay: 0.15 }}
+        className="absolute left-5 top-5 z-30"
+      >
+        <Link
+          href="/my"
+          aria-label="응원팀 변경"
+          className="flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-2.5 py-1.5 backdrop-blur-md transition active:scale-95"
+          style={{
+            boxShadow:
+              "0 2px 8px rgba(0,0,0,0.35), inset 0 0 0 0.5px rgba(255,255,255,0.04)",
+          }}
         >
-          <LogoImage
-            teamId={team.id}
-            alt={team.nameEn}
-            size={48}
-            priority
-            className="h-full w-full"
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] tabular-nums"
             style={{
-              filter:
-                "drop-shadow(0 2px 6px rgba(0,0,0,0.55)) drop-shadow(0 0 1px rgba(0,0,0,0.35))",
+              backgroundColor: team.accent,
+              color: "#fff",
+              fontWeight: 900,
+              letterSpacing: "-0.03em",
+              boxShadow: `0 0 6px ${team.accent}88`,
             }}
-          />
-        </motion.div>
-      </div>
+          >
+            {team.short}
+          </span>
+          <span
+            className="text-[10px] uppercase tracking-[0.28em] text-white/85"
+            style={{ fontWeight: 700 }}
+          >
+            MY
+          </span>
+        </Link>
+      </motion.div>
 
       {/* ── 우상단: 공유 (벨 옆에 살짝 왼쪽) ── */}
       <motion.div
@@ -327,46 +343,25 @@ export default function HeroCard({ team }: Props) {
 
       {/*
         ── 하단 정보 — 위→아래 우선순위 ──
-          0) 오늘 날짜 (4월 19일 · 일)       — 작게 (장소/시간과 같은 톤)
-          1) 팀 매치업 (NC vs 두산)         — 가장 강조
-          2) 선발투수 (임찬규 · 곽빈)        — 덜 강조
-          3) 장소 · 시간 · 날씨              — 가장 작게
+          0) 오늘 날짜 · 시간 (4월 19일 · 일 · 18:30) — 라이브 상태 뱃지 inline
+          1) 팀 매치업 (NC vs 두산)                  — 가장 강조
+          2) 선발투수 (임찬규 · 곽빈)                — 덜 강조
+          3) 장소 · 날씨                             — 가장 작게
+
+        위치: bottom-0 + pb-[24vh] 로 화면 하단에서 24% 위에 떠 있게.
+        → 슬로건/날짜/매치업/선발/장소까지 viewport 한 화면 안에 들어옴.
+        ※ 직전 버전엔 "현재 N위" 배지가 매치업 위에 별도 라인으로 있었으나
+          /rank 탭 신설로 정보 중복이라 제거.
       */}
       {match && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease, delay: 0.45 }}
-          className="absolute inset-x-0 bottom-0 z-20 flex flex-col px-7 pb-10 text-white"
+          className="absolute inset-x-0 bottom-0 z-20 flex flex-col px-7 pb-[24vh] text-white"
           style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}
         >
-          {/* −1. 라이브 순위 배지 — 라이브 데이터 있을 때만 노출 */}
-          {rankRow && (
-            <div
-              className="mb-2 inline-flex items-center gap-1.5 self-start rounded-full border border-white/15 bg-black/35 px-2.5 py-1 backdrop-blur-md"
-              style={{
-                fontFamily:
-                  '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-                fontSize: "11px",
-                fontWeight: 600,
-                letterSpacing: "0.02em",
-                color: "rgba(255,255,255,0.92)",
-              }}
-            >
-              <span style={{ color: team.accent }}>현재 {rankRow.rank}위</span>
-              <span style={{ color: "rgba(255,255,255,0.28)" }}>·</span>
-              <span
-                className="tabular-nums"
-                style={{ color: "rgba(255,255,255,0.78)", fontWeight: 500 }}
-              >
-                {rankRow.wins}승{" "}
-                {rankRow.draws > 0 ? `${rankRow.draws}무 ` : ""}
-                {rankRow.losses}패
-              </span>
-            </div>
-          )}
-
-          {/* 0. 오늘 날짜 — 장소/시간과 동일한 톤·크기로 매치업 위에 작게 */}
+          {/* 0. 오늘 날짜 + 시간 — 매치업 위에 작게 (시간 합쳐서 한 줄) */}
           {dateLabel && (
             <div
               className="mb-2"
@@ -379,7 +374,14 @@ export default function HeroCard({ team }: Props) {
                 color: "rgba(255,255,255,0.55)",
               }}
             >
-              {dateLabel}
+              <span>{dateLabel}</span>
+              <span
+                className="mx-1.5 tabular-nums"
+                style={{ color: "rgba(255,255,255,0.22)" }}
+              >
+                ·
+              </span>
+              <span className="tabular-nums">{match.game.time}</span>
               {liveView?.game.status === "LIVE" && (
                 <span
                   className="ml-2 inline-flex items-center gap-1 align-middle"
@@ -513,7 +515,10 @@ export default function HeroCard({ team }: Props) {
             <span>{starterLabel(match.game.homePitcher)}</span>
           </div>
 
-          {/* 3. 장소 · 시간 · 날씨 — 가장 작게 */}
+          {/*
+            3. 장소 · 날씨 — 가장 작게
+            (시간은 위 날짜 라인으로 이동 — 중복 제거)
+          */}
           <div
             className="mt-3 inline-flex items-center gap-1.5 tabular-nums"
             style={{
@@ -526,8 +531,6 @@ export default function HeroCard({ team }: Props) {
             }}
           >
             <span>{stadiumShort || match.game.stadium}</span>
-            <span style={{ color: "rgba(255,255,255,0.22)" }}>·</span>
-            <span>{match.game.time}</span>
             {weatherLabel && (
               <>
                 <span style={{ color: "rgba(255,255,255,0.22)" }}>·</span>

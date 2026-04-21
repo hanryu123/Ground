@@ -2,14 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, CalendarDays, User } from "lucide-react";
+import { Home, CalendarDays, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMyTeam } from "@/lib/useMyTeam";
 
+/**
+ * 하단 탭 — TODAY · SCHEDULE · RANK 3종.
+ *  ※ 응원팀 변경(/my) 은 HeroCard 좌상단 MY CTA 로 진입한다.
+ *    BottomNav 의 MY 자리는 RANK(순위표) 가 가져갔다.
+ */
 const TABS = [
   { href: "/today", label: "TODAY", Icon: Home },
   { href: "/schedule", label: "SCHEDULE", Icon: CalendarDays },
-  { href: "/my", label: "MY", Icon: User },
+  { href: "/rank", label: "RANK", Icon: BarChart3 },
 ];
 
 export default function BottomNav() {
