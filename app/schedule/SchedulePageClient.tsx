@@ -11,6 +11,7 @@ import {
 import { findTeam } from "@/lib/teams";
 import { useKboSchedule } from "@/lib/useKboSchedule";
 import { starterLabel, type LiveGame, type ScheduleBundle } from "@/lib/kbo";
+import { venueDisplayLines } from "@/lib/venue";
 
 const EMPTY_GAMES: Game[] = [];
 
@@ -225,7 +226,7 @@ function DaySection({
 
       <ul className="flex flex-col">
         {section.games.map((g) => (
-          <GameRow key={g.id} game={g} muted={muted} />
+          <GameRow key={g.id} game={g} muted={muted} badge={section.badge} />
         ))}
         {section.games.length === 0 && (
           <li
@@ -243,9 +244,11 @@ function DaySection({
 function GameRow({
   game,
   muted,
+  badge,
 }: {
   game: Game | LiveGame;
   muted?: boolean;
+  badge: Section["badge"];
 }) {
   const home = findTeam(game.homeId);
   const away = findTeam(game.awayId);
@@ -254,8 +257,6 @@ function GameRow({
 
   const text = muted ? "text-white/55" : "text-white";
   const subtext = muted ? "text-white/30" : "text-white/55";
-  const stadiumColor = muted ? "text-white/25" : "text-white/45";
-
   const awayWon = result?.winnerId === away.id;
   const homeWon = result?.winnerId === home.id;
   const draw = !!result && result.winnerId === null;
@@ -271,76 +272,73 @@ function GameRow({
       : "text-white/35"
     : text;
 
+  const venue = venueDisplayLines(game.stadium);
+
   return (
     <li className="group flex items-start gap-5 py-5">
-      <div className="w-24 shrink-0">
+      <div className="w-24 shrink-0" title={game.stadium || undefined}>
         <span
           className={`block tabular-nums text-[20px] leading-none tracking-tight ${text}`}
           style={{ fontWeight: 800 }}
         >
           {game.time}
         </span>
-        <span
-          className={`mt-1.5 block truncate text-[11px] leading-tight ${stadiumColor}`}
-          style={{ fontWeight: 500, letterSpacing: "-0.005em" }}
-          title={game.stadium}
-        >
-          {game.stadium}
-        </span>
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span
-            className={`text-[18px] leading-none tracking-tight ${awayTeamColor}`}
-            style={{ fontWeight: 800 }}
-          >
-            {away.short}
-          </span>
-
-          {result ? (
-            <>
-              <span
-                className={`tabular-nums text-[16px] leading-none tracking-tight ${
-                  awayWon ? "text-white" : "text-white/45"
-                }`}
-                style={{ fontWeight: 800 }}
-              >
-                {result.awayScore}
-              </span>
-              <span
-                className="text-[10px] tracking-[0.3em] text-white/30"
-                style={{ fontWeight: 600 }}
-              >
-                {draw ? "D" : ":"}
-              </span>
-              <span
-                className={`tabular-nums text-[16px] leading-none tracking-tight ${
-                  homeWon ? "text-white" : "text-white/45"
-                }`}
-                style={{ fontWeight: 800 }}
-              >
-                {result.homeScore}
-              </span>
-            </>
-          ) : (
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="min-w-0 flex flex-1 flex-nowrap items-baseline gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <span
-              className="text-[10px] italic tracking-[0.3em] text-white/35"
-              style={{ fontWeight: 300 }}
+              className={`shrink-0 whitespace-nowrap text-[18px] leading-none tracking-tight ${awayTeamColor}`}
+              style={{ fontWeight: 800 }}
             >
-              vs
+              {away.short}
             </span>
-          )}
 
-          <span
-            className={`text-[18px] leading-none tracking-tight ${homeTeamColor}`}
-            style={{ fontWeight: 800 }}
-          >
-            {home.short}
-          </span>
+            {result ? (
+              <>
+                <span
+                  className={`shrink-0 tabular-nums text-[16px] leading-none tracking-tight ${
+                    awayWon ? "text-white" : "text-white/45"
+                  }`}
+                  style={{ fontWeight: 800 }}
+                >
+                  {result.awayScore}
+                </span>
+                <span
+                  className="shrink-0 text-[10px] tracking-[0.3em] text-white/30"
+                  style={{ fontWeight: 600 }}
+                >
+                  {draw ? "D" : ":"}
+                </span>
+                <span
+                  className={`shrink-0 tabular-nums text-[16px] leading-none tracking-tight ${
+                    homeWon ? "text-white" : "text-white/45"
+                  }`}
+                  style={{ fontWeight: 800 }}
+                >
+                  {result.homeScore}
+                </span>
+              </>
+            ) : (
+              <span
+                className="shrink-0 text-[10px] italic tracking-[0.3em] text-white/35"
+                style={{ fontWeight: 300 }}
+              >
+                vs
+              </span>
+            )}
+
+            <span
+              className={`shrink-0 whitespace-nowrap text-[18px] leading-none tracking-tight ${homeTeamColor}`}
+              style={{ fontWeight: 800 }}
+            >
+              {home.short}
+            </span>
+          </div>
 
           {result && (
-            <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5 self-baseline">
+            <div className="flex shrink-0 flex-col items-end gap-1.5 self-baseline">
               <ResultBadge
                 winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"}
               />
@@ -349,37 +347,65 @@ function GameRow({
           )}
         </div>
 
-        <p
-          className={`mt-1.5 truncate text-[12px] leading-tight tracking-wide ${subtext}`}
-          style={{ fontWeight: 400 }}
-        >
-          {result ? (
-            draw ? (
-              <>무승부 · 선발 {game.awayPitcher} vs {game.homePitcher}</>
+        {!(badge === "PAST" && result) && (
+          <p
+            className={`mt-1.5 truncate text-[12px] leading-tight tracking-wide ${subtext}`}
+            style={{ fontWeight: 400 }}
+          >
+            {result ? (
+              draw ? (
+                <>
+                  무승부 ·{" "}
+                  {badge === "TODAY"
+                    ? `${starterLabel(game.awayPitcher)} vs ${starterLabel(game.homePitcher)}`
+                    : `선발 ${game.awayPitcher} vs ${game.homePitcher}`}
+                </>
+              ) : (
+                <>
+                  {result.winningPitcher ?? "—"}
+                  <span className="mx-1.5 text-white/20">·</span>
+                  {result.losingPitcher ?? "—"}
+                </>
+              )
             ) : (
               <>
-                <span className="text-white/70" style={{ fontWeight: 600 }}>
-                  승
-                </span>{" "}
-                {result.winningPitcher ?? "—"}
-                <span className="mx-1.5 text-white/20">·</span>
-                <span className="text-white/55" style={{ fontWeight: 600 }}>
-                  패
-                </span>{" "}
-                {result.losingPitcher ?? "—"}
+                {badge === "TODAY" ? null : (
+                  <>
+                    <span className="text-white/40" style={{ fontWeight: 600 }}>
+                      선발
+                    </span>{" "}
+                  </>
+                )}
+                {starterLabel(game.awayPitcher)}
+                <span className="mx-1.5 text-white/20">vs</span>
+                {starterLabel(game.homePitcher)}
               </>
-            )
-          ) : (
-            <>
-              <span className="text-white/40" style={{ fontWeight: 600 }}>
-                선발
-              </span>{" "}
-              {starterLabel(game.awayPitcher)}
-              <span className="mx-1.5 text-white/20">vs</span>
-              {starterLabel(game.homePitcher)}
-            </>
-          )}
-        </p>
+            )}
+          </p>
+        )}
+
+        {venue.primary ? (
+          <div
+            className={`mt-2.5 space-y-0.5 ${muted ? "text-white/42" : "text-white/55"}`}
+          >
+            <p
+              className="text-[11px] font-semibold leading-snug tracking-[0.08em]"
+              style={{ fontWeight: 600 }}
+            >
+              {venue.primary}
+            </p>
+            {venue.secondary ? (
+              <p
+                className={`text-[10px] font-normal leading-snug tracking-wide normal-case ${
+                  muted ? "text-white/30" : "text-white/38"
+                }`}
+                style={{ fontWeight: 400 }}
+              >
+                {venue.secondary}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {liveStatus === "LIVE" && !result && (

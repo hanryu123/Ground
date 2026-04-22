@@ -14,7 +14,7 @@ export default function MyPage() {
   const choose = (id: string) => setMyTeam(id);
 
   return (
-    <section className="flex min-h-dvh flex-col">
+    <section className="flex min-h-0 flex-col pb-8">
       {/* 미니멀 라벨 */}
       <header className="px-7 pt-7">
         <p
@@ -25,17 +25,22 @@ export default function MyPage() {
         </p>
       </header>
 
-      {/* 선택 팀 히어로 — 팀 컬러 글로우 */}
-      <div className="relative mx-7 mt-6 overflow-hidden rounded-[28px] bg-white/[0.03] px-7 py-9">
-        <motion.div
-          key={team.id + "-glow"}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.55 }}
-          transition={{ duration: 0.7, ease }}
-          className="pointer-events-none absolute -left-1/4 -top-1/3 h-[260px] w-[260px] rounded-full blur-3xl"
-          style={{ backgroundColor: team.accent }}
-        />
-        <div className="relative">
+      {/* 선택 팀 히어로 — 팀 컬러 글로우 (글로우만 overflow 로 클립, 텍스트는 잘리지 않게 분리) */}
+      <div className="relative isolate mx-7 mt-6 rounded-[28px] bg-white/[0.03] px-7 pb-10 pt-9">
+        <div
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-[28px]"
+          aria-hidden
+        >
+          <motion.div
+            key={team.id + "-glow"}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.55 }}
+            transition={{ duration: 0.7, ease }}
+            className="absolute -left-1/4 -top-1/3 h-[260px] w-[260px] rounded-full blur-3xl"
+            style={{ backgroundColor: team.accent }}
+          />
+        </div>
+        <div className="relative z-10">
           <p
             className="text-[10px] uppercase tracking-[0.3em] text-white/45"
             style={{ fontWeight: 600 }}
@@ -51,7 +56,7 @@ export default function MyPage() {
               transition={{ duration: 0.35, ease }}
             >
               <h1
-                className="mt-2 text-[42px] leading-[0.9] tracking-tightest text-white"
+                className="mt-2 text-[42px] leading-[1.08] tracking-tightest text-white"
                 style={{ fontWeight: 900 }}
               >
                 {team.short}

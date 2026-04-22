@@ -17,6 +17,8 @@ import { useTodaySlot } from "@/lib/useTodaySlot";
 import { isTeamWinnerToday } from "@/config/todayGames";
 import { useKboToday } from "@/lib/useKboToday";
 import { getTeamGame, starterLabel, type LiveGame } from "@/lib/kbo";
+import type { TodayStoryImageInput } from "@/lib/buildTodayStoryImage";
+import { venueCityOnly, venueDisplayLines } from "@/lib/venue";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -83,27 +85,6 @@ function formatWeather(w: WeatherInfo): string | null {
   const label = KO_WEATHER[w.condition] ?? w.condition;
   if (typeof w.temp === "number") return `${label} ${Math.round(w.temp)}°`;
   return label;
-}
-
-/**
- * 구장 풀네임 → 짧은 **도시/지역** 라벨만 (경기장 풀명 제외).
- * 예: 잠실 구장 → "잠실", 사직 → "부산", "수원 KT 위즈 파크" → "수원"
- */
-function venueCityOnly(stadium: string | undefined | null): string {
-  if (!stadium) return "";
-  const s = stadium.trim();
-  if (s.includes("잠실")) return "잠실";
-  if (s.includes("사직")) return "부산";
-  if (s.includes("고척")) return "고척";
-  if (s.includes("수원")) return "수원";
-  if (s.includes("대구")) return "대구";
-  if (s.includes("창원")) return "창원";
-  if (s.includes("대전")) return "대전";
-  if (s.includes("광주")) return "광주";
-  if (s.includes("문학")) return "인천";
-  if (s.includes("울산")) return "울산";
-  const head = s.split(/\s+/)[0];
-  return head ?? "";
 }
 
 const KO_DOW = ["일", "월", "화", "수", "목", "금", "토"];
@@ -321,6 +302,46 @@ export default function HeroCard({ team }: Props) {
     ? heroLeftEpithetLabel(heroMatch.leftTeam.id)
     : null;
 
+  /** 날짜 아래 가운데 장소 — 짧은 지역 + (다르면) 풀 구장명 */
+  const venueUnderDate = useMemo(() => {
+    if (!match) return { primary: "", secondary: "" as string };
+    return venueDisplayLines(match.game.stadium);
+  }, [match]);
+
+  const todayStoryShare = useMemo((): TodayStoryImageInput | null => {
+    if (!resolvedSrc) return null;
+    const metaLine = match
+      ? [
+          `${match.awayTeam.short} vs ${match.homeTeam.short}`,
+          dateLabel || null,
+          match.game.time,
+          venueUnderDate.primary || null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : undefined;
+    const startersLine = match
+      ? `선발 ${starterLabel(match.game.awayPitcher)} · ${starterLabel(match.game.homePitcher)}`
+      : undefined;
+    return {
+      posterSrc: resolvedSrc,
+      teamHeadline: `${team.short} · ${team.name}`,
+      slogan: sloganOneLine,
+      metaLine,
+      startersLine,
+      accentHex: team.accent,
+    };
+  }, [
+    resolvedSrc,
+    team.short,
+    team.name,
+    team.accent,
+    sloganOneLine,
+    match,
+    dateLabel,
+    venueUnderDate.primary,
+  ]);
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
       {/*
@@ -401,6 +422,7 @@ export default function HeroCard({ team }: Props) {
               ? `${match.awayTeam.short} vs ${match.homeTeam.short} — ${formatMatchDate(match.game.date)}`
               : `${team.short} — ${team.nameEn}`
           }
+          todayStory={todayStoryShare}
         />
       </motion.div>
 
@@ -597,10 +619,12 @@ export default function HeroCard({ team }: Props) {
           ) : null}
 
           <div
-            className={`max-w-md text-[11px] font-normal uppercase tracking-[0.22em] text-white/58 ${countdownHms ? "mt-8" : "mt-10"}`}
-            style={{ fontWeight: 400 }}
+            className={`mx-auto w-full max-w-md text-center ${countdownHms ? "mt-8" : "mt-10"}`}
           >
-            <p className="tabular-nums">
+            <p
+              className="text-[11px] font-normal uppercase tracking-[0.22em] text-white/58 tabular-nums"
+              style={{ fontWeight: 400 }}
+            >
               {dateLabel ? (
                 <>
                   <span>{dateLabel}</span>
@@ -627,6 +651,24 @@ export default function HeroCard({ team }: Props) {
                 </>
               )}
             </p>
+            {venueUnderDate.primary ? (
+              <div className="mt-2.5 space-y-1">
+                <p
+                  className="text-[12px] font-semibold leading-snug tracking-[0.14em] text-white/55"
+                  style={{ fontWeight: 600 }}
+                >
+                  {venueUnderDate.primary}
+                </p>
+                {venueUnderDate.secondary ? (
+                  <p
+                    className="px-3 text-[10px] font-normal leading-snug tracking-wide text-white/38 normal-case"
+                    style={{ fontWeight: 400 }}
+                  >
+                    {venueUnderDate.secondary}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div
@@ -672,12 +714,6 @@ export default function HeroCard({ team }: Props) {
               </motion.span>
             )}
           </div>
-
-          {heroMatch.venueCity ? (
-            <p className="mt-5 text-[12px] font-medium tracking-[0.14em] text-white/52">
-              {heroMatch.venueCity}
-            </p>
-          ) : null}
         </motion.div>
       )}
     </div>

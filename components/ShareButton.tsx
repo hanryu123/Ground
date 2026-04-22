@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Share2, Check } from "lucide-react";
+import {
+  buildTodayStoryPng,
+  downloadBlob,
+  type TodayStoryImageInput,
+} from "@/lib/buildTodayStoryImage";
 
 /**
  * ShareButton — 우상단 공유 아이콘 버튼.
  *
- *  - 1순위: 모바일 Web Share API (`navigator.share`) — 시스템 시트 호출
- *  - 2순위: 클립보드 복사 + "Copied" 미니 토스트 (1.6s)
- *  - 3순위: 둘 다 실패 시 콘솔 경고만, UI는 깨지지 않음
- *
- *  알림 종(NotificationBell, 44px) 옆에 균형 맞춰 동일 사이즈로 배치.
+ *  - `todayStory` 가 있으면: 9:16 PNG 합성 → Web Share `files` 로 스토리에 넣기 시도
+ *  - 파일 공유 불가/취소 시: PNG 로컬 다운로드 → 갤러리에서 스토리 업로드 가능
+ *  - 그 외: 기존 링크/텍스트 공유 또는 클립보드
  */
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -23,17 +26,59 @@ type Props = {
   text?: string;
   /** 공유 URL — 미지정 시 현재 페이지 */
   url?: string;
+  /** Today 히어로용 스토리 카드 — 포스터+팀명+카피+경기/선발 */
+  todayStory?: TodayStoryImageInput | null;
 };
 
-export default function ShareButton({ title = "KBO TODAY", text, url }: Props) {
+export default function ShareButton({
+  title = "KBO TODAY",
+  text,
+  url,
+  todayStory,
+}: Props) {
   const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function handleShare() {
     if (typeof window === "undefined") return;
 
     const targetUrl = url ?? window.location.href;
-    const payload: ShareData = { title, text, url: targetUrl };
     const nav = window.navigator;
+
+    if (todayStory) {
+      try {
+        setBusy(true);
+        const blob = await buildTodayStoryPng(todayStory);
+        const file = new File([blob], "ground-today.png", { type: "image/png" });
+        /** 일부 모바일은 files+url 동시 공유를 거부하므로 이미지 우선 payload */
+        const withFiles: ShareData = { files: [file], title, text };
+
+        if (typeof nav.share === "function") {
+          const can =
+            typeof nav.canShare !== "function" || nav.canShare(withFiles);
+          if (can) {
+            try {
+              await nav.share(withFiles);
+              return;
+            } catch (e) {
+              if (e instanceof Error && e.name === "AbortError") return;
+            }
+          }
+        }
+
+        downloadBlob(blob, "ground-today.png");
+        setToast("사진 저장됨 · 앨범에서 스토리에 추가");
+        setTimeout(() => setToast(null), 2400);
+        return;
+      } catch (e) {
+        console.warn("[ShareButton] story image failed:", e);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    const payload: ShareData = { title, text, url: targetUrl };
 
     try {
       if (typeof nav.share === "function") {
@@ -51,7 +96,6 @@ export default function ShareButton({ title = "KBO TODAY", text, url }: Props) {
       }
       console.warn("[ShareButton] no share or clipboard API available");
     } catch (e) {
-      // 사용자가 시스템 시트를 취소한 경우 대부분 AbortError — 무시.
       if (e instanceof Error && e.name !== "AbortError") {
         console.warn("[ShareButton] share failed:", e.message);
       }
@@ -62,9 +106,10 @@ export default function ShareButton({ title = "KBO TODAY", text, url }: Props) {
     <div className="relative">
       <motion.button
         type="button"
-        whileTap={{ scale: 0.9 }}
-        onClick={handleShare}
-        className="relative flex h-11 w-11 items-center justify-center rounded-full"
+        whileTap={{ scale: busy ? 1 : 0.9 }}
+        disabled={busy}
+        onClick={() => void handleShare()}
+        className="relative flex h-11 w-11 items-center justify-center rounded-full disabled:opacity-45"
         aria-label="공유하기"
       >
         <Share2
@@ -99,6 +144,28 @@ export default function ShareButton({ title = "KBO TODAY", text, url }: Props) {
               <Check size={11} strokeWidth={2.4} />
               Link copied
             </span>
+          </motion.span>
+        )}
+        {toast && (
+          <motion.span
+            key="toast-msg"
+            initial={{ opacity: 0, y: -4, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+            transition={{ duration: 0.22, ease }}
+            className="absolute right-0 top-12 max-w-[220px] rounded-full px-3 py-1.5 text-[10px] uppercase leading-snug tracking-[0.14em]"
+            style={{
+              fontWeight: 600,
+              backgroundColor: "rgba(15,15,18,0.82)",
+              color: "rgba(255,255,255,0.92)",
+              backdropFilter: "blur(18px) saturate(160%)",
+              WebkitBackdropFilter: "blur(18px) saturate(160%)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+            }}
+            role="status"
+          >
+            {toast}
           </motion.span>
         )}
       </AnimatePresence>
