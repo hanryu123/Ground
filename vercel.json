@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/check-score",
-      "schedule": "* * * * *"
+      "schedule": "10 6 * * *"
     },
     {
       "path": "/api/cron/check-lineup",
