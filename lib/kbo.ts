@@ -452,7 +452,7 @@ async function enrichLineups(games: LiveGame[]): Promise<LiveGame[]> {
 /**
  * 오늘(KST) 의 KBO 경기 리스트.
  *  - 1차: 네이버 schedule API + 단일 game endpoint 로 선발 보강
- *  - 실패 / 0건 시: 정적 TODAY_GAMES 폴백 (status 는 BEFORE 로 표기)
+ *  - 실패 시: 빈 배열 반환 (Today 탭에 잘못된 목업 경기 노출 방지)
  */
 export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
@@ -462,15 +462,9 @@ export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
     return await enrichLineups(withStarters);
   } catch (err) {
     console.warn(
-      `[kbo] live games fetch failed (${(err as Error).message}); falling back to static TODAY_GAMES`
+      `[kbo] live games fetch failed (${(err as Error).message}); returning empty today games`
     );
-    return TODAY_GAMES.map((g) => ({
-      ...g,
-      date: target,
-      status: "BEFORE" as LiveStatus,
-      homeLineup: null,
-      awayLineup: null,
-    }));
+    return [];
   }
 }
 

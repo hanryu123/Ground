@@ -10,8 +10,15 @@ type GenerateScorePushInput = {
   fallbackBody: string;
 };
 
+type GenerateScorePushOptions = {
+  apiKeyOverride?: string;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+};
+
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = process.env.PUSH_LLM_MODEL ?? "claude-3-5-haiku-latest";
+const ANTHROPIC_MODEL = process.env.PUSH_LLM_MODEL ?? "claude-sonnet-4-6";
 
 function compactText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -24,6 +31,7 @@ function clipForPush(text: string): string {
 }
 
 function extractInningTag(latestPlayText: string): string {
+  if (/경기\s*종료|경기종료|game\s*over/i.test(latestPlayText)) return "경기종료";
   const m = latestPlayText.match(/(\d{1,2}회(?:초|말)?)/);
   if (m?.[1]) return m[1];
   return "경기중";
@@ -67,7 +75,9 @@ function enforceBaseballConsistency(text: string, input: GenerateScorePushInput)
 }
 
 function buildSystemPrompt(favoriteTeam: string): string {
-  return `너는 KBO 리그 ${favoriteTeam}의 30년 차 광팬이자, 세상에서 가장 편파적인 중계 캐스터야. 객관성, 중립성, 예의는 개나 줘버려. 오직 ${favoriteTeam}의 관점에서만 상황을 해석해.
+  return `너는 생각할 시간이 없다. 무조건 30자 내외의 한 줄 문장으로 즉시 뱉어라. 인사말, 부연설명, 서론은 절대 금지하고 오직 푸시 알림 본문만 출력해.
+
+너는 KBO 리그 ${favoriteTeam}의 30년 차 광팬이자, 세상에서 가장 편파적인 중계 캐스터야. 객관성, 중립성, 예의는 개나 줘버려. 오직 ${favoriteTeam}의 관점에서만 상황을 해석해.
 
 득점/호수비 (선수 샤라웃): 세상을 다 가진 것처럼 환호해. '발생 이벤트'에 언급된 우리 선수의 이름을 반드시 부르며 신격화해. (예: 오스틴 홈런 -> '빛스틴 폼 미쳤다!!', 임찬규 삼진 -> '빛찬규 KKKKK!')
 
@@ -125,7 +135,14 @@ function extractAnthropicText(payload: unknown): string | null {
 }
 
 export async function generateScorePushCopy(input: GenerateScorePushInput): Promise<{ title: string; body: string }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return generateScorePushCopyWithOptions(input, {});
+}
+
+export async function generateScorePushCopyWithOptions(
+  input: GenerateScorePushInput,
+  options: GenerateScorePushOptions
+): Promise<{ title: string; body: string }> {
+  const apiKey = options.apiKeyOverride?.trim() || process.env.ANTHROPIC_API_KEY;
   const inningTag = extractInningTag(input.latestPlayText);
   if (!apiKey) {
     const consistent = enforceBaseballConsistency(input.fallbackBody, input);
@@ -135,6 +152,8 @@ export async function generateScorePushCopy(input: GenerateScorePushInput): Prom
     };
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 1000);
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -145,8 +164,8 @@ export async function generateScorePushCopy(input: GenerateScorePushInput): Prom
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 180,
-        temperature: 0.9,
+        max_tokens: options.maxTokens ?? 72,
+        temperature: options.temperature ?? 0.85,
         system: buildSystemPrompt(findTeam(input.favoriteTeam).short),
         messages: [
           {
@@ -155,9 +174,14 @@ export async function generateScorePushCopy(input: GenerateScorePushInput): Prom
           },
         ],
       }),
+      signal: controller.signal,
     });
     if (!res.ok) {
-      return { title: input.fallbackTitle, body: input.fallbackBody };
+      const consistent = enforceBaseballConsistency(input.fallbackBody, input);
+      return {
+        title: input.fallbackTitle,
+        body: clipForPush(ensureInningPrefix(consistent, inningTag)),
+      };
     }
     const json = await res.json();
     const generated = extractAnthropicText(json);
@@ -180,5 +204,7 @@ export async function generateScorePushCopy(input: GenerateScorePushInput): Prom
       title: input.fallbackTitle,
       body: clipForPush(ensureInningPrefix(consistent, inningTag)),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

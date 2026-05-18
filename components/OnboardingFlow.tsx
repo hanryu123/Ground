@@ -344,17 +344,27 @@ export default function OnboardingFlow({ onComplete }: Props) {
               className="absolute inset-x-4 bottom-6 mx-auto max-w-md rounded-2xl border border-white/12 bg-[#111218]/92 p-5 text-white"
             >
               <p className="text-[16px] font-semibold leading-snug">
-                가장 빠른 라인업 알림을 받으려면 앱을 설치해 주세요! ⚾️
+                GROUND를 사용하려면 홈화면에 추가가 필요해요 ⚾️
               </p>
               {installGuide === "ios" ? (
-                <div className="mt-4 space-y-2 text-[13px] text-white/85">
+                <div className="mt-4 space-y-2 text-[13px] leading-relaxed text-white/85">
                   <p className="flex items-center gap-2">
                     <Share2 size={15} />
-                    사파리 하단 <span className="font-semibold">[공유]</span> 버튼 클릭
+                    <span>
+                      #1. 사파리 하단{" "}
+                      <span className="font-semibold">[공유]</span> 버튼(사각형 + 위 화살표)을
+                      선택하세요.
+                    </span>
+                  </p>
+                  <p className="pl-[23px] text-white/70">
+                    (공유 버튼이 안 보인다면, 주소창 옆 ... 버튼을 선택하면 나와요!)
                   </p>
                   <p className="flex items-center gap-2">
                     <PlusSquare size={15} />
-                    <span className="font-semibold">[홈 화면에 추가]</span> 선택
+                    <span>
+                      #2. 메뉴를 스크롤하여{" "}
+                      <span className="font-semibold">[홈 화면에 추가]</span>를 선택하세요.
+                    </span>
                   </p>
                 </div>
               ) : (

@@ -50,7 +50,7 @@ async function main() {
         endpoint: true,
         p256dh: true,
         auth: true,
-        user: { select: { favoriteTeam: true } },
+        user: { select: { id: true, favoriteTeam: true } },
       },
     });
 
@@ -95,6 +95,22 @@ async function main() {
         process.exitCode = 1;
         return;
       }
+
+      await prisma.notification.create({
+        data: {
+          userId: sub.user.id,
+          type: index === SCENARIO.length - 1 ? "GAME_RESULT" : "SCORE_UPDATE",
+          title: copy.title,
+          body: copy.body,
+          deeplinkUrl: "/today",
+          sentAt: new Date(),
+          payload: {
+            source: "manual_test",
+            step: index + 1,
+            latestPlayText: step.latestPlayText,
+          },
+        },
+      });
 
       console.log(`STEP ${index + 1}: ${copy.body}`);
     }

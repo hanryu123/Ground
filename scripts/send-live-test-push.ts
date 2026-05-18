@@ -58,6 +58,20 @@ async function main() {
   );
 
   if (result.ok) {
+    await prisma.notification.create({
+      data: {
+        userId: sub.user.id,
+        type: "SCORE_UPDATE",
+        title: copy.title,
+        body: copy.body,
+        deeplinkUrl: "/today",
+        sentAt: new Date(),
+        payload: {
+          source: "manual_test",
+          scenario: "live_one_shot",
+        },
+      },
+    });
     console.log(`발송 성공: ${copy.body}`);
   } else {
     console.log(`발송 실패: ${result.statusCode ?? "unknown"} ${result.body ?? ""}`);

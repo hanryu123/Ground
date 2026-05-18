@@ -197,8 +197,8 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <section className="mx-auto max-w-5xl px-6 py-10">
+    <main className="h-full overflow-y-auto bg-slate-950 text-slate-100">
+      <section className="mx-auto max-w-5xl px-6 py-10 pb-28">
         <div className="mb-7">
           <p className="text-[11px] uppercase tracking-[0.34em] text-slate-400">GROUND ADMIN</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">트랙션 대시보드</h1>

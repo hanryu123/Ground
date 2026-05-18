@@ -3,13 +3,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWebPush } from "@/lib/webPushServer";
 import {
-  fetchMockScoreSnapshot,
   fetchMockScoreSnapshotByTick,
 } from "@/lib/scoreMock";
 import { findTeam } from "@/lib/teams";
 import { todayKstDate } from "@/lib/kbo";
 import { buildBiasedScoreCopy, computePulseState } from "@/lib/pushTemplate";
 import { generateScorePushCopy } from "@/lib/pushLlm";
+import { finishCronRun, startCronRun } from "@/lib/cronRunLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,11 +45,12 @@ function isGameEndAlertEnabled(topics: unknown): boolean {
   return Boolean(parsed.postGame || parsed.gameEnd);
 }
 
-function isAuthorized(req: Request): boolean {
+function isAuthorized(req: Request, url: URL): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true;
   const auth = req.headers.get("authorization");
-  return auth === `Bearer ${secret}`;
+  const querySecret = url.searchParams.get("secret");
+  return auth === `Bearer ${secret}` || querySecret === secret;
 }
 
 function isFastMode(url: URL): boolean {
@@ -187,14 +188,7 @@ async function fetchLatestPlayText(gameId: string): Promise<string | null> {
   ];
   for (const endpoint of endpoints) {
     try {
-      const res = await fetch(endpoint, {
-        headers: {
-          "user-agent": NAVER_UA,
-          accept: "application/json",
-          referer: "https://m.sports.naver.com/",
-        },
-        cache: "no-store",
-      });
+      const res = await fetchJsonWithTimeout(endpoint, 300);
       if (!res.ok) continue;
       const json = await res.json();
       const text = pickLatestPlayText(json);
@@ -206,6 +200,45 @@ async function fetchLatestPlayText(gameId: string): Promise<string | null> {
   return null;
 }
 
+async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      headers: {
+        "user-agent": NAVER_UA,
+        accept: "application/json",
+        referer: "https://m.sports.naver.com/",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
 async function fetchLiveScoreSnapshot(): Promise<LiveScoreGame[]> {
   const date = todayKstDate();
   const url =
@@ -213,14 +246,7 @@ async function fetchLiveScoreSnapshot(): Promise<LiveScoreGame[]> {
     `?fields=basic,statusInfo,score` +
     `&upperCategoryId=kbaseball&categoryId=kbo` +
     `&fromDate=${date}&toDate=${date}&size=200`;
-  const res = await fetch(url, {
-    headers: {
-      "user-agent": NAVER_UA,
-      accept: "application/json",
-      referer: "https://m.sports.naver.com/",
-    },
-    next: { revalidate: 10 },
-  });
+  const res = await fetchJsonWithTimeout(url, 1200);
   if (!res.ok) throw new Error(`naver score HTTP ${res.status}`);
   const json = (await res.json()) as {
     result?: {
@@ -256,342 +282,463 @@ async function fetchLiveScoreSnapshot(): Promise<LiveScoreGame[]> {
 }
 
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) {
+  const url = new URL(req.url);
+  if (!isAuthorized(req, url)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const url = new URL(req.url);
   const fastMode = isFastMode(url);
   const tickRaw = url.searchParams.get("tick");
-  const snapshot: LiveScoreGame[] =
-    tickRaw != null && tickRaw !== ""
-      ? (await fetchMockScoreSnapshotByTick(Number(tickRaw))).map((g) => ({
-          externalId: g.externalId,
-          homeTeam: g.homeTeam,
-          awayTeam: g.awayTeam,
-          homeScore: g.homeScore,
-          awayScore: g.awayScore,
-          status: g.status,
-          gameDate: g.gameDate,
-        }))
-      : await fetchLiveScoreSnapshot();
+  const triggerSource = url.searchParams.get("source") ?? "unknown";
+  const runId = await startCronRun("check-score", {
+    fastMode,
+    tickRaw,
+    triggerSource,
+  });
+
   let checked = 0;
   let changed = 0;
   let pushSent = 0;
   let disabled = 0;
   let inboxCreated = 0;
   let llmCalls = 0;
+  let errors = 0;
+  const failedGameIds: string[] = [];
+  let fetchError: string | null = null;
+  let snapshot: LiveScoreGame[] = [];
 
-  for (const game of snapshot) {
-    checked += 1;
-    const previous = await prisma.game.findUnique({
-      where: { externalId: game.externalId },
-    });
+  try {
+    try {
+      snapshot =
+        tickRaw != null && tickRaw !== ""
+          ? (await fetchMockScoreSnapshotByTick(Number(tickRaw))).map((g) => ({
+              externalId: g.externalId,
+              homeTeam: g.homeTeam,
+              awayTeam: g.awayTeam,
+              homeScore: g.homeScore,
+              awayScore: g.awayScore,
+              status: g.status,
+              gameDate: g.gameDate,
+            }))
+          : await fetchLiveScoreSnapshot();
+    } catch (error) {
+      fetchError = (error as Error).message;
+      errors += 1;
+      console.error("[check-score] snapshot fetch failed", error);
+      snapshot = [];
+    }
 
-    const updated = await prisma.game.upsert({
-      where: { externalId: game.externalId },
-      update: {
-        homeTeam: game.homeTeam,
-        awayTeam: game.awayTeam,
-        homeScore: game.homeScore,
-        awayScore: game.awayScore,
-        status: game.status,
-        gameDate: game.gameDate,
-        lastSyncedAt: new Date(),
-      },
-      create: {
-        externalId: game.externalId,
-        homeTeam: game.homeTeam,
-        awayTeam: game.awayTeam,
-        homeScore: game.homeScore,
-        awayScore: game.awayScore,
-        status: game.status,
-        gameDate: game.gameDate,
-        lastSyncedAt: new Date(),
-      },
-    });
+    for (const game of snapshot) {
+      checked += 1;
+      try {
+        const previous = await prisma.game.findUnique({
+          where: { externalId: game.externalId },
+        });
 
-    if (!previous) continue;
-    const homeDelta = game.homeScore - previous.homeScore;
-    const awayDelta = game.awayScore - previous.awayScore;
-    if (homeDelta <= 0 && awayDelta <= 0) continue;
-
-    changed += 1;
-    const latestPlayText = fastMode
-      ? `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`
-      : (await fetchLatestPlayText(game.externalId)) ??
-        `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
-    const activeSubs = await prisma.pushSubscription.findMany({
-      where: {
-        enabled: true,
-        user: {
-          favoriteTeam: {
-            in: [game.homeTeam, game.awayTeam],
+        const updated = await prisma.game.upsert({
+          where: { externalId: game.externalId },
+          update: {
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            status: game.status,
+            gameDate: game.gameDate,
+            lastSyncedAt: new Date(),
           },
-        },
-      },
-      select: {
-        endpoint: true,
-        p256dh: true,
-        auth: true,
-        userId: true,
-        topics: true,
-        user: {
+          create: {
+            externalId: game.externalId,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            status: game.status,
+            gameDate: game.gameDate,
+            lastSyncedAt: new Date(),
+          },
+        });
+
+        if (!previous) continue;
+        const homeDelta = game.homeScore - previous.homeScore;
+        const awayDelta = game.awayScore - previous.awayScore;
+        if (homeDelta <= 0 && awayDelta <= 0) continue;
+
+        changed += 1;
+        const latestPlayText = fastMode
+          ? `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`
+          : (await fetchLatestPlayText(game.externalId)) ??
+            `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
+        const activeSubs = await prisma.pushSubscription.findMany({
+          where: {
+            enabled: true,
+            user: {
+              favoriteTeam: {
+                in: [game.homeTeam, game.awayTeam],
+              },
+            },
+          },
           select: {
-            favoriteTeam: true,
+            endpoint: true,
+            p256dh: true,
+            auth: true,
+            userId: true,
+            topics: true,
+            user: {
+              select: {
+                favoriteTeam: true,
+              },
+            },
           },
-        },
-      },
-    });
+        });
 
-    const inboxRows: Array<{
-      userId: string;
-      title: string;
-      body: string;
-      deeplinkUrl: string;
-      sentAt: Date;
-      type: "SCORE_UPDATE";
-      payload: Prisma.InputJsonValue;
-    }> = [];
-    const inboxKey = new Set<string>();
-    const scoreCopyCache = new Map<string, { title: string; body: string }>();
+        const scoreTargets = activeSubs
+          .filter((sub) => isScoreAlertEnabled(sub.topics))
+          .map((sub) => ({ sub }));
 
-    for (const sub of activeSubs) {
-      if (!isScoreAlertEnabled(sub.topics)) continue;
-      const favoriteTeam = sub.user.favoriteTeam;
-      if (!favoriteTeam) continue;
+        const scoreCopyCache = new Map<string, Promise<{ title: string; body: string }>>();
+        const scoreResults = await mapWithConcurrency(scoreTargets, 12, async ({ sub }) => {
+          const favoriteTeam = sub.user.favoriteTeam;
+          if (!favoriteTeam) return null;
 
-      let tone: "for" | "against" | null = null;
-      if (favoriteTeam === game.homeTeam) {
-        if (homeDelta > 0) tone = "for";
-        else if (awayDelta > 0) tone = "against";
-      } else if (favoriteTeam === game.awayTeam) {
-        if (awayDelta > 0) tone = "for";
-        else if (homeDelta > 0) tone = "against";
-      }
-      if (!tone) continue;
-      const isHomeFan = favoriteTeam === game.homeTeam;
-      const prevMyScore = isHomeFan ? previous.homeScore : previous.awayScore;
-      const prevOppScore = isHomeFan ? previous.awayScore : previous.homeScore;
-      const myScore = isHomeFan ? game.homeScore : game.awayScore;
-      const oppScore = isHomeFan ? game.awayScore : game.homeScore;
-      const state = computePulseState(prevMyScore, prevOppScore, myScore, oppScore);
-      const myTeam = findTeam(favoriteTeam);
-      const oppTeam = findTeam(isHomeFan ? game.awayTeam : game.homeTeam);
-      const copy = buildBiasedScoreCopy({
-        teamShort: myTeam.short,
-        oppShort: oppTeam.short,
-        myScore,
-        oppScore,
-        tone,
-        state,
-      });
-      const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${latestPlayText}`;
-      let aiCopy = scoreCopyCache.get(cacheKey);
-      if (!aiCopy) {
-        if (fastMode) {
-          aiCopy = copy;
-        } else {
-          llmCalls += 1;
-          aiCopy = await generateScorePushCopy({
-            favoriteTeam,
-            opponentTeam: isHomeFan ? game.awayTeam : game.homeTeam,
+          let tone: "for" | "against" | null = null;
+          if (favoriteTeam === game.homeTeam) {
+            if (homeDelta > 0) tone = "for";
+            else if (awayDelta > 0) tone = "against";
+          } else if (favoriteTeam === game.awayTeam) {
+            if (awayDelta > 0) tone = "for";
+            else if (homeDelta > 0) tone = "against";
+          }
+          if (!tone) return null;
+
+          const isHomeFan = favoriteTeam === game.homeTeam;
+          const prevMyScore = isHomeFan ? previous.homeScore : previous.awayScore;
+          const prevOppScore = isHomeFan ? previous.awayScore : previous.homeScore;
+          const myScore = isHomeFan ? game.homeScore : game.awayScore;
+          const oppScore = isHomeFan ? game.awayScore : game.homeScore;
+          const state = computePulseState(prevMyScore, prevOppScore, myScore, oppScore);
+          const myTeam = findTeam(favoriteTeam);
+          const oppTeam = findTeam(isHomeFan ? game.awayTeam : game.homeTeam);
+          const fallback = buildBiasedScoreCopy({
+            teamShort: myTeam.short,
+            oppShort: oppTeam.short,
             myScore,
             oppScore,
-            latestPlayText,
-            fallbackTitle: copy.title,
-            fallbackBody: copy.body,
+            tone,
+            state,
+          });
+
+          const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${latestPlayText}`;
+          let copyPromise = scoreCopyCache.get(cacheKey);
+          if (!copyPromise) {
+            if (fastMode) {
+              copyPromise = Promise.resolve(fallback);
+            } else {
+              llmCalls += 1;
+              copyPromise = generateScorePushCopy({
+                favoriteTeam,
+                opponentTeam: isHomeFan ? game.awayTeam : game.homeTeam,
+                myScore,
+                oppScore,
+                latestPlayText,
+                fallbackTitle: fallback.title,
+                fallbackBody: fallback.body,
+              });
+            }
+            scoreCopyCache.set(cacheKey, copyPromise);
+          }
+          const aiCopy = await copyPromise;
+          const push = await sendWebPush(
+            {
+              endpoint: sub.endpoint,
+              p256dh: sub.p256dh,
+              auth: sub.auth,
+            },
+            {
+              title: aiCopy.title,
+              body: aiCopy.body,
+              url: "/today",
+              latestPlayText,
+              teamId: favoriteTeam,
+            },
+            { favoriteTeam, origin: url.origin }
+          );
+
+          return {
+            sub,
+            tone,
+            aiCopy,
+            push,
+            payload: {
+              gameId: updated.id,
+              externalId: game.externalId,
+              homeTeam: game.homeTeam,
+              awayTeam: game.awayTeam,
+              homeScore: game.homeScore,
+              awayScore: game.awayScore,
+              tone,
+              latestPlayText,
+            } as Prisma.InputJsonValue,
+          };
+        });
+
+        const disableTargets = scoreResults
+          .filter(
+            (r) =>
+              r &&
+              (r.push.statusCode === 401 ||
+                r.push.statusCode === 403 ||
+                r.push.statusCode === 404 ||
+                r.push.statusCode === 410)
+          )
+          .map((r) => r!.sub);
+
+        if (disableTargets.length > 0) {
+          const disableResults = await mapWithConcurrency(disableTargets, 8, (sub) =>
+            prisma.pushSubscription.updateMany({
+              where: {
+                userId: sub.userId,
+                endpoint: sub.endpoint,
+                enabled: true,
+              },
+              data: { enabled: false },
+            })
+          );
+          disabled += disableResults.reduce((acc, row) => acc + row.count, 0);
+        }
+
+        const inboxRows: Array<{
+          userId: string;
+          title: string;
+          body: string;
+          deeplinkUrl: string;
+          sentAt: Date;
+          type: "SCORE_UPDATE";
+          payload: Prisma.InputJsonValue;
+        }> = [];
+        const inboxKey = new Set<string>();
+        for (const row of scoreResults) {
+          if (!row) continue;
+          if (row.push.ok) pushSent += 1;
+          const key = `${row.sub.userId}:${row.aiCopy.title}:${row.aiCopy.body}`;
+          if (inboxKey.has(key)) continue;
+          inboxKey.add(key);
+          inboxRows.push({
+            userId: row.sub.userId,
+            title: row.aiCopy.title,
+            body: row.aiCopy.body,
+            deeplinkUrl: "/today",
+            sentAt: new Date(),
+            type: "SCORE_UPDATE",
+            payload: row.payload,
           });
         }
-        scoreCopyCache.set(cacheKey, aiCopy);
-      }
-      const push = await sendWebPush(
-        {
-          endpoint: sub.endpoint,
-          p256dh: sub.p256dh,
-          auth: sub.auth,
-        },
-        {
-          title: aiCopy.title,
-          body: aiCopy.body,
-          url: "/today",
-          latestPlayText,
-          teamId: favoriteTeam,
-        },
-        { favoriteTeam, origin: url.origin }
-      );
-      if (push.ok) {
-        pushSent += 1;
-      } else if (
-        push.statusCode === 401 ||
-        push.statusCode === 403 ||
-        push.statusCode === 404 ||
-        push.statusCode === 410
-      ) {
-        await prisma.pushSubscription.updateMany({
+
+        if (inboxRows.length > 0) {
+          const result = await prisma.notification.createMany({ data: inboxRows });
+          inboxCreated += result.count;
+        }
+
+        const justEnded = previous.status !== "RESULT" && game.status === "RESULT";
+        if (!justEnded) continue;
+
+        const endSubs = await prisma.pushSubscription.findMany({
           where: {
-            userId: sub.userId,
-            endpoint: sub.endpoint,
             enabled: true,
+            user: {
+              favoriteTeam: {
+                in: [game.homeTeam, game.awayTeam],
+              },
+            },
           },
-          data: { enabled: false },
-        });
-        disabled += 1;
-      }
-
-      const key = `${sub.userId}:${aiCopy.title}:${aiCopy.body}`;
-      if (inboxKey.has(key)) continue;
-      inboxKey.add(key);
-      inboxRows.push({
-        userId: sub.userId,
-        title: aiCopy.title,
-        body: aiCopy.body,
-        deeplinkUrl: "/today",
-        sentAt: new Date(),
-        type: "SCORE_UPDATE",
-        payload: {
-          gameId: updated.id,
-          externalId: game.externalId,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          homeScore: game.homeScore,
-          awayScore: game.awayScore,
-          tone,
-          latestPlayText,
-        },
-      });
-    }
-
-    if (inboxRows.length > 0) {
-      const result = await prisma.notification.createMany({ data: inboxRows });
-      inboxCreated += result.count;
-    }
-
-    const justEnded = previous.status !== "RESULT" && game.status === "RESULT";
-    if (!justEnded) continue;
-
-    const endSubs = await prisma.pushSubscription.findMany({
-      where: {
-        enabled: true,
-        user: {
-          favoriteTeam: {
-            in: [game.homeTeam, game.awayTeam],
-          },
-        },
-      },
-      select: {
-        id: true,
-        endpoint: true,
-        p256dh: true,
-        auth: true,
-        userId: true,
-        topics: true,
-        user: {
           select: {
-            favoriteTeam: true,
+            endpoint: true,
+            p256dh: true,
+            auth: true,
+            userId: true,
+            topics: true,
+            user: {
+              select: {
+                favoriteTeam: true,
+              },
+            },
           },
-        },
-      },
+        });
+
+        const endResults = await mapWithConcurrency(
+          endSubs.filter((sub) => isGameEndAlertEnabled(sub.topics)),
+          12,
+          async (sub) => {
+            const favoriteTeam = sub.user.favoriteTeam;
+            if (!favoriteTeam) return null;
+
+            let tone: GameEndTone | null = null;
+            if (favoriteTeam === game.homeTeam) {
+              if (game.homeScore > game.awayScore) tone = "win";
+              else if (game.homeScore < game.awayScore) tone = "loss";
+              else tone = "draw";
+            } else if (favoriteTeam === game.awayTeam) {
+              if (game.awayScore > game.homeScore) tone = "win";
+              else if (game.awayScore < game.homeScore) tone = "loss";
+              else tone = "draw";
+            }
+            if (!tone) return null;
+
+            const copy = buildGameEndCopy(game, favoriteTeam, tone);
+            const push = await sendWebPush(
+              {
+                endpoint: sub.endpoint,
+                p256dh: sub.p256dh,
+                auth: sub.auth,
+              },
+              {
+                title: copy.title,
+                body: copy.body,
+                url: "/today",
+                teamId: favoriteTeam,
+              },
+              { favoriteTeam, origin: url.origin }
+            );
+
+            return {
+              sub,
+              tone,
+              copy,
+              push,
+            };
+          }
+        );
+
+        const endDisableTargets = endResults
+          .filter(
+            (r) =>
+              r &&
+              (r.push.statusCode === 401 ||
+                r.push.statusCode === 403 ||
+                r.push.statusCode === 404 ||
+                r.push.statusCode === 410)
+          )
+          .map((r) => r!.sub);
+        if (endDisableTargets.length > 0) {
+          const disableResults = await mapWithConcurrency(endDisableTargets, 8, (sub) =>
+            prisma.pushSubscription.updateMany({
+              where: {
+                userId: sub.userId,
+                endpoint: sub.endpoint,
+                enabled: true,
+              },
+              data: { enabled: false },
+            })
+          );
+          disabled += disableResults.reduce((acc, row) => acc + row.count, 0);
+        }
+
+        const endInboxRows: Array<{
+          userId: string;
+          title: string;
+          body: string;
+          deeplinkUrl: string;
+          sentAt: Date;
+          type: "GAME_RESULT";
+          payload: Prisma.InputJsonValue;
+        }> = [];
+        const endInboxKey = new Set<string>();
+
+        for (const row of endResults) {
+          if (!row) continue;
+          if (row.push.ok) pushSent += 1;
+          const key = `${row.sub.userId}:${row.copy.title}:${row.copy.body}`;
+          if (endInboxKey.has(key)) continue;
+          endInboxKey.add(key);
+          endInboxRows.push({
+            userId: row.sub.userId,
+            title: row.copy.title,
+            body: row.copy.body,
+            deeplinkUrl: "/today",
+            sentAt: new Date(),
+            type: "GAME_RESULT",
+            payload: {
+              gameId: updated.id,
+              externalId: game.externalId,
+              homeTeam: game.homeTeam,
+              awayTeam: game.awayTeam,
+              homeScore: game.homeScore,
+              awayScore: game.awayScore,
+              tone: row.tone,
+            },
+          });
+        }
+
+        if (endInboxRows.length > 0) {
+          const result = await prisma.notification.createMany({ data: endInboxRows });
+          inboxCreated += result.count;
+        }
+      } catch (error) {
+        errors += 1;
+        failedGameIds.push(game.externalId);
+        console.error("[check-score] failed for game", game.externalId, error);
+      }
+    }
+
+    const summary = {
+      fastMode,
+      checked,
+      changed,
+      llmCalls,
+      pushSent,
+      disabled,
+      inboxCreated,
+      errors,
+      failedGameIds,
+      snapshotCount: snapshot.length,
+      fetchError,
+      triggerSource,
+    };
+    await finishCronRun({
+      id: runId,
+      status: errors > 0 || fetchError ? "partial" : "success",
+      summary,
+      error: fetchError,
     });
 
-    const endInboxRows: Array<{
-      userId: string;
-      title: string;
-      body: string;
-      deeplinkUrl: string;
-      sentAt: Date;
-      type: "GAME_RESULT";
-      payload: Prisma.InputJsonValue;
-    }> = [];
-    const endInboxKey = new Set<string>();
-
-    for (const sub of endSubs) {
-      if (!isGameEndAlertEnabled(sub.topics)) continue;
-      const favoriteTeam = sub.user.favoriteTeam;
-      if (!favoriteTeam) continue;
-
-      let tone: GameEndTone | null = null;
-      if (favoriteTeam === game.homeTeam) {
-        if (game.homeScore > game.awayScore) tone = "win";
-        else if (game.homeScore < game.awayScore) tone = "loss";
-        else tone = "draw";
-      } else if (favoriteTeam === game.awayTeam) {
-        if (game.awayScore > game.homeScore) tone = "win";
-        else if (game.awayScore < game.homeScore) tone = "loss";
-        else tone = "draw";
-      }
-      if (!tone) continue;
-
-      const copy = buildGameEndCopy(game, favoriteTeam, tone);
-      const push = await sendWebPush(
-        {
-          endpoint: sub.endpoint,
-          p256dh: sub.p256dh,
-          auth: sub.auth,
-        },
-        {
-          title: copy.title,
-          body: copy.body,
-          url: "/today",
-          teamId: favoriteTeam,
-        },
-        { favoriteTeam, origin: url.origin }
-      );
-      if (push.ok) {
-        pushSent += 1;
-      } else if (
-        push.statusCode === 401 ||
-        push.statusCode === 403 ||
-        push.statusCode === 404 ||
-        push.statusCode === 410
-      ) {
-        await prisma.pushSubscription.updateMany({
-          where: {
-            userId: sub.userId,
-            endpoint: sub.endpoint,
-            enabled: true,
-          },
-          data: { enabled: false },
-        });
-        disabled += 1;
-      }
-
-      const key = `${sub.userId}:${copy.title}:${copy.body}`;
-      if (endInboxKey.has(key)) continue;
-      endInboxKey.add(key);
-      endInboxRows.push({
-        userId: sub.userId,
-        title: copy.title,
-        body: copy.body,
-        deeplinkUrl: "/today",
-        sentAt: new Date(),
-        type: "GAME_RESULT",
-        payload: {
-          gameId: updated.id,
-          externalId: game.externalId,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          homeScore: game.homeScore,
-          awayScore: game.awayScore,
-          tone,
-        },
-      });
-    }
-
-    if (endInboxRows.length > 0) {
-      const result = await prisma.notification.createMany({ data: endInboxRows });
-      inboxCreated += result.count;
-    }
+    return NextResponse.json({
+      ok: errors === 0 && !fetchError,
+      runId,
+      ...summary,
+    });
+  } catch (error) {
+    const message = (error as Error).message;
+    await finishCronRun({
+      id: runId,
+      status: "error",
+      summary: {
+        fastMode,
+        checked,
+        changed,
+        llmCalls,
+        pushSent,
+        disabled,
+        inboxCreated,
+        errors: errors + 1,
+        failedGameIds,
+        triggerSource,
+      },
+      error: message,
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        runId,
+        error: message,
+        checked,
+        changed,
+        llmCalls,
+        pushSent,
+        disabled,
+        inboxCreated,
+        errors: errors + 1,
+        failedGameIds,
+      },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    ok: true,
-    fastMode,
-    checked,
-    changed,
-    llmCalls,
-    pushSent,
-    disabled,
-    inboxCreated,
-  });
 }
