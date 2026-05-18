@@ -169,7 +169,8 @@ function Row({
             fontFamily: NUM_FONT,
             fontWeight: isMe ? 800 : 600,
             fontSize: 13,
-            color: isMe ? t.accent : "rgba(255,255,255,0.55)",
+            color: isMe ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.55)",
+            textShadow: isMe ? `0 0 8px ${t.accent}66` : "none",
             letterSpacing: "-0.01em",
           }}
         >

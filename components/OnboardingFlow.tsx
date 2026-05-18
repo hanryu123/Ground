@@ -249,7 +249,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
             transition={{ duration: 0.35, ease }}
             className="flex h-full flex-col px-5 pb-10 pt-12"
           >
-            <p className="text-[11px] uppercase tracking-[0.32em] text-white/50">Welcome</p>
+            <p className="text-[11px] uppercase tracking-[0.32em] text-white/50">
+              WELCOME TO THE <span className="font-semibold text-white/68">GROUND</span>
+            </p>
             <h1 className="mt-3 text-[30px] font-semibold tracking-tight">응원팀을 선택해 주세요</h1>
             <p className="mt-2 text-[13px] text-white/60">선택 즉시 팀 전용 편파 중계 모드로 넘어갑니다.</p>
 

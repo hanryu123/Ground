@@ -70,7 +70,11 @@ export type LiveGame = Game & {
   awayLineup: LineupItem[] | null;
 };
 
-export type TodayFeedStatus = "NORMAL" | "MONDAY_OFF" | "RAIN_CANCELLED";
+export type TodayFeedStatus =
+  | "NORMAL"
+  | "MONDAY_OFF"
+  | "RAIN_CANCELLED"
+  | "NO_GAMES";
 
 export function isKboRegularOffDay(date: string): boolean {
   const day = new Date(`${date}T00:00:00+09:00`).getDay();
@@ -81,7 +85,8 @@ export function resolveTodayFeedStatus(date: string, games: LiveGame[]): TodayFe
   const hasRainCancelled = games.some((game) => game.cancelReason === "RAIN");
   const allCancelled = games.length > 0 && games.every((game) => game.status === "CANCEL");
   if (hasRainCancelled || allCancelled) return "RAIN_CANCELLED";
-  if (isKboRegularOffDay(date) || games.length === 0) return "MONDAY_OFF";
+  if (isKboRegularOffDay(date) && games.length === 0) return "MONDAY_OFF";
+  if (games.length === 0) return "NO_GAMES";
   return "NORMAL";
 }
 
@@ -91,6 +96,9 @@ export function resolveTodayFeedMessage(status: TodayFeedStatus): string | null 
   }
   if (status === "RAIN_CANCELLED") {
     return "하... 비 와서 오늘 경기 취소됨 🌧️ 투수 로테이션 개이득인가?";
+  }
+  if (status === "NO_GAMES") {
+    return "오늘 경기가 없다... 그래도 우리 팀만 기다린다.";
   }
   return null;
 }

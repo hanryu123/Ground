@@ -170,7 +170,7 @@ const MAX_FLOATING_CHATS = 50;
 
 export default function HeroCard({ team }: Props) {
   // ── 라이브 KBO 데이터 (60s 폴링, 실패 시 폴백) ──
-  const live = useKboToday();
+  const live = useKboToday(team.id);
   const match = useMemo(
     () => getTodayMatch(team, live?.games),
     [team, live?.games]
