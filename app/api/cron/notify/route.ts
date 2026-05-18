@@ -17,6 +17,9 @@ type ActiveSubscription = {
   p256dh: string;
   auth: string;
   topics: unknown;
+  user: {
+    favoriteTeam: string | null;
+  };
 };
 
 type SubscriptionTopics = {
@@ -127,7 +130,7 @@ export async function GET(req: Request) {
   const activeSubs: ActiveSubscription[] = await prisma.pushSubscription.findMany({
     where: {
       enabled: true,
-      ...(teamId ? { user: { favoriteTeam: teamId } } : {}),
+      ...(teamId ? { user: { is: { favoriteTeam: teamId } } } : {}),
     },
     select: {
       id: true,
@@ -136,6 +139,11 @@ export async function GET(req: Request) {
       p256dh: true,
       auth: true,
       topics: true,
+      user: {
+        select: {
+          favoriteTeam: true,
+        },
+      },
     },
   });
   const filteredSubs = activeSubs.filter((sub) => isNotifyEnabled(sub.topics, kind));
@@ -174,7 +182,11 @@ export async function GET(req: Request) {
         title,
         body,
         url: "/today",
-      }
+        ...(sub.user.favoriteTeam ?? teamId
+          ? { teamId: sub.user.favoriteTeam ?? teamId ?? undefined }
+          : {}),
+      },
+      { favoriteTeam: sub.user.favoriteTeam, origin: url.origin }
     );
     if (result.ok) {
       sent += 1;

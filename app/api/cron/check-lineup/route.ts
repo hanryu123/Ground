@@ -188,7 +188,9 @@ export async function GET(req: Request) {
                 title,
                 body,
                 url: "/today",
-              }
+                teamId: teamLineup.teamId,
+              },
+              { favoriteTeam: teamLineup.teamId, origin: url.origin }
             );
             if (push.ok) {
               pushSent += 1;

@@ -9,6 +9,7 @@ import {
 import { findTeam } from "@/lib/teams";
 import { todayKstDate } from "@/lib/kbo";
 import { buildBiasedScoreCopy, computePulseState } from "@/lib/pushTemplate";
+import { generateScorePushCopy } from "@/lib/pushLlm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ type SubscriptionTopics = {
   gameEnd?: boolean;
 };
 
+type JsonObject = Record<string, unknown>;
+
 function isScoreAlertEnabled(topics: unknown): boolean {
   if (!topics || typeof topics !== "object") return false;
   return Boolean((topics as SubscriptionTopics).score);
@@ -47,6 +50,11 @@ function isAuthorized(req: Request): boolean {
   if (!secret) return true;
   const auth = req.headers.get("authorization");
   return auth === `Bearer ${secret}`;
+}
+
+function isFastMode(url: URL): boolean {
+  const raw = (url.searchParams.get("fast") ?? "").toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
 }
 
 function buildGameEndCopy(game: LiveScoreGame, favoriteTeam: string, tone: GameEndTone) {
@@ -126,6 +134,78 @@ function parseGameDate(gameDate?: string, gameDateTime?: string): Date | null {
   return null;
 }
 
+function readStringValue(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length > 0 ? t : null;
+}
+
+function collectCandidateTexts(root: unknown): string[] {
+  const queue: unknown[] = [root];
+  const out: string[] = [];
+  const visited = new Set<unknown>();
+  const keys = ["relay", "text", "comment", "summary", "play", "situation", "content"];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current == null || visited.has(current)) continue;
+    visited.add(current);
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item);
+      continue;
+    }
+    if (typeof current !== "object") continue;
+    const obj = current as JsonObject;
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === "string") {
+        const lower = key.toLowerCase();
+        const text = readStringValue(value);
+        if (!text) continue;
+        if (keys.some((token) => lower.includes(token))) {
+          out.push(text);
+        }
+      } else if (value && typeof value === "object") {
+        queue.push(value);
+      }
+    }
+  }
+  return out;
+}
+
+function pickLatestPlayText(payload: unknown): string | null {
+  const candidates = collectCandidateTexts(payload)
+    .map((t) => t.replace(/\s+/g, " ").trim())
+    .filter((t) => t.length >= 8);
+  if (candidates.length === 0) return null;
+  return candidates[0];
+}
+
+async function fetchLatestPlayText(gameId: string): Promise<string | null> {
+  const endpoints = [
+    `${NAVER_BASE}/schedule/games/${gameId}/relay`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relayTexts`,
+    `${NAVER_BASE}/schedule/games/${gameId}`,
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        headers: {
+          "user-agent": NAVER_UA,
+          accept: "application/json",
+          referer: "https://m.sports.naver.com/",
+        },
+        cache: "no-store",
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const text = pickLatestPlayText(json);
+      if (text) return text;
+    } catch {
+      // ignore and try next endpoint
+    }
+  }
+  return null;
+}
+
 async function fetchLiveScoreSnapshot(): Promise<LiveScoreGame[]> {
   const date = todayKstDate();
   const url =
@@ -181,6 +261,7 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+  const fastMode = isFastMode(url);
   const tickRaw = url.searchParams.get("tick");
   const snapshot: LiveScoreGame[] =
     tickRaw != null && tickRaw !== ""
@@ -199,6 +280,7 @@ export async function GET(req: Request) {
   let pushSent = 0;
   let disabled = 0;
   let inboxCreated = 0;
+  let llmCalls = 0;
 
   for (const game of snapshot) {
     checked += 1;
@@ -235,6 +317,10 @@ export async function GET(req: Request) {
     if (homeDelta <= 0 && awayDelta <= 0) continue;
 
     changed += 1;
+    const latestPlayText = fastMode
+      ? `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`
+      : (await fetchLatestPlayText(game.externalId)) ??
+        `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
     const activeSubs = await prisma.pushSubscription.findMany({
       where: {
         enabled: true,
@@ -268,6 +354,7 @@ export async function GET(req: Request) {
       payload: Prisma.InputJsonValue;
     }> = [];
     const inboxKey = new Set<string>();
+    const scoreCopyCache = new Map<string, { title: string; body: string }>();
 
     for (const sub of activeSubs) {
       if (!isScoreAlertEnabled(sub.topics)) continue;
@@ -299,6 +386,25 @@ export async function GET(req: Request) {
         tone,
         state,
       });
+      const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${latestPlayText}`;
+      let aiCopy = scoreCopyCache.get(cacheKey);
+      if (!aiCopy) {
+        if (fastMode) {
+          aiCopy = copy;
+        } else {
+          llmCalls += 1;
+          aiCopy = await generateScorePushCopy({
+            favoriteTeam,
+            opponentTeam: isHomeFan ? game.awayTeam : game.homeTeam,
+            myScore,
+            oppScore,
+            latestPlayText,
+            fallbackTitle: copy.title,
+            fallbackBody: copy.body,
+          });
+        }
+        scoreCopyCache.set(cacheKey, aiCopy);
+      }
       const push = await sendWebPush(
         {
           endpoint: sub.endpoint,
@@ -306,10 +412,13 @@ export async function GET(req: Request) {
           auth: sub.auth,
         },
         {
-          title: copy.title,
-          body: copy.body,
+          title: aiCopy.title,
+          body: aiCopy.body,
           url: "/today",
-        }
+          latestPlayText,
+          teamId: favoriteTeam,
+        },
+        { favoriteTeam, origin: url.origin }
       );
       if (push.ok) {
         pushSent += 1;
@@ -330,13 +439,13 @@ export async function GET(req: Request) {
         disabled += 1;
       }
 
-      const key = `${sub.userId}:${copy.title}:${copy.body}`;
+      const key = `${sub.userId}:${aiCopy.title}:${aiCopy.body}`;
       if (inboxKey.has(key)) continue;
       inboxKey.add(key);
       inboxRows.push({
         userId: sub.userId,
-        title: copy.title,
-        body: copy.body,
+        title: aiCopy.title,
+        body: aiCopy.body,
         deeplinkUrl: "/today",
         sentAt: new Date(),
         type: "SCORE_UPDATE",
@@ -348,6 +457,7 @@ export async function GET(req: Request) {
           homeScore: game.homeScore,
           awayScore: game.awayScore,
           tone,
+          latestPlayText,
         },
       });
     }
@@ -423,7 +533,9 @@ export async function GET(req: Request) {
           title: copy.title,
           body: copy.body,
           url: "/today",
-        }
+          teamId: favoriteTeam,
+        },
+        { favoriteTeam, origin: url.origin }
       );
       if (push.ok) {
         pushSent += 1;
@@ -474,8 +586,10 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    fastMode,
     checked,
     changed,
+    llmCalls,
     pushSent,
     disabled,
     inboxCreated,

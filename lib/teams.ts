@@ -131,6 +131,16 @@ export const TEAMS: Team[] = [
   },
 ];
 
+export const TEAM_COLORS: Record<string, string> = TEAMS.reduce<Record<string, string>>((acc, team) => {
+  acc[team.id] = team.accent;
+  return acc;
+}, {});
+
+export const TEAM_SHORT_LABELS: Record<string, string> = TEAMS.reduce<Record<string, string>>((acc, team) => {
+  acc[team.id] = team.short;
+  return acc;
+}, {});
+
 /**
  * /today 히어로 매치업에서 **좌측 열 팀명 위**에만 붙는 수식어.
  * (응원팀이 항상 좌측에 오므로, 한 팀만 표기)

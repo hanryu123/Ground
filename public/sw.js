@@ -16,12 +16,17 @@ self.addEventListener("push", (event) => {
   const title = data.title || "KBO TODAY";
   const body = data.body || "새 알림이 도착했어요.";
   const url = data.url || "/today";
+  const icon = typeof data.icon === "string" && data.icon.length > 0 ? data.icon : "/icons/icon-192x192.png";
+  const badge =
+    typeof data.badge === "string" && data.badge.length > 0
+      ? data.badge
+      : "/icons/badge-monochrome.png";
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
+      icon,
+      badge,
       data: { url },
       tag: "ground-notification",
       renotify: false,

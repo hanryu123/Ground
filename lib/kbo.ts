@@ -466,6 +466,7 @@ export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
     );
     return TODAY_GAMES.map((g) => ({
       ...g,
+      date: target,
       status: "BEFORE" as LiveStatus,
       homeLineup: null,
       awayLineup: null,
