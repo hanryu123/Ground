@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, PlusSquare, Share2, Smartphone } from "lucide-react";
+import { ArrowLeft, Smartphone } from "lucide-react";
 import { TEAMS } from "@/lib/teams";
 import LogoImage from "@/components/LogoImage";
 import { setMyTeam, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
@@ -42,6 +42,50 @@ const TEAM_SLOGANS: Record<string, string> = {
 type Props = {
   onComplete: () => void;
 };
+
+function ShareGuideIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-0.5 inline-block align-[-2px]"
+      aria-hidden
+    >
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function AddHomeGuideIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-0.5 inline-block align-[-2px]"
+      aria-hidden
+    >
+      <rect x="3" y="3" width="18" height="18" rx="5" ry="5" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+    </svg>
+  );
+}
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const normalized = hex.trim().replace("#", "");
@@ -347,24 +391,23 @@ export default function OnboardingFlow({ onComplete }: Props) {
                 GROUND를 사용하려면 홈화면에 추가가 필요해요 ⚾️
               </p>
               {installGuide === "ios" ? (
-                <div className="mt-4 space-y-2 text-[13px] leading-relaxed text-white/85">
-                  <p className="flex items-center gap-2">
-                    <Share2 size={15} />
-                    <span>
-                      #1. 사파리 하단{" "}
-                      <span className="font-semibold">[공유]</span> 버튼(사각형 + 위 화살표)을
-                      선택하세요.
-                    </span>
+                <div
+                  className="mt-4 space-y-2 text-[13px] leading-relaxed text-white/85"
+                  style={{
+                    fontFamily:
+                      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif",
+                  }}
+                >
+                  <p>
+                    #1. 사파리 하단 <ShareGuideIcon />
+                    <span className="font-semibold">공유</span> 버튼(사각형 + 위 화살표)을 선택하세요.
                   </p>
-                  <p className="pl-[23px] text-white/70">
+                  <p className="text-white/70">
                     (공유 버튼이 안 보인다면, 주소창 옆 ... 버튼을 선택하면 나와요!)
                   </p>
-                  <p className="flex items-center gap-2">
-                    <PlusSquare size={15} />
-                    <span>
-                      #2. 메뉴를 스크롤하여{" "}
-                      <span className="font-semibold">[홈 화면에 추가]</span>를 선택하세요.
-                    </span>
+                  <p>
+                    #2. 메뉴를 스크롤하여 <AddHomeGuideIcon />
+                    <span className="font-semibold">홈 화면에 추가</span>를 선택하세요.
                   </p>
                 </div>
               ) : (
