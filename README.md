@@ -37,6 +37,56 @@ npm run dev
 | `REPLICATE_API_TOKEN` | LoRA 이미지 생성 | placeholder ref 이미지로 fallback |
 | `REPLICATE_MODEL_VERSION` | 기본 LoRA 모델 | `config/teams.ts`의 팀별 `modelId` 사용 |
 | `OPENWEATHER_API_KEY` | 구장 위치 날씨 조회 | `isRainy: false` (항상 맑음) |
+| `DATABASE_URL` | Prisma(PostgreSQL) 연결 문자열 | DB 기능 비활성 |
+
+## Prisma (알림 시스템 1단계)
+
+웹 푸시 구독/인앱 알림 저장용 스키마가 `prisma/schema.prisma`에 추가되어 있다.
+
+```bash
+# 1) 환경 변수 준비
+cp .env.local.example .env.local
+# .env.local 의 DATABASE_URL 채우기
+
+# 2) Prisma 클라이언트 생성
+npm run db:generate
+
+# 3) 로컬 마이그레이션 생성 + 적용
+npm run db:migrate -- --name init_notifications
+
+# 4) 데이터 확인 (선택)
+npm run db:studio
+```
+
+## Notification (2단계/3단계)
+
+### 2) Web Push + Service Worker + 인앱 알림
+
+- 서비스 워커: `public/sw.js`
+- 구독 API: `POST /api/notifications/subscribe`
+- 구독 해제 API: `POST /api/notifications/unsubscribe`
+- 인앱 알림 조회: `GET /api/notifications`
+- 읽음 처리: `POST /api/notifications/read`
+- UI: `components/NotificationBell.tsx` (우상단 종 패널)
+
+VAPID 키 생성:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+생성된 값을 `.env.local`에 설정:
+
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_SUBJECT`
+
+### 3) Vercel Cron 발송 API
+
+- 경로: `GET /api/cron/notify`
+- 설정: `vercel.json` (매일 14:00 KST = `0 5 * * *` UTC)
+- 메시지: `오늘의 KBO 승부 예측하고 초인간 포카 뽑으세요!`
+- 보안: `Authorization: Bearer <CRON_SECRET>` (선택, 로컬은 미설정 허용)
 
 ## 디버그 쿼리
 

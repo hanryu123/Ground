@@ -28,6 +28,8 @@ type Props = {
   url?: string;
   /** Today 히어로용 스토리 카드 — 포스터+팀명+카피+경기/선발 */
   todayStory?: TodayStoryImageInput | null;
+  /** 아이콘 컬러 (밝은 배경 가독성 보정) */
+  iconColor?: string;
 };
 
 export default function ShareButton({
@@ -35,6 +37,7 @@ export default function ShareButton({
   text,
   url,
   todayStory,
+  iconColor = "rgba(255,255,255,0.85)",
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -115,8 +118,11 @@ export default function ShareButton({
         <Share2
           size={20}
           strokeWidth={1.5}
-          className="text-white/85"
-          style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))" }}
+          className="text-current"
+          style={{
+            color: iconColor,
+            filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))",
+          }}
         />
       </motion.button>
 

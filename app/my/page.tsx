@@ -14,7 +14,7 @@ export default function MyPage() {
   const choose = (id: string) => setMyTeam(id);
 
   return (
-    <section className="flex min-h-0 flex-col pb-8">
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-8 [-webkit-overflow-scrolling:touch]">
       {/* 미니멀 라벨 */}
       <header className="px-7 pt-7">
         <p

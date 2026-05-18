@@ -5,6 +5,7 @@ import { findTeam, type Team } from "./teams";
 
 export const MY_TEAM_KEY = "kbo-my-team";
 export const MY_TEAM_EVENT = "kbo:my-team-change";
+export const ONBOARDING_DONE_KEY = "ground-onboarding-complete";
 
 const DEFAULT_ID = "doosan";
 
@@ -17,7 +18,13 @@ export function useMyTeam(): Team {
       if (v) setId(v);
     } catch {}
 
-    const onChange = () => {
+    const onChange = (evt?: Event) => {
+      const custom = evt as CustomEvent<string> | undefined;
+      const nextFromEvent = custom?.detail;
+      if (typeof nextFromEvent === "string" && nextFromEvent) {
+        setId(nextFromEvent);
+        return;
+      }
       try {
         const v = localStorage.getItem(MY_TEAM_KEY);
         if (v) setId(v);
@@ -38,7 +45,7 @@ export function useMyTeam(): Team {
 export function setMyTeam(id: string) {
   try {
     localStorage.setItem(MY_TEAM_KEY, id);
-    window.dispatchEvent(new Event(MY_TEAM_EVENT));
+    window.dispatchEvent(new CustomEvent(MY_TEAM_EVENT, { detail: id }));
   } catch {}
 }
 

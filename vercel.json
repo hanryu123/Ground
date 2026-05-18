@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/check-score",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/cron/check-lineup",
+      "schedule": "20 6 * * *"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { ChevronDown, ChevronUp, Play } from "lucide-react";
 import {
   PAST_GAMES,
@@ -60,8 +60,10 @@ export default function SchedulePageClient({
   /** 서버에서 SSR 로 받아온 초기 번들 — 첫 paint 부터 라이브 데이터 노출. */
   initial: ScheduleBundle;
 }) {
-  const todayRef = useRef<HTMLDivElement | null>(null);
-  // 라이브 도착 후 한 번만 anchor 재조정. 5분 폴링마다 점프하면 사용자 스크롤 위치가 박살남.
+  const rootRef = useRef<HTMLElement | null>(null);
+  const sectionRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const currentSectionRef = useRef(0);
+  const scrollLockedRef = useRef(false);
   const didLiveScrollRef = useRef(false);
 
   // ── 라이브 KBO 데이터 (initial 로 즉시 채워진 뒤 5분 폴링으로 갱신) ──
@@ -128,14 +130,56 @@ export default function SchedulePageClient({
     return [...past, ...todaySections, ...tomorrowSections, ...upcomingSections];
   }, [live]);
 
-  // 초기 mount 시 TODAY 섹션으로 점프. SSR 덕분에 초기 콘텐츠가 이미 라이브이므로
-  // 한 번의 useLayoutEffect 호출로 정확한 위치에 anchor 됨 (이전의 깜빡임 사라짐).
-  useEffect(() => {
-    const target = todayRef.current;
-    if (!target) return;
-    const top = target.getBoundingClientRect().top + window.scrollY - 12;
-    window.scrollTo({ top, behavior: "auto" });
+  const todayIndex = useMemo(() => {
+    const idx = sections.findIndex((s) => s.badge === "TODAY");
+    return idx >= 0 ? idx : 0;
+  }, [sections]);
+
+  const scrollToSection = useCallback(
+    (index: number, behavior: ScrollBehavior = "smooth") => {
+      const root = rootRef.current;
+      const target = sectionRefs.current[index];
+      if (!root || !target) return;
+      currentSectionRef.current = index;
+      root.scrollTo({ top: target.offsetTop, behavior });
+    },
+    []
+  );
+
+  const bumpHaptic = useCallback(() => {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(12);
+    }
   }, []);
+
+  const stepSection = useCallback(
+    (dir: 1 | -1) => {
+      if (scrollLockedRef.current) return;
+      const max = Math.max(0, sections.length - 1);
+      const next = Math.min(max, Math.max(0, currentSectionRef.current + dir));
+      if (next === currentSectionRef.current) return;
+      scrollLockedRef.current = true;
+      scrollToSection(next, "smooth");
+      bumpHaptic();
+      window.setTimeout(() => {
+        scrollLockedRef.current = false;
+      }, 430);
+    },
+    [sections.length, scrollToSection, bumpHaptic]
+  );
+
+  // 초기 mount 시 TODAY 섹션으로 점프. SSR 덕분에 초기 콘텐츠가 이미 라이브이므로
+  // 한 번의 effect 호출로 정확한 위치에 anchor.
+  useEffect(() => {
+    const root =
+      rootRef.current ??
+      (document.querySelector("main") instanceof HTMLElement
+        ? (document.querySelector("main") as HTMLElement)
+        : null);
+    if (root && !rootRef.current) rootRef.current = root;
+    if (!root) return;
+    scrollToSection(todayIndex, "auto");
+  }, [todayIndex, scrollToSection]);
 
   // 폴링으로 새 데이터가 도착했을 때, 사용자가 아직 스크롤하지 않은 첫 갱신 한정으로만
   // 보정 스크롤 (initial 과 동일한 데이터면 영향 없음).
@@ -148,14 +192,56 @@ export default function SchedulePageClient({
       return;
     }
     const raf = requestAnimationFrame(() => {
-      const target = todayRef.current;
-      if (!target) return;
-      const top = target.getBoundingClientRect().top + window.scrollY - 12;
-      window.scrollTo({ top, behavior: "auto" });
+      scrollToSection(todayIndex, "auto");
       didLiveScrollRef.current = true;
     });
     return () => cancelAnimationFrame(raf);
-  }, [live, initial]);
+  }, [live, initial, todayIndex, scrollToSection]);
+
+  // 한 번 스크롤(휠/스와이프)할 때 날짜를 하나씩 넘기는 스냅 UX.
+  useEffect(() => {
+    const root =
+      rootRef.current ??
+      (document.querySelector("main") instanceof HTMLElement
+        ? (document.querySelector("main") as HTMLElement)
+        : null);
+    if (root && !rootRef.current) rootRef.current = root;
+    if (!root) return;
+
+    let touchStartY = 0;
+    let touchDeltaY = 0;
+
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 8) return;
+      e.preventDefault();
+      stepSection(e.deltaY > 0 ? 1 : -1);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0;
+      touchDeltaY = 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? touchStartY;
+      touchDeltaY = touchStartY - y;
+      e.preventDefault();
+    };
+    const onTouchEnd = () => {
+      if (Math.abs(touchDeltaY) < 24) return;
+      stepSection(touchDeltaY > 0 ? 1 : -1);
+    };
+
+    root.addEventListener("wheel", onWheel, { passive: false });
+    root.addEventListener("touchstart", onTouchStart, { passive: true });
+    root.addEventListener("touchmove", onTouchMove, { passive: false });
+    root.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      root.removeEventListener("wheel", onWheel);
+      root.removeEventListener("touchstart", onTouchStart);
+      root.removeEventListener("touchmove", onTouchMove);
+      root.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [stepSection]);
 
   return (
     <section className="px-0 pb-10">
@@ -168,11 +254,13 @@ export default function SchedulePageClient({
         </p>
       </header>
 
-      {sections.map((sec) => (
+      {sections.map((sec, i) => (
         <DaySection
-          key={sec.date}
+          key={`${sec.badge}-${sec.date}-${i}`}
           section={sec}
-          innerRef={sec.badge === "TODAY" ? todayRef : undefined}
+          sectionRef={(el) => {
+            sectionRefs.current[i] = el;
+          }}
         />
       ))}
 
@@ -188,10 +276,10 @@ export default function SchedulePageClient({
 
 function DaySection({
   section,
-  innerRef,
+  sectionRef,
 }: {
   section: Section;
-  innerRef?: React.RefObject<HTMLDivElement | null>;
+  sectionRef?: (el: HTMLDivElement | null) => void;
 }) {
   const muted = section.tone !== "today";
   const headingColor =
@@ -202,7 +290,7 @@ function DaySection({
         : "text-white/45";
 
   return (
-    <div ref={innerRef} className="px-7 pt-12">
+    <div ref={sectionRef} className="px-7 pt-12">
       <div className="mb-5">
         <div className="mb-2 flex items-center gap-1.5 text-white/45">
           {section.badge === "PAST" && <ChevronUp size={12} strokeWidth={2.4} />}

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Home, CalendarDays, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMyTeam } from "@/lib/useMyTeam";
+import { getKboTeamThemeByTeamId } from "@/config/teams";
 
 /**
  * 하단 탭 — TODAY · SCHEDULE · RANK 3종.
@@ -20,12 +21,28 @@ const TABS = [
 export default function BottomNav() {
   const pathname = usePathname();
   const team = useMyTeam();
+  const visualTheme = getKboTeamThemeByTeamId(team.id);
+  const accent = visualTheme?.secondary ?? team.accent;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50">
       {/* 위쪽으로 자연스럽게 사라지는 그라데이션 (라인 대신) */}
-      <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-t from-black to-transparent" />
-      <div className="bg-black/85 backdrop-blur-2xl">
+      <div
+        className="pointer-events-none absolute inset-x-0 -top-6 h-6"
+        style={{
+          background:
+            "linear-gradient(to top, color-mix(in srgb, var(--app-bg, #000000) 88%, transparent), transparent)",
+        }}
+      />
+      <div
+        className="backdrop-blur-md"
+        style={{
+          backgroundColor:
+            "color-mix(in srgb, var(--app-text, #ffffff) 20%, transparent)",
+          color: "var(--app-text, #ffffff)",
+          borderTop: "1px solid color-mix(in srgb, var(--app-text, #ffffff) 18%, transparent)",
+        }}
+      >
         <ul className="mx-auto flex max-w-md items-stretch justify-around px-6 pb-6 pt-3 safe-pb">
           {TABS.map(({ href, label, Icon }) => {
             const active = pathname?.startsWith(href);
@@ -50,14 +67,19 @@ export default function BottomNav() {
                       style={
                         active
                           ? {
-                              filter: `drop-shadow(0 0 8px ${team.accent}55)`,
+                              color: "var(--app-text, #ffffff)",
+                              filter: `drop-shadow(0 0 8px ${accent}55)`,
                             }
-                          : undefined
+                          : { color: "var(--app-text, #ffffff)" }
                       }
                     />
                     <span
                       className="text-[9.5px] tracking-[0.22em] text-white"
-                      style={{ fontWeight: active ? 700 : 400 }}
+                      style={{
+                        color: "var(--app-text, #ffffff)",
+                        opacity: active ? 1 : 0.65,
+                        fontWeight: active ? 700 : 400,
+                      }}
                     >
                       {label}
                     </span>
@@ -72,8 +94,8 @@ export default function BottomNav() {
                       }}
                       className="absolute -top-1 h-[3px] w-7 rounded-full"
                       style={{
-                        backgroundColor: team.accent,
-                        boxShadow: `0 0 10px ${team.accent}99, 0 0 18px ${team.accent}55`,
+                        backgroundColor: accent,
+                        boxShadow: `0 0 10px ${accent}99, 0 0 18px ${accent}55`,
                       }}
                     />
                   )}

@@ -1,8 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import TeamSelectScreen from "./TeamSelectScreen";
-import { useMyTeamMeta } from "@/lib/useMyTeam";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import OnboardingFlow from "./OnboardingFlow";
+import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -24,20 +26,64 @@ export default function OnboardingGate({
 }: {
   children: React.ReactNode;
 }) {
-  const { hasChosen, isReady } = useMyTeamMeta();
+  const pathname = usePathname();
+  const isAdminRoute = pathname?.startsWith("/admin") ?? false;
+  const [isReady, setIsReady] = useState(false);
+  const [teamId, setTeamId] = useState<string | null>(null);
+  const [isOnboardingDone, setIsOnboardingDone] = useState(false);
+
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const selected = localStorage.getItem(MY_TEAM_KEY);
+        const done = localStorage.getItem(ONBOARDING_DONE_KEY) === "1";
+        setTeamId(selected);
+        setIsOnboardingDone(done);
+        setIsReady(true);
+      } catch {
+        setTeamId(null);
+        setIsOnboardingDone(false);
+        setIsReady(true);
+      }
+    };
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener(MY_TEAM_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(MY_TEAM_EVENT, sync);
+    };
+  }, []);
+
+  if (isAdminRoute) {
+    return <>{children}</>;
+  }
 
   if (!isReady) {
     return <div className="h-dvh bg-black" aria-hidden />;
   }
 
+  const unlocked = Boolean(teamId) && isOnboardingDone;
+
   return (
     <AnimatePresence mode="wait" initial={false}>
-      {!hasChosen ? (
+      {!unlocked ? (
         <motion.div
           key="onboarding"
           exit={{ opacity: 0, transition: { duration: 0.4, ease } }}
         >
-          <TeamSelectScreen />
+          <OnboardingFlow
+            onComplete={() => {
+              setIsOnboardingDone(true);
+              if (!teamId) {
+                try {
+                  setTeamId(localStorage.getItem(MY_TEAM_KEY));
+                } catch {
+                  setTeamId(null);
+                }
+              }
+            }}
+          />
         </motion.div>
       ) : (
         <motion.div

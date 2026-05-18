@@ -1,22 +1,22 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Cormorant_Garamond } from "next/font/google";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloudRain, User } from "lucide-react";
 import { findTeam, heroLeftEpithetLabel, type Team } from "@/lib/teams";
 import { TODAY_GAMES } from "@/lib/games";
-import { pickSlogan, splitSloganForDisplay } from "@/config/teams";
+import {
+  getKboTeamThemeByTeamId,
+  pickSlogan,
+  splitSloganForDisplay,
+} from "@/config/teams";
 import NotificationBell from "@/components/NotificationBell";
 import ShareButton from "@/components/ShareButton";
 import { useWeather, type WeatherInfo } from "@/lib/useWeather";
-import { posterCandidates, POSTER_FINAL_FALLBACK } from "@/lib/posterImage";
-import { useTodaySlot } from "@/lib/useTodaySlot";
-import { isTeamWinnerToday } from "@/config/todayGames";
 import { useKboToday } from "@/lib/useKboToday";
-import { getTeamGame, starterLabel, type LiveGame } from "@/lib/kbo";
+import { getTeamGame, starterLabel, type LineupItem, type LiveGame } from "@/lib/kbo";
 import type { TodayStoryImageInput } from "@/lib/buildTodayStoryImage";
 import { venueCityOnly, venueDisplayLines } from "@/lib/venue";
 
@@ -135,29 +135,41 @@ function formatCountdownHms(totalSeconds: number): string {
   return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
-/** sessionStorage 키 — (candidates 동일하면 재방문 시 즉시 hit) */
-const POSTER_CACHE_KEY = "ground-poster-resolved";
-type PosterCache = Record<string, string>;
-
-function readPosterCache(): PosterCache {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = sessionStorage.getItem(POSTER_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as PosterCache) : {};
-  } catch {
-    return {};
-  }
+function hexToRgb(hex: string): [number, number, number] | null {
+  const normalized = hex.trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+  const value = Number.parseInt(normalized, 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 }
 
-function writePosterCache(cacheKey: string, src: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    const next = { ...readPosterCache(), [cacheKey]: src };
-    sessionStorage.setItem(POSTER_CACHE_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
+function clampColor(v: number): number {
+  return Math.min(255, Math.max(0, Math.round(v)));
 }
+
+function darkenHex(hex: string, ratio: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const factor = Math.min(1, Math.max(0, 1 - ratio));
+  return `rgb(${clampColor(rgb[0] * factor)}, ${clampColor(rgb[1] * factor)}, ${clampColor(rgb[2] * factor)})`;
+}
+
+function resolveButtonTextColor(bgHex: string): string {
+  const rgb = hexToRgb(bgHex);
+  if (!rgb) return "#ffffff";
+  // YIQ luminance heuristic: high luminance backgrounds get dark text.
+  const yiq = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+  return yiq >= 160 ? "#111111" : "#ffffff";
+}
+
+type FloatingChat = {
+  id: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  ttlMs: number;
+};
+
+const MAX_FLOATING_CHATS = 50;
 
 export default function HeroCard({ team }: Props) {
   // ── 라이브 KBO 데이터 (60s 폴링, 실패 시 폴백) ──
@@ -178,72 +190,8 @@ export default function HeroCard({ team }: Props) {
   const isRainy = weather.isRainy;
   const weatherLabel = formatWeather(weather);
 
-  // ── 시간대 + 승패 기반 정적 화보 후보 체인 (zero-latency) ──
-  //  기본(시간 무관)               → /images/refs/ready/${teamId}.{ext}
-  //                                   → 없으면 ready 풀에서 teamId 해시로 결정론적 픽
-  //  Night(22:00~05:59) + 승리만   → /images/refs/victory/${teamId}.jpg → 공용 풀
-  const slot = useTodaySlot();
-  // 라이브 승리 정보가 있으면 1순위, 없으면 정적 폴백
-  const isWinner = liveView?.isWinner ?? isTeamWinnerToday(team.id);
-  const dateKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const candidates = useMemo(
-    () => posterCandidates({ teamId: team.id, slot, isWinner, dateKey }),
-    [team.id, slot, isWinner, dateKey]
-  );
-
-  // ── 화보 src 사전 해석 (브라우저 broken-image 깜빡임 방지) ──
-  // 후보 체인을 JS Image 로 백그라운드 프로빙 → 첫 200 OK 만 DOM 에 마운트.
-  // 이렇게 하면 Image 컴포넌트가 404 를 만나서 깜빡이는 일이 절대 없다.
-  const cacheKey = candidates.join("|");
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(() => {
-    // 마운트 시 캐시 hit이면 즉시 결정 → 첫 페인트부터 정상 렌더
-    if (typeof window === "undefined") return null;
-    const cached = readPosterCache()[cacheKey];
-    return cached && candidates.includes(cached) ? cached : null;
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // 캐시 hit 체크 (effect 진입 시점에 다시 한 번)
-    const cachedNow = readPosterCache()[cacheKey];
-    if (cachedNow && candidates.includes(cachedNow)) {
-      setResolvedSrc(cachedNow);
-      return;
-    }
-
-    setResolvedSrc(null); // 후보 변경 → 일단 검정 배경 유지
-
-    (async () => {
-      for (const src of candidates) {
-        const ok = await new Promise<boolean>((resolve) => {
-          const img = new window.Image();
-          img.onload = () => resolve(true);
-          img.onerror = () => resolve(false);
-          img.src = src;
-        });
-        if (cancelled) return;
-        if (ok) {
-          writePosterCache(cacheKey, src);
-          setResolvedSrc(src);
-          return;
-        }
-      }
-      if (!cancelled) {
-        // 모든 후보가 실패해도 최종 안전망(POSTER_FINAL_FALLBACK)은 ready 풀의 실재 파일.
-        // 만에 하나 그것마저 사라졌다면 그냥 검정 배경으로 떨어진다(깨짐 X).
-        console.error(
-          `[HeroCard] all poster candidates failed for teamId="${team.id}".\n` +
-            candidates.map((c) => `  - ${c}`).join("\n")
-        );
-        setResolvedSrc(POSTER_FINAL_FALLBACK);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [candidates, cacheKey, team.id]);
+  // today 배경은 생성/로딩 없이 검정 고정.
+  const resolvedSrc: string | null = null;
 
   // ── 슬로건 — 우천이면 sloganRainy 우선, 아니면 sloganReady ──
   const sloganText =
@@ -284,6 +232,156 @@ export default function HeroCard({ team }: Props) {
       ? formatCountdownHms(Math.floor((gameStartMs - nowMs) / 1000))
       : null;
 
+  const [chatInput, setChatInput] = useState("");
+  const [floatingChats, setFloatingChats] = useState<FloatingChat[]>([]);
+  const timersRef = useRef<number[]>([]);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [keyboardInsetPx, setKeyboardInsetPx] = useState(0);
+  const [isLineupOpen, setIsLineupOpen] = useState(false);
+  const selectedTeamTheme = useMemo(
+    () =>
+      getKboTeamThemeByTeamId(team.id) ?? {
+        name: team.name,
+        primary: "#000000",
+        secondary: team.accent,
+        text: "#FFFFFF",
+        pattern: "none" as const,
+      },
+    [team.id, team.name, team.accent]
+  );
+  // 테마는 "선택된 팀"에만 묶고, 실시간 스코어 리렌더와 분리한다.
+  const [lockedTheme, setLockedTheme] = useState(selectedTeamTheme);
+  useEffect(() => {
+    setLockedTheme(selectedTeamTheme);
+  }, [selectedTeamTheme]);
+
+  const textRgb = hexToRgb(lockedTheme.text) ?? [255, 255, 255];
+  const primaryRgb = hexToRgb(lockedTheme.primary) ?? [0, 0, 0];
+  const isWhiteBase =
+    primaryRgb[0] > 246 && primaryRgb[1] > 246 && primaryRgb[2] > 246;
+  const gradientBottom = isWhiteBase ? "#F9FAFB" : darkenHex(lockedTheme.primary, 0.2);
+  const themedText = (alpha: number) =>
+    `rgba(${textRgb[0]}, ${textRgb[1]}, ${textRgb[2]}, ${alpha})`;
+  const accentColor = lockedTheme.secondary;
+  const accentButtonText = resolveButtonTextColor(accentColor);
+  const isLightThemeText = lockedTheme.text.toUpperCase() === "#000000";
+  const isLgSeoulSlogan =
+    team.id === "lg" && sloganOneLine.toUpperCase().includes("SEOUL IS OURS");
+  const selectedTeamLineup = useMemo<LineupItem[]>(() => {
+    if (!liveView) return [];
+    const source = liveView.side === "home" ? liveView.game.homeLineup : liveView.game.awayLineup;
+    return source ?? [];
+  }, [liveView]);
+  const hasSelectedTeamLineup = selectedTeamLineup.length > 0;
+
+  useEffect(() => {
+    if (!hasSelectedTeamLineup) setIsLineupOpen(false);
+  }, [hasSelectedTeamLineup]);
+
+  useEffect(() => {
+    return () => {
+      for (const t of timersRef.current) {
+        window.clearTimeout(t);
+      }
+      timersRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--app-bg", lockedTheme.primary);
+    document.documentElement.style.setProperty("--app-text", lockedTheme.text);
+    document.documentElement.style.setProperty("--app-accent", lockedTheme.secondary);
+    return () => {
+      document.documentElement.style.setProperty("--app-bg", "#000000");
+      document.documentElement.style.setProperty("--app-text", "#ffffff");
+      document.documentElement.style.setProperty("--app-accent", "#c30452");
+    };
+  }, [lockedTheme.primary, lockedTheme.secondary, lockedTheme.text]);
+
+  function spawnFloatingChat(raw: string) {
+    const text = raw.trim();
+    if (!text) return;
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const ttlMs = 5000 + Math.floor(Math.random() * 3000); // 5~8초
+    const leftPct = 6 + Math.random() * 88;
+    // 모바일 시선 흐름상 하단 근처(입력창 위)에서 먼저 보이게 배치
+    const topPct = 46 + Math.random() * 22;
+    setFloatingChats((prev) => {
+      const next = [...prev, { id, text, leftPct, topPct, ttlMs }];
+      return next.length > MAX_FLOATING_CHATS
+        ? next.slice(next.length - MAX_FLOATING_CHATS)
+        : next;
+    });
+    const tid = window.setTimeout(() => {
+      setFloatingChats((prev) => prev.filter((c) => c.id !== id));
+      timersRef.current = timersRef.current.filter((x) => x !== tid);
+    }, ttlMs);
+    timersRef.current.push(tid);
+  }
+
+  function onChatSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    submitChat();
+  }
+
+  function submitChat() {
+    const next = chatInput.trim();
+    if (!next) return false;
+    spawnFloatingChat(next);
+    setChatInput("");
+    return true;
+  }
+
+  function onChatInputKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    if (e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    submitChat();
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const setHeightVar = () => {
+      const visualHeight = Math.max(
+        320,
+        Math.min(window.innerHeight, Math.round(vv.height + vv.offsetTop))
+      );
+      const keyboardGap = Math.max(0, Math.round(window.innerHeight - visualHeight));
+      const needsCompensation =
+        Math.round(vv.height) >= window.innerHeight - 1 && keyboardGap > 0;
+      setIsKeyboardOpen(keyboardGap > 120);
+      setKeyboardInsetPx(needsCompensation ? keyboardGap : 0);
+      document.documentElement.style.setProperty(
+        "--visual-viewport-height",
+        `${visualHeight}px`
+      );
+    };
+
+    setHeightVar();
+    vv.addEventListener("resize", setHeightVar);
+    return () => {
+      vv.removeEventListener("resize", setHeightVar);
+      setKeyboardInsetPx(0);
+      document.documentElement.style.setProperty(
+        "--visual-viewport-height",
+        "100dvh"
+      );
+    };
+  }, []);
+
+  function lockViewportOnInputFocus() {
+    if (typeof window === "undefined") return;
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+  }
+
   /** 응원팀(team) 항상 좌측, 상대 우측 */
   const heroMatch = useMemo(() => {
     if (!match) return null;
@@ -309,7 +407,6 @@ export default function HeroCard({ team }: Props) {
   }, [match]);
 
   const todayStoryShare = useMemo((): TodayStoryImageInput | null => {
-    if (!resolvedSrc) return null;
     const metaLine = match
       ? [
           `${match.awayTeam.short} vs ${match.homeTeam.short}`,
@@ -324,18 +421,18 @@ export default function HeroCard({ team }: Props) {
       ? `선발 ${starterLabel(match.game.awayPitcher)} · ${starterLabel(match.game.homePitcher)}`
       : undefined;
     return {
-      posterSrc: resolvedSrc,
+      posterSrc: resolvedSrc ?? "",
       teamHeadline: `${team.short} · ${team.name}`,
       slogan: sloganOneLine,
       metaLine,
       startersLine,
-      accentHex: team.accent,
+      accentHex: accentColor,
     };
   }, [
     resolvedSrc,
     team.short,
     team.name,
-    team.accent,
+    accentColor,
     sloganOneLine,
     match,
     dateLabel,
@@ -343,34 +440,50 @@ export default function HeroCard({ team }: Props) {
   ]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-black">
-      {/*
-        배경 — 정적 화보 (zero-latency).
-        team / 슬롯(06↔22 경계) / 승패 변화로 src가 바뀌면
-        AnimatePresence 의 default(sync) 모드가 0.8s 부드러운 cross-fade를 수행.
-        같은 src일 땐 키가 안정되어 깜빡임 없음.
-      */}
-      <AnimatePresence initial={false}>
-        {resolvedSrc && (
+    <div
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        background: [
+          `radial-gradient(120% 70% at 50% 18%, rgba(255,255,255,${
+            isLightThemeText ? "0.22" : "0.16"
+          }) 0%, rgba(255,255,255,0) 60%)`,
+          `linear-gradient(180deg, ${lockedTheme.primary} 0%, ${gradientBottom} 100%)`,
+        ].join(", "),
+        color: lockedTheme.text,
+      }}
+    >
+      {lockedTheme.pattern === "pinstripe-black" && (
+        <div
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            background:
+              "repeating-linear-gradient(90deg, transparent 0px, transparent 40px, rgba(0,0,0,0.12) 40px, rgba(0,0,0,0.12) 42px)",
+          }}
+        />
+      )}
+      {/* 상단 플로팅 채팅 버블 — 잠깐 떠 있다가 사라진다. */}
+      <div className="pointer-events-none absolute inset-0 z-40">
+        {floatingChats.map((msg) => (
           <motion.div
-            key={resolvedSrc}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.8, ease }}
-            className="absolute inset-0"
+            key={msg.id}
+            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            animate={{
+              opacity: [0, 0.96, 0.92, 0],
+              y: [14, 2, -16, -36],
+              scale: [0.97, 1, 1, 0.99],
+            }}
+            transition={{
+              duration: msg.ttlMs / 1000,
+              ease: "easeOut",
+              times: [0, 0.16, 0.72, 1],
+            }}
+            className="absolute max-w-[88vw] -translate-x-1/2 rounded-2xl border border-white/18 bg-black/55 px-4 py-2.5 text-[13px] leading-snug text-white/92 shadow-[0_12px_30px_rgba(0,0,0,0.35)] backdrop-blur-md sm:max-w-[70vw]"
+            style={{ left: `${msg.leftPct}%`, top: `${msg.topPct}%` }}
           >
-            <Image
-              src={resolvedSrc}
-              alt={team.nameEn}
-              fill
-              priority
-              sizes="100vw"
-              className="object-cover"
-            />
+            {msg.text}
           </motion.div>
-        )}
-      </AnimatePresence>
+        ))}
+      </div>
 
       {/*
         하단 웅장한 암부 그라데이션 — 패널 없이 텍스트만 얹어도 대비 확보.
@@ -379,8 +492,12 @@ export default function HeroCard({ team }: Props) {
         className="pointer-events-none absolute inset-0 z-[1]"
         style={{
           background: [
-            "linear-gradient(180deg, rgba(0,0,0,0.32) 0%, transparent 24%)",
-            "linear-gradient(0deg, #000000 0%, rgba(0,0,0,0.94) 12%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.35) 45%, transparent 62%)",
+            isLightThemeText
+              ? "linear-gradient(180deg, rgba(255,255,255,0.24) 0%, transparent 24%)"
+              : "linear-gradient(180deg, rgba(0,0,0,0.32) 0%, transparent 24%)",
+            isLightThemeText
+              ? "linear-gradient(0deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.78) 12%, rgba(255,255,255,0.48) 28%, rgba(255,255,255,0.18) 45%, transparent 62%)"
+              : "linear-gradient(0deg, #000000 0%, rgba(0,0,0,0.94) 12%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.35) 45%, transparent 62%)",
           ].join(", "),
         }}
       />
@@ -402,7 +519,10 @@ export default function HeroCard({ team }: Props) {
               size={21}
               strokeWidth={1.5}
               className="text-white/85"
-              style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))" }}
+              style={{
+                color: themedText(0.86),
+                filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))",
+              }}
             />
           </Link>
         </motion.div>
@@ -423,6 +543,7 @@ export default function HeroCard({ team }: Props) {
               : `${team.short} — ${team.nameEn}`
           }
           todayStory={todayStoryShare}
+          iconColor={themedText(0.98)}
         />
       </motion.div>
 
@@ -432,7 +553,7 @@ export default function HeroCard({ team }: Props) {
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.7, ease, delay: 0.2 }}
       >
-        <NotificationBell accent={team.accent} />
+        <NotificationBell accent={accentColor} iconColor={themedText(0.98)} />
       </motion.div>
 
       {/* ── 경기 없음: 하단 그라데이션 위 중앙 스택 (글래스 없음) ── */}
@@ -441,7 +562,11 @@ export default function HeroCard({ team }: Props) {
           initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.85, ease, delay: 0.18 }}
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-7 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] pt-[18vh] text-center"
+          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-7 text-center ${
+            isKeyboardOpen
+              ? "pb-[calc(9rem+env(safe-area-inset-bottom,0px))] pt-[6vh]"
+              : "pb-[calc(13rem+env(safe-area-inset-bottom,0px))] pt-[14vh]"
+          }`}
         >
           <div className="flex max-w-md flex-col items-center">
             <motion.p
@@ -461,6 +586,7 @@ export default function HeroCard({ team }: Props) {
                   : `text-white ${displaySerif.className}`
               }
               style={{
+                color: isLgSeoulSlogan ? accentColor : themedText(0.92),
                 fontWeight: hasHangul(sloganOneLine) ? 700 : 600,
                 fontSize: hasHangul(sloganOneLine)
                   ? "clamp(18px, 5.07vw, 26px)"
@@ -468,6 +594,9 @@ export default function HeroCard({ team }: Props) {
                 lineHeight: 1.35,
                 textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
                 filter: isRainy ? "blur(0.2px)" : undefined,
+                textShadow: isLgSeoulSlogan
+                  ? "0 1px 0 rgba(255,255,255,0.45), 0 0 10px rgba(195,4,82,0.3)"
+                  : undefined,
               }}
             >
               {sloganOneLine}
@@ -484,9 +613,13 @@ export default function HeroCard({ team }: Props) {
           initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease, delay: 0.22 }}
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-6 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] pt-[10vh] text-center"
+          className={`absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-6 text-center ${
+            isKeyboardOpen
+              ? "pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))] pt-[3vh]"
+              : "pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-[8vh]"
+          }`}
         >
-          <div className="max-w-md px-1">
+          <div className="max-w-md shrink-0 px-1">
             <motion.p
               key={`${team.id}-${sloganText}-hero-top`}
               initial={{
@@ -504,12 +637,16 @@ export default function HeroCard({ team }: Props) {
                   : `text-white/85 ${displaySerif.className}`
               }
               style={{
+                color: isLgSeoulSlogan ? accentColor : themedText(0.84),
                 fontWeight: hasHangul(sloganOneLine) ? 600 : 550,
                 fontSize: hasHangul(sloganOneLine)
                   ? "clamp(16px, 4.16vw, 20px)"
                   : "clamp(16px, 4.29vw, 21px)",
                 lineHeight: 1.45,
                 textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
+                textShadow: isLgSeoulSlogan
+                  ? "0 1px 0 rgba(255,255,255,0.4), 0 0 8px rgba(195,4,82,0.25)"
+                  : undefined,
               }}
             >
               {sloganOneLine}
@@ -520,14 +657,14 @@ export default function HeroCard({ team }: Props) {
             max-content 3열 — 1fr 대칭이 아니라 내용 너비만 쓰고 VS 를 가운데에 두어
             팀명 길이가 달라도 "팀 · VS · 팀" 이 한 덩어로 중앙에 모인다.
           */}
-          <div className="mx-auto mt-7 w-max max-w-[min(100%,36rem)]">
+          <div className="mx-auto mt-7 w-max max-w-[min(100%,36rem)] shrink-0">
             <div className="grid grid-cols-[max-content_auto_max-content] grid-rows-[auto_auto] items-end gap-x-4 gap-y-2 sm:gap-x-5">
               <div className="min-w-0 justify-self-end text-right">
                 <div className="flex flex-col items-end justify-end gap-0 leading-none">
                   {leftHeroEpithet ? (
                     <p
                       className="mb-1.5 w-full text-left text-[clamp(11px,2.6vw,17px)] leading-none tracking-[0.02em] text-white/58"
-                      style={{ fontWeight: 200 }}
+                      style={{ fontWeight: 200, color: themedText(0.58) }}
                     >
                       {leftHeroEpithet}
                     </p>
@@ -537,7 +674,8 @@ export default function HeroCard({ team }: Props) {
                     style={{
                       ...TEAM_SHORT_STYLE,
                       transform: "skewX(-9deg)",
-                      textShadow: `0 0 28px ${team.accent}88, 0 3px 14px rgba(0,0,0,0.65)`,
+                      color: themedText(0.95),
+                      textShadow: "none",
                     }}
                   >
                     {heroMatch.leftTeam.short}
@@ -550,6 +688,7 @@ export default function HeroCard({ team }: Props) {
                   <span
                     className={`tabular-nums text-white/95 ${displaySerif.className}`}
                     style={{
+                      color: themedText(0.95),
                       fontWeight: 600,
                       fontSize: "clamp(20px, 5.2vw, 30px)",
                       letterSpacing: "0.04em",
@@ -568,6 +707,7 @@ export default function HeroCard({ team }: Props) {
                   <span
                     className={`${displaySerif.className} uppercase text-white/36`}
                     style={{
+                      color: themedText(0.36),
                       fontWeight: 500,
                       fontSize: "9px",
                       letterSpacing: "0.38em",
@@ -585,7 +725,8 @@ export default function HeroCard({ team }: Props) {
                   style={{
                     ...TEAM_SHORT_STYLE,
                     transform: "skewX(-9deg)",
-                    textShadow: "0 2px 20px rgba(0,0,0,0.55)",
+                    color: themedText(0.9),
+                    textShadow: "none",
                   }}
                 >
                   {heroMatch.rightTeam.short}
@@ -593,13 +734,19 @@ export default function HeroCard({ team }: Props) {
               </div>
 
               <div className="flex min-h-[1.35rem] items-start justify-end justify-self-end">
-                <span className="text-right text-[11px] font-semibold leading-snug tracking-wide text-white/72">
+                <span
+                  className="text-right text-[11px] font-semibold leading-snug tracking-wide text-white/72"
+                  style={{ color: themedText(0.72) }}
+                >
                   {starterLabel(heroMatch.leftPitcher)}
                 </span>
               </div>
               <div aria-hidden className="min-h-[1.35rem]" />
               <div className="flex min-h-[1.35rem] items-start justify-start justify-self-start">
-                <span className="text-left text-[11px] font-semibold leading-snug tracking-wide text-white/68">
+                <span
+                  className="text-left text-[11px] font-semibold leading-snug tracking-wide text-white/68"
+                  style={{ color: themedText(0.68) }}
+                >
                   {starterLabel(heroMatch.rightPitcher)}
                 </span>
               </div>
@@ -612,18 +759,37 @@ export default function HeroCard({ team }: Props) {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.55, ease, delay: 0.32 }}
               className="mt-6 text-[11px] font-medium tabular-nums tracking-[0.32em] text-white/52"
+              style={{ color: themedText(0.52) }}
               aria-label="경기 시작까지 남은 시간"
             >
               {countdownHms}
             </motion.p>
           ) : null}
+          {hasSelectedTeamLineup && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease, delay: 0.35 }}
+              onClick={() => setIsLineupOpen(true)}
+              className={`mt-4 inline-flex items-center rounded-full px-4 py-2 text-[11px] font-semibold tracking-[0.08em] text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${
+                liveView?.game.result ? "" : "animate-pulse"
+              }`}
+              style={{
+                backgroundColor: accentColor,
+                color: accentButtonText,
+              }}
+            >
+              🔥 선발 라인업 확인
+            </motion.button>
+          )}
 
           <div
             className={`mx-auto w-full max-w-md text-center ${countdownHms ? "mt-8" : "mt-10"}`}
           >
             <p
               className="text-[11px] font-normal uppercase tracking-[0.22em] text-white/58 tabular-nums"
-              style={{ fontWeight: 400 }}
+              style={{ fontWeight: 400, color: themedText(0.58) }}
             >
               {dateLabel ? (
                 <>
@@ -655,14 +821,14 @@ export default function HeroCard({ team }: Props) {
               <div className="mt-2.5 space-y-1">
                 <p
                   className="text-[12px] font-semibold leading-snug tracking-[0.14em] text-white/55"
-                  style={{ fontWeight: 600 }}
+                  style={{ fontWeight: 600, color: themedText(0.55) }}
                 >
                   {venueUnderDate.primary}
                 </p>
                 {venueUnderDate.secondary ? (
                   <p
                     className="px-3 text-[10px] font-normal leading-snug tracking-wide text-white/38 normal-case"
-                    style={{ fontWeight: 400 }}
+                    style={{ fontWeight: 400, color: themedText(0.38) }}
                   >
                     {venueUnderDate.secondary}
                   </p>
@@ -673,6 +839,7 @@ export default function HeroCard({ team }: Props) {
 
           <div
             className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/38"
+            style={{ color: themedText(0.38) }}
           >
             {weatherLabel && (
               <motion.span
@@ -716,6 +883,145 @@ export default function HeroCard({ team }: Props) {
           </div>
         </motion.div>
       )}
+      {match && heroMatch && (
+        <form
+          onSubmit={onChatSubmit}
+          className="absolute inset-x-0 bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))] z-[60] mx-auto w-[min(94vw,760px)] px-2"
+          style={{
+            bottom: isKeyboardOpen
+              ? `calc(env(safe-area-inset-bottom,0px) + ${10 + keyboardInsetPx}px)`
+              : "calc(5.75rem + env(safe-area-inset-bottom,0px))",
+            maxWidth: "760px",
+          }}
+        >
+          <label htmlFor="today-float-chat" className="sr-only">
+            플로팅 채팅 입력
+          </label>
+          <div
+            className="pointer-events-auto flex items-center gap-2 rounded-2xl border px-3 py-2 backdrop-blur-md"
+            style={{
+              borderColor: `${accentColor}66`,
+              backgroundColor: isLightThemeText
+                ? "rgba(255,255,255,0.62)"
+                : "rgba(0,0,0,0.45)",
+            }}
+          >
+            <input
+              id="today-float-chat"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onFocus={lockViewportOnInputFocus}
+              onKeyDown={onChatInputKeyDown}
+              placeholder="응원 한마디를 남겨보세요."
+              maxLength={80}
+              className="min-w-0 flex-1 bg-transparent text-[16px] text-white/90 placeholder:text-white/38 focus:outline-none md:text-[13px]"
+              style={{
+                color: themedText(0.92),
+                caretColor: accentColor,
+              }}
+            />
+            <button
+              type="button"
+              onClick={submitChat}
+              className="rounded-lg px-3 py-1.5 text-[11px] font-semibold tracking-wide transition hover:brightness-105 active:scale-95"
+              style={{
+                backgroundColor: `${accentColor}26`,
+                border: `1px solid ${accentColor}66`,
+                color: themedText(0.92),
+              }}
+            >
+              SEND
+            </button>
+          </div>
+        </form>
+      )}
+      <AnimatePresence>
+        {isLineupOpen && hasSelectedTeamLineup && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease }}
+            className="absolute inset-0 z-[90]"
+          >
+            <button
+              type="button"
+              aria-label="라인업 모달 닫기"
+              onClick={() => setIsLineupOpen(false)}
+              className="absolute inset-0 bg-black/45"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ duration: 0.28, ease }}
+              className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-md rounded-t-3xl border border-white/15 p-4 pb-6 shadow-[0_-14px_44px_rgba(0,0,0,0.45)] backdrop-blur-lg"
+              style={{
+                height: "68%",
+                backgroundColor: isLightThemeText
+                  ? "rgba(255,255,255,0.8)"
+                  : "rgba(0,0,0,0.8)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-400/70" />
+              <div className="flex items-center justify-between">
+                <p
+                  className="text-[14px] font-semibold tracking-wide"
+                  style={{ color: themedText(0.95) }}
+                >
+                  {team.short} 선발 라인업
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsLineupOpen(false)}
+                  className="rounded-full border border-white/15 px-2.5 py-1 text-[11px]"
+                  style={{ color: themedText(0.75) }}
+                >
+                  닫기
+                </button>
+              </div>
+              <div className="mt-3 h-[calc(100%-3.5rem)] overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
+                <ul className="space-y-2.5">
+                  {selectedTeamLineup.map((player) => (
+                    <li
+                      key={`${player.order}-${player.name}`}
+                      className="flex items-center justify-between rounded-xl border border-white/10 px-3 py-2.5"
+                      style={{
+                        backgroundColor: isLightThemeText
+                          ? "rgba(255,255,255,0.62)"
+                          : "rgba(255,255,255,0.06)",
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold"
+                          style={{
+                            backgroundColor: `${accentColor}26`,
+                            color: accentColor,
+                            border: `1px solid ${accentColor}66`,
+                          }}
+                        >
+                          {player.order}
+                        </span>
+                        <span
+                          className="text-[13px] font-semibold tracking-wide"
+                          style={{ color: themedText(0.92) }}
+                        >
+                          {player.name}
+                        </span>
+                      </div>
+                      <span className="text-[11px] tracking-wide" style={{ color: themedText(0.62) }}>
+                        {player.position}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

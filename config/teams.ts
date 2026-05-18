@@ -10,6 +10,89 @@
 
 export type GenerateMode = "ready" | "victory";
 
+export type TeamPattern = "none" | "pinstripe-black";
+
+export type TeamVisualTheme = {
+  name: string;
+  primary: string;
+  secondary: string;
+  text: string;
+  pattern: TeamPattern;
+};
+
+export const KBO_TEAMS: Record<string, TeamVisualTheme> = {
+  LG: {
+    name: "LG 트윈스",
+    primary: "#FFFFFF",
+    secondary: "#C30452",
+    text: "#000000",
+    pattern: "pinstripe-black",
+  },
+  KIA: {
+    name: "KIA 타이거즈",
+    primary: "#C70125",
+    secondary: "#000000",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  SAMSUNG: {
+    name: "삼성 라이온즈",
+    primary: "#074CA1",
+    secondary: "#C0C0C0",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  DOOSAN: {
+    name: "두산 베어스",
+    primary: "#FFFFFF",
+    secondary: "#131230",
+    text: "#000000",
+    pattern: "none",
+  },
+  LOTTE: {
+    name: "롯데 자이언츠",
+    primary: "#4EBFFF",
+    secondary: "#DA291C",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  SSG: {
+    name: "SSG 랜더스",
+    primary: "#CE0E2D",
+    secondary: "#FFFFFF",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  NC: {
+    name: "NC 다이노스",
+    primary: "#315288",
+    secondary: "#315288",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  HANWHA: {
+    name: "한화 이글스",
+    primary: "#FF6600",
+    secondary: "#FF6600",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  KT: {
+    name: "KT 위즈",
+    primary: "#000000",
+    secondary: "#000000",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+  KIWOOM: {
+    name: "키움 히어로즈",
+    primary: "#800020",
+    secondary: "#D0C0C0",
+    text: "#FFFFFF",
+    pattern: "none",
+  },
+};
+
 export type TeamConfig = {
   teamId: string;
   fullName: string;
@@ -28,6 +111,19 @@ export type TeamConfig = {
 };
 
 const c = (cfg: TeamConfig): TeamConfig => cfg;
+
+const TEAM_KEY_BY_ID: Record<string, keyof typeof KBO_TEAMS> = {
+  lg: "LG",
+  kia: "KIA",
+  samsung: "SAMSUNG",
+  doosan: "DOOSAN",
+  lotte: "LOTTE",
+  ssg: "SSG",
+  nc: "NC",
+  hanwha: "HANWHA",
+  kt: "KT",
+  kiwoom: "KIWOOM",
+};
 
 export const TEAM_CONFIG: Record<string, TeamConfig> = {
   LG: c({
@@ -153,4 +249,62 @@ export function splitSloganForDisplay(slogan: string): string[] {
   if (!slogan) return [];
   if (slogan.includes("\n")) return slogan.split("\n");
   return slogan.split(/\s+/).filter(Boolean);
+}
+
+export function getKboTeamThemeByTeamId(
+  teamId: string | null | undefined
+): TeamVisualTheme | null {
+  if (!teamId) return null;
+  const key = TEAM_KEY_BY_ID[teamId.toLowerCase()];
+  if (!key) return null;
+  const theme = KBO_TEAMS[key];
+  return {
+    ...theme,
+    text: resolveReadableText(theme.primary, theme.text),
+  };
+}
+
+function parseHexColor(hex: string): { r: number; g: number; b: number } | null {
+  const normalized = hex.trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+  const value = Number.parseInt(normalized, 16);
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+function toLinear(v: number): number {
+  const s = v / 255;
+  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(hex: string): number | null {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return null;
+  const r = toLinear(rgb.r);
+  const g = toLinear(rgb.g);
+  const b = toLinear(rgb.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(aHex: string, bHex: string): number {
+  const l1 = relativeLuminance(aHex);
+  const l2 = relativeLuminance(bHex);
+  if (l1 == null || l2 == null) return 0;
+  const hi = Math.max(l1, l2);
+  const lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function resolveReadableText(bgHex: string, preferredTextHex: string): string {
+  const preferred = contrastRatio(bgHex, preferredTextHex);
+  // 일반 본문 기준 WCAG AA(4.5:1) 충족 시 팀 지정 text 유지.
+  if (preferred >= 4.5) return preferredTextHex;
+  const black = "#000000";
+  const white = "#FFFFFF";
+  const blackRatio = contrastRatio(bgHex, black);
+  const whiteRatio = contrastRatio(bgHex, white);
+  return blackRatio >= whiteRatio ? black : white;
 }

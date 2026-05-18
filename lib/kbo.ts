@@ -63,6 +63,15 @@ function normalizeStatus(code: string | undefined): LiveStatus {
 export type LiveGame = Game & {
   /** 라이브 상태 — UI 의 '경기 전 / 경기 중 / 종료 / 우천 취소' 분기 */
   status: LiveStatus;
+  /** 선발 라인업 (미발표/파싱 실패 시 null) */
+  homeLineup: LineupItem[] | null;
+  awayLineup: LineupItem[] | null;
+};
+
+export type LineupItem = {
+  order: string;
+  name: string;
+  position: string;
 };
 
 /** YYYY-MM-DD (KST) — 서버 시간이 어디든 한국 캘린더 기준으로 고정 */
@@ -156,6 +165,8 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
     stadium: raw.stadium ?? "",
     awayPitcher: safeStarter(raw.awayStarterName) ?? "미정",
     homePitcher: safeStarter(raw.homeStarterName) ?? "미정",
+    homeLineup: null,
+    awayLineup: null,
     result,
     status,
   };
@@ -244,6 +255,158 @@ async function fetchGameStarters(
   }
 }
 
+type NaverLineupResponse = {
+  result?: {
+    lineUpData?: unknown;
+  };
+};
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
+function readString(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length > 0 ? t : null;
+}
+
+function readOrder(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return String(v);
+  if (typeof v !== "string") return null;
+  const t = v.trim().toUpperCase();
+  if (!t) return null;
+  if (t === "P") return "P";
+  const n = Number.parseInt(t, 10);
+  if (Number.isFinite(n) && n >= 1 && n <= 9) return String(n);
+  return null;
+}
+
+function includesAny(haystack: string, needles: string[]): boolean {
+  return needles.some((needle) => haystack.includes(needle));
+}
+
+function pickSideNode(lineUpData: unknown, side: "home" | "away"): unknown {
+  const root = asRecord(lineUpData);
+  if (!root) return lineUpData;
+  const keys = Object.keys(root);
+  const sideNeedles = side === "home" ? ["home", "h"] : ["away", "a", "visitor"];
+  const priorityNeedles = ["lineup", "line_up", "batter", "hitter", "pitcher", "starter", "team"];
+  for (const key of keys) {
+    const lower = key.toLowerCase();
+    if (!includesAny(lower, sideNeedles)) continue;
+    if (includesAny(lower, priorityNeedles)) return root[key];
+  }
+  for (const key of keys) {
+    const lower = key.toLowerCase();
+    if (includesAny(lower, sideNeedles)) return root[key];
+  }
+  return lineUpData;
+}
+
+function sideMatches(candidate: Record<string, unknown>, side: "home" | "away"): boolean {
+  const marker =
+    readString(candidate.homeAwayCode) ??
+    readString(candidate.homeAway) ??
+    readString(candidate.teamType) ??
+    readString(candidate.side) ??
+    readString(candidate.teamSide);
+  if (!marker) return true;
+  const m = marker.toLowerCase();
+  if (side === "home") return m === "home" || m === "h";
+  return m === "away" || m === "a" || m === "visitor";
+}
+
+function parseLineupFromNode(node: unknown, side: "home" | "away"): LineupItem[] {
+  const out: LineupItem[] = [];
+  const visited = new Set<unknown>();
+  const stack: unknown[] = [node];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    if (Array.isArray(current)) {
+      for (const item of current) stack.push(item);
+      continue;
+    }
+    const obj = asRecord(current);
+    if (!obj) continue;
+    if (!sideMatches(obj, side)) continue;
+    const name =
+      readString(obj.name) ??
+      readString(obj.playerName) ??
+      readString(obj.athleteName) ??
+      readString(obj.batterName) ??
+      readString(obj.pitcherName);
+    const position =
+      readString(obj.positionName) ??
+      readString(obj.position) ??
+      readString(obj.roleName) ??
+      readString(obj.role) ??
+      readString(obj.fieldPosition);
+    let order =
+      readOrder(obj.order) ??
+      readOrder(obj.battingOrder) ??
+      readOrder(obj.turn) ??
+      readOrder(obj.seq) ??
+      readOrder(obj.lineupOrder);
+    if (
+      order == null &&
+      (position?.includes("투수") || position?.toLowerCase().includes("pitcher"))
+    ) {
+      order = "P";
+    }
+    if (name && position && order) {
+      out.push({ order, name, position });
+    }
+    for (const value of Object.values(obj)) {
+      if (value && (Array.isArray(value) || typeof value === "object")) {
+        stack.push(value);
+      }
+    }
+  }
+  const dedup = new Map<string, LineupItem>();
+  for (const item of out) dedup.set(`${item.order}:${item.name}`, item);
+  return [...dedup.values()].sort((a, b) => {
+    const ao = a.order === "P" ? 99 : Number.parseInt(a.order, 10);
+    const bo = b.order === "P" ? 99 : Number.parseInt(b.order, 10);
+    return ao - bo;
+  });
+}
+
+async function fetchGameLineups(
+  gameId: string
+): Promise<{ homeLineup: LineupItem[] | null; awayLineup: LineupItem[] | null }> {
+  try {
+    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/lineup`, {
+      headers: {
+        "user-agent": UA,
+        accept: "application/json",
+        referer: "https://m.sports.naver.com/",
+      },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return { homeLineup: null, awayLineup: null };
+    const j = (await res.json()) as NaverLineupResponse;
+    const lineUpData = j?.result?.lineUpData;
+    if (!lineUpData) return { homeLineup: null, awayLineup: null };
+    const homeFromSideNode = parseLineupFromNode(pickSideNode(lineUpData, "home"), "home");
+    const awayFromSideNode = parseLineupFromNode(pickSideNode(lineUpData, "away"), "away");
+    const home = homeFromSideNode.length > 0 ? homeFromSideNode : null;
+    const away = awayFromSideNode.length > 0 ? awayFromSideNode : null;
+    if (home || away) return { homeLineup: home, awayLineup: away };
+    const homeFallback = parseLineupFromNode(lineUpData, "home");
+    const awayFallback = parseLineupFromNode(lineUpData, "away");
+    return {
+      homeLineup: homeFallback.length > 0 ? homeFallback : null,
+      awayLineup: awayFallback.length > 0 ? awayFallback : null,
+    };
+  } catch {
+    return { homeLineup: null, awayLineup: null };
+  }
+}
+
 /**
  * 비어있는 선발투수("미정")만 단일 game 엔드포인트로 보강.
  *  - 호출 비용 절약: starter 가 이미 채워진 game 은 스킵.
@@ -269,6 +432,23 @@ async function enrichStarters(games: LiveGame[]): Promise<LiveGame[]> {
   });
 }
 
+async function enrichLineups(games: LiveGame[]): Promise<LiveGame[]> {
+  if (games.length === 0) return games;
+  const results = await Promise.all(
+    games.map(async (g) => [g.id, await fetchGameLineups(g.id)] as const)
+  );
+  const map = new Map(results);
+  return games.map((g) => {
+    const lineup = map.get(g.id);
+    if (!lineup) return g;
+    return {
+      ...g,
+      homeLineup: lineup.homeLineup,
+      awayLineup: lineup.awayLineup,
+    };
+  });
+}
+
 /**
  * 오늘(KST) 의 KBO 경기 리스트.
  *  - 1차: 네이버 schedule API + 단일 game endpoint 로 선발 보강
@@ -278,12 +458,18 @@ export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
   try {
     const games = await fetchKboGamesRange(target, target);
-    return await enrichStarters(games);
+    const withStarters = await enrichStarters(games);
+    return await enrichLineups(withStarters);
   } catch (err) {
     console.warn(
       `[kbo] live games fetch failed (${(err as Error).message}); falling back to static TODAY_GAMES`
     );
-    return TODAY_GAMES.map((g) => ({ ...g, status: "BEFORE" as LiveStatus }));
+    return TODAY_GAMES.map((g) => ({
+      ...g,
+      status: "BEFORE" as LiveStatus,
+      homeLineup: null,
+      awayLineup: null,
+    }));
   }
 }
 
@@ -368,6 +554,8 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
     const stamp = (g: import("@/lib/games").Game): LiveGame => ({
       ...g,
       status: g.result ? "RESULT" : "BEFORE",
+      homeLineup: null,
+      awayLineup: null,
     });
     return {
       date: base,

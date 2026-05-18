@@ -23,7 +23,7 @@ export default function RankPage() {
   const live = useKboToday();
 
   return (
-    <section className="px-0 pb-10">
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-0 pb-10 [-webkit-overflow-scrolling:touch]">
       {/* ── 헤더 ── */}
       <header className="px-7 pt-7">
         <p

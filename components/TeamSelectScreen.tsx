@@ -33,7 +33,7 @@ export default function TeamSelectScreen() {
   };
 
   return (
-    <div className="flex h-dvh flex-col bg-black">
+    <div className="team-select-shell flex h-dvh flex-col bg-black">
       {/* 헤더 */}
       <header className="px-7 pt-12 pb-5">
         <motion.p
@@ -76,7 +76,7 @@ export default function TeamSelectScreen() {
       </header>
 
       {/* 리스트 */}
-      <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-24">
+      <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pb-24 [-webkit-overflow-scrolling:touch]">
         <ul className="flex flex-col">
           {TEAMS.map((t, i) => {
             const active = pickedId === t.id;
