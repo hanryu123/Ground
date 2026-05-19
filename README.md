@@ -88,6 +88,20 @@ npx web-push generate-vapid-keys
 - 메시지: `오늘의 KBO 승부 예측하고 초인간 포카 뽑으세요!`
 - 보안: `Authorization: Bearer <CRON_SECRET>` (선택, 로컬은 미설정 허용)
 
+### 4) 실시간 스코어 외부 스케줄러 (권장)
+
+`check-score`는 Vercel Hobby 크론 제약 때문에 기본 스케줄이 하루 1회다.  
+실시간 알림을 위해 외부 스케줄러(예: cron-job.org)에서 1분 간격 호출을 권장한다.
+
+- URL: `https://ground-alpha.vercel.app/api/cron/check-score?secret=<CRON_SECRET>&source=external`
+- 주기: `* * * * *` (매분)
+- 메서드: `GET`
+- 성공 기준: JSON 응답 `ok: true`
+
+중요:
+- 서버는 중복 실행을 DB advisory lock으로 막는다. (동일 시점 겹침 실행 자동 스킵)
+- 월요일/무경기/전체취소 상황은 조기 종료되어 불필요한 LLM/푸시 호출을 하지 않는다.
+
 ## 디버그 쿼리
 
 - `?director=1` — 디렉터 퀵 네비(10구단 즉시 전환) 강제 ON (`?director=0`로 OFF)

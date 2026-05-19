@@ -100,6 +100,8 @@ const NAVER_TEAM_MAP: Record<string, string> = {
   KT: "kt",
 };
 
+const CHECK_SCORE_LOCK_KEY = 2026051901;
+
 function normalizeStatus(code: string | undefined): LiveScoreGame["status"] {
   switch ((code ?? "").toUpperCase()) {
     case "BEFORE":
@@ -281,6 +283,28 @@ async function fetchLiveScoreSnapshot(): Promise<LiveScoreGame[]> {
     .filter((g): g is LiveScoreGame => Boolean(g));
 }
 
+async function tryAcquireCheckScoreLock(): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ locked: boolean }>>(
+      `SELECT pg_try_advisory_lock(${CHECK_SCORE_LOCK_KEY}) AS locked`
+    );
+    return Boolean(rows?.[0]?.locked);
+  } catch (error) {
+    console.error("[check-score] failed to acquire advisory lock", error);
+    return false;
+  }
+}
+
+async function releaseCheckScoreLock(): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(
+      `SELECT pg_advisory_unlock(${CHECK_SCORE_LOCK_KEY})`
+    );
+  } catch (error) {
+    console.error("[check-score] failed to release advisory lock", error);
+  }
+}
+
 function dayRangeKst(date: string): { start: Date; end: Date } {
   const start = new Date(`${date}T00:00:00+09:00`);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
@@ -305,6 +329,7 @@ export async function GET(req: Request) {
     isOffDay,
     triggerSource,
   });
+  let lockAcquired = false;
 
   let checked = 0;
   let changed = 0;
@@ -318,6 +343,33 @@ export async function GET(req: Request) {
   let snapshot: LiveScoreGame[] = [];
 
   try {
+    lockAcquired = await tryAcquireCheckScoreLock();
+    if (!lockAcquired) {
+      const summary = {
+        fastMode,
+        checked,
+        changed,
+        llmCalls,
+        pushSent,
+        disabled,
+        inboxCreated,
+        errors,
+        failedGameIds,
+        snapshotCount: 0,
+        fetchError,
+        triggerSource,
+        targetDate,
+        skipped: "OVERLAPPED_RUN",
+      };
+      await finishCronRun({
+        id: runId,
+        status: "partial",
+        summary,
+        error: "overlapped run skipped by advisory lock",
+      });
+      return NextResponse.json({ ok: true, runId, ...summary });
+    }
+
     if (isOffDay && (tickRaw == null || tickRaw === "")) {
       const { start, end } = dayRangeKst(targetDate);
       const cleared = await prisma.game.deleteMany({
@@ -822,5 +874,9 @@ export async function GET(req: Request) {
       },
       { status: 500 }
     );
+  } finally {
+    if (lockAcquired) {
+      await releaseCheckScoreLock();
+    }
   }
 }
