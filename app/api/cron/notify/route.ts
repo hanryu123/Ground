@@ -9,6 +9,8 @@ export const maxDuration = 60;
 
 const MESSAGE_TITLE = "KBO TODAY";
 const MESSAGE_BODY = "곧 시작이다. 오늘 경기 같이 달리자 ⚾️";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = process.env.PUSH_LLM_MODEL ?? "claude-sonnet-4-6";
 
 type ActiveSubscription = {
   id: string;
@@ -88,6 +90,99 @@ function buildGameEndCopy(teamId: string, tone: GameResultTone, myScore?: number
   };
 }
 
+function compactText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function clipForPush(text: string): string {
+  const compact = compactText(text);
+  if (compact.length <= 52) return compact;
+  return `${compact.slice(0, 50)}..`;
+}
+
+function buildNotifySystemPrompt(teamShort: string, kind: NotifyKind): string {
+  const situation =
+    kind === "preGame"
+      ? "경기 직전 응원 알림"
+      : "경기 종료 직후 감정 알림";
+  return `너는 KBO ${teamShort}의 30년 차 편파 팬이다.
+지금은 ${situation} 문구를 만든다.
+
+규칙:
+- 오직 한 줄
+- 24~48자
+- 팬 커뮤니티 톤으로 날카롭고 재치 있게
+- 이모지 1~2개 허용
+- 불필요한 설명 금지
+- 따옴표/번호/줄바꿈 금지`;
+}
+
+async function generateNotifyCopyWithLlm(input: {
+  kind: NotifyKind;
+  teamId: string;
+  fallbackTitle: string;
+  fallbackBody: string;
+  resultTone: GameResultTone;
+  myScore?: number;
+  oppScore?: number;
+}): Promise<{ title: string; body: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return { title: input.fallbackTitle, body: input.fallbackBody };
+  }
+
+  const team = findTeam(input.teamId);
+  const userPrompt =
+    input.kind === "preGame"
+      ? `상황: 경기 시작 직전\n팀: ${team.short}\n요구: 팬들 심장 뛰게 만드는 짧은 출정문`
+      : `상황: 경기 종료\n팀: ${team.short}\n결과: ${input.resultTone}\n스코어: ${input.myScore ?? "-"}:${input.oppScore ?? "-"}\n요구: 결과 감정이 강하게 느껴지는 한 줄`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1200);
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 64,
+        temperature: 0.92,
+        system: buildNotifySystemPrompt(team.short, input.kind),
+        messages: [{ role: "user", content: userPrompt }],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { title: input.fallbackTitle, body: input.fallbackBody };
+    }
+    const json = (await res.json()) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    const generated =
+      json.content
+        ?.filter((item) => item.type === "text" && typeof item.text === "string")
+        .map((item) => item.text ?? "")
+        .join(" ") ?? "";
+    const body = clipForPush(generated);
+    if (!body) {
+      return { title: input.fallbackTitle, body: input.fallbackBody };
+    }
+    const title =
+      input.kind === "preGame"
+        ? `${team.short} 곧 경기 시작! ⚾️`
+        : input.fallbackTitle;
+    return { title, body };
+  } catch {
+    return { title: input.fallbackTitle, body: input.fallbackBody };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function isAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true; // 로컬 개발 편의
@@ -112,7 +207,7 @@ export async function GET(req: Request) {
   const oppScore = Number.parseInt(url.searchParams.get("oppScore") ?? "", 10);
   const dateSeed = new Date().toISOString().slice(0, 10);
 
-  const generated =
+  const fallbackGenerated =
     teamId == null
       ? { title: MESSAGE_TITLE, body: MESSAGE_BODY }
       : kind === "preGame"
@@ -123,6 +218,19 @@ export async function GET(req: Request) {
             Number.isFinite(myScore) ? myScore : undefined,
             Number.isFinite(oppScore) ? oppScore : undefined
           );
+
+  const generated =
+    teamId == null
+      ? fallbackGenerated
+      : await generateNotifyCopyWithLlm({
+          kind,
+          teamId,
+          fallbackTitle: fallbackGenerated.title,
+          fallbackBody: fallbackGenerated.body,
+          resultTone,
+          myScore: Number.isFinite(myScore) ? myScore : undefined,
+          oppScore: Number.isFinite(oppScore) ? oppScore : undefined,
+        });
 
   const title = url.searchParams.get("title")?.trim() || generated.title;
   const body = url.searchParams.get("body")?.trim() || generated.body;

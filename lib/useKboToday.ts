@@ -14,19 +14,32 @@ export type KboTodayPayload = {
   standings: StandingRow[];
 };
 
+type UseKboTodayOptions = {
+  withStandings?: boolean;
+};
+
 /**
  * /api/kbo/today 를 60초 마다 폴링.
  * 서버에서 실패하면 폴백 데이터가 들어오므로 null 은 첫 로드 직전만 잠깐.
  */
-export function useKboToday(teamId?: string): KboTodayPayload | null {
+export function useKboToday(
+  teamId?: string,
+  options?: UseKboTodayOptions
+): KboTodayPayload | null {
   const [data, setData] = useState<KboTodayPayload | null>(null);
+  const withStandings = options?.withStandings ?? true;
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
-        const r = await fetch(`/api/kbo/today${qs}`, { cache: "no-store" });
+        const params = new URLSearchParams();
+        if (teamId) params.set("teamId", teamId);
+        if (!withStandings) params.set("withStandings", "0");
+        const qs = params.toString();
+        const r = await fetch(`/api/kbo/today${qs ? `?${qs}` : ""}`, {
+          cache: "no-store",
+        });
         if (!r.ok) return;
         const j = (await r.json()) as KboTodayPayload;
         if (!cancelled) setData(j);
@@ -40,7 +53,7 @@ export function useKboToday(teamId?: string): KboTodayPayload | null {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [teamId]);
+  }, [teamId, withStandings]);
 
   return data;
 }
