@@ -77,7 +77,11 @@ export type TodayFeedStatus =
   | "NO_GAMES";
 
 export function isKboRegularOffDay(date: string): boolean {
-  const day = new Date(`${date}T00:00:00+09:00`).getDay();
+  const [y, m, d] = date.split("-").map((v) => Number.parseInt(v, 10));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return false;
+  // KST 달력 날짜를 고정값으로 판정하기 위해 UTC 정오 기준으로 요일 계산
+  // (서버 로컬 타임존/서머타임 영향 제거)
+  const day = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay();
   return day === 1;
 }
 

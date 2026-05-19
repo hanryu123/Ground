@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, status: "unsubscribed" as const });
   }
 
-  const row = await prisma.pushSubscription.findFirst({
+  const exactMatch = await prisma.pushSubscription.findFirst({
     where: {
       userId,
       endpoint,
@@ -32,8 +32,27 @@ export async function POST(req: Request) {
     select: { id: true },
   });
 
+  if (exactMatch) {
+    return NextResponse.json({
+      ok: true,
+      status: "subscribed" as const,
+      staleIdentity: false,
+    });
+  }
+
+  // 브라우저 localStorage 초기화 등으로 userId가 바뀌어도
+  // 같은 endpoint 구독이 살아있으면 "구독됨"으로 간주한다.
+  const endpointOnlyMatch = await prisma.pushSubscription.findFirst({
+    where: {
+      endpoint,
+      enabled: true,
+    },
+    select: { id: true },
+  });
+
   return NextResponse.json({
     ok: true,
-    status: row ? ("subscribed" as const) : ("unsubscribed" as const),
+    status: endpointOnlyMatch ? ("subscribed" as const) : ("unsubscribed" as const),
+    staleIdentity: Boolean(endpointOnlyMatch),
   });
 }
