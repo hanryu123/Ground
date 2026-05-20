@@ -9,10 +9,6 @@
       "schedule": "15 9 * * 1-5"
     },
     {
-      "path": "/api/cron/check-score",
-      "schedule": "2 9 * * *"
-    },
-    {
       "path": "/api/cron/live-events",
       "schedule": "3 9 * * *"
     },
