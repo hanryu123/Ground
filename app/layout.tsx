@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import BottomNav from "@/components/BottomNav";
 import OnboardingGate from "@/components/OnboardingGate";
 import EnvironmentBadge from "@/components/EnvironmentBadge";
@@ -57,6 +58,7 @@ export default function RootLayout({
           팀이 선택되어 있지 않으면 children(전체 라우트 + BottomNav)이 렌더되지 않고
           풀스크린 팀 선택 화면이 우선된다.
         */}
+        <Analytics />
         <OnboardingGate>
           <div
             className="app-shell fixed inset-0 mx-auto flex min-h-0 w-full max-w-md flex-col overflow-hidden bg-black"
