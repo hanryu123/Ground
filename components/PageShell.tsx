@@ -22,17 +22,13 @@ const SWIPE_PX = 72;      // 이 거리 이상 이동하면 탭 전환
 const SWIPE_VX = 400;     // 또는 이 이상의 속도면 전환
 const AXIS_LOCK_PX = 6;   // 이 거리 이후 축 확정
 
-const FADE = {
-  duration: 0.22,
-  ease: [0.22, 1, 0.36, 1] as const,
-};
-
+// 진입 페이지는 즉시 보이고, 퇴장 페이지만 짧게 페이드아웃.
 const variants = {
-  enter: { opacity: 0 },
+  enter: { opacity: 1 },   // 즉시 표시 — 진입 시 blank 방지
   center: { opacity: 1 },
   exit: {
     opacity: 0,
-    transition: { duration: 0.15, ease: [0.32, 0, 0.67, 0] },
+    transition: { duration: 0.12, ease: "easeIn" },
   },
 };
 
@@ -142,15 +138,14 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
       ref={containerRef}
       className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <AnimatePresence mode="sync" initial={false}>
+      <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
           key={pathname}
-          className="absolute inset-0 flex min-h-0 flex-col"
+          className="flex min-h-0 flex-1 flex-col"
           variants={variants}
           initial="enter"
           animate="center"
           exit="exit"
-          transition={FADE}
         >
           {children}
         </motion.div>
