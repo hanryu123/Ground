@@ -33,6 +33,9 @@ type NaverScheduleGameRaw = {
   homeTeamScore?: number;
   awayTeamScore?: number;
   statusCode?: string;
+  /** 네이버는 취소 경기를 statusCode:"BEFORE" 유지하면서 cancel:true 로 별도 표기함 */
+  cancel?: boolean;
+  statusInfo?: string;
 };
 
 function normalizeStatus(code: string | undefined): LiveScoreStatus {
@@ -72,9 +75,25 @@ function parseGameDate(gameDate?: string, gameDateTime?: string): Date | null {
 
 function inferCancelReason(raw: NaverScheduleGameRaw, status: LiveScoreStatus): "RAIN" | "OTHER" | null {
   if (status !== "CANCEL") return null;
+  const info = (raw.statusInfo ?? "").toLowerCase();
+  if (info.includes("우천") || info.includes("rain")) return "RAIN";
   const text = JSON.stringify(raw).toLowerCase();
   if (text.includes("우천") || text.includes("rain")) return "RAIN";
   return "OTHER";
+}
+
+/**
+ * 네이버는 취소 경기도 statusCode:"BEFORE" 를 유지하면서
+ * cancel:true 또는 statusInfo:"경기취소"/"우천취소" 를 병행 사용한다.
+ * 이를 CANCEL 로 정규화하는 헬퍼.
+ */
+function resolveStatus(raw: NaverScheduleGameRaw): LiveScoreStatus {
+  const base = normalizeStatus(raw.statusCode);
+  if (base === "CANCEL") return "CANCEL";
+  if (raw.cancel === true) return "CANCEL";
+  const info = (raw.statusInfo ?? "").toLowerCase();
+  if (info.includes("취소") || info.includes("cancel") || info.includes("postponed")) return "CANCEL";
+  return base;
 }
 
 async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<Response> {
@@ -112,7 +131,7 @@ export async function fetchLiveScoreSnapshot(date: string = todayKstDate()): Pro
       const homeTeam = NAVER_TEAM_MAP[(g.homeTeamCode ?? "").toUpperCase()];
       const awayTeam = NAVER_TEAM_MAP[(g.awayTeamCode ?? "").toUpperCase()];
       if (!homeTeam || !awayTeam || !g.gameId) return null;
-      const status = normalizeStatus(g.statusCode);
+      const status = resolveStatus(g);
       return {
         externalId: g.gameId,
         homeTeam,
