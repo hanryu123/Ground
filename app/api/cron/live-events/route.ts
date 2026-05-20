@@ -90,13 +90,13 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo | null> {
         const seqId = lastEntry.seqNo != null ? String(lastEntry.seqNo) : lastText.slice(0, 60);
         const eventKey = `seq:${seqId}`;
 
-        // 이닝 정보
+        // 이닝 정보 — entry 레벨 먼저, 없으면 루트 JSON fallback
         const inning = typeof lastEntry.inning === "number" ? lastEntry.inning : null;
-        const inningSub = lastEntry.inningSub ?? null;
+        const entrySub = lastEntry.inningSub;
         let battingSide: "home" | "away" | null = null;
-        if (inningSub === "1" || inningSub === 1) battingSide = "away";
-        else if (inningSub === "2" || inningSub === 2) battingSide = "home";
-        else battingSide = resolveInningSide(json);
+        if (entrySub === "1" || entrySub === 1) battingSide = "away";
+        else if (entrySub === "2" || entrySub === 2) battingSide = "home";
+        else battingSide = resolveInningSide(json); // 루트 JSON 에서 현재 이닝 초/말 탐색
 
         const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
         const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
@@ -115,28 +115,51 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo | null> {
 
 /**
  * Naver relay JSON 에서 현재 공격 중인 팀 측을 추출.
- * inningSub "1"(초) = 원정팀 공격, "2"(말) = 홈팀 공격.
+ * inningSub "1"(초/TOP) = 원정팀 공격, "2"(말/BOTTOM) = 홈팀 공격.
+ * Naver API 버전마다 필드명이 달라 가능한 모든 경로를 시도.
  */
 function resolveInningSide(json: Record<string, unknown>): "home" | "away" | null {
-  // 가능한 필드 경로들을 순서대로 시도
-  const candidates: unknown[] = [
-    json["inningSub"],
-    (json["result"] as Record<string, unknown> | undefined)?.["inningSub"],
-    (json["relay"]  as Record<string, unknown> | undefined)?.["inningSub"],
-    (json["result"] as Record<string, unknown> | undefined)
-      ?.["relay"] &&
-      ((json["result"] as Record<string, unknown>)["relay"] as Record<string, unknown>)?.["inningSub"],
+  const result = json["result"] as Record<string, unknown> | undefined;
+  const relay  = (json["relay"] ?? result?.["relay"]) as Record<string, unknown> | undefined;
+
+  // inningSub 숫자/문자 "1"=초=원정공격, "2"=말=홈공격
+  const subCandidates: unknown[] = [
+    json["inningSub"],          result?.["inningSub"],
+    relay?.["inningSub"],
+    json["currentInningSub"],   result?.["currentInningSub"],
+    relay?.["currentInningSub"],
+    json["halfInning"],         result?.["halfInning"],
   ];
-  for (const val of candidates) {
-    if (val === "1" || val === 1) return "away";   // 초 = 원정 공격
-    if (val === "2" || val === 2) return "home";   // 말 = 홈 공격
+  for (const val of subCandidates) {
+    if (val === "1" || val === 1) return "away";
+    if (val === "2" || val === 2) return "home";
   }
-  // 텍스트에서 "초" 또는 "말"로 판단 (last resort)
+
+  // "TOP"/"BOTTOM" 또는 "초"/"말" 문자열
+  const halfCandidates: unknown[] = [
+    json["half"],         result?.["half"],         relay?.["half"],
+    json["currentHalf"],  result?.["currentHalf"],  relay?.["currentHalf"],
+    json["inningHalf"],   result?.["inningHalf"],
+    json["halfText"],     result?.["halfText"],
+  ];
+  for (const val of halfCandidates) {
+    if (typeof val !== "string") continue;
+    const v = val.toUpperCase();
+    if (v === "TOP"    || v === "초") return "away";
+    if (v === "BOTTOM" || v === "말") return "home";
+  }
+
+  // 마지막 수단: JSON 문자열에서 패턴 추출
   const text = JSON.stringify(json);
-  const m = text.match(/"inning"\s*:\s*\d+[^}]*"inningSub"\s*:\s*"?(\d+)"?/);
-  if (m) {
-    if (m[1] === "1") return "away";
-    if (m[1] === "2") return "home";
+  // "inningSub":"1" 또는 "currentInningSub":1 등
+  const m1 = text.match(/"(?:inningSub|currentInningSub|halfInning)"\s*:\s*"?([12])"?/);
+  if (m1) return m1[1] === "1" ? "away" : "home";
+  // "half":"TOP"/"BOTTOM"
+  const m2 = text.match(/"(?:half|currentHalf|inningHalf|halfText)"\s*:\s*"(TOP|BOTTOM|초|말)"/i);
+  if (m2) {
+    const v = m2[1].toUpperCase();
+    if (v === "TOP"    || v === "초") return "away";
+    if (v === "BOTTOM" || v === "말") return "home";
   }
   return null;
 }
