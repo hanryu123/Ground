@@ -172,8 +172,8 @@ function resolveButtonTextColor(bgHex: string): string {
   return yiq >= 160 ? "#111111" : "#ffffff";
 }
 
-const PREVIEW_DISMISS_KEY = "ground-pregame-preview-dismiss";
-const POSTGAME_DISMISS_KEY = "ground-postgame-report-dismiss";
+const PREVIEW_DISMISS_KEY = "ground-pregame-preview-dismiss-v2";
+const POSTGAME_DISMISS_KEY = "ground-postgame-report-dismiss-v2";
 
 export default function HeroCard({ team }: Props) {
   // ── 라이브 KBO 데이터 (60s 폴링, 실패 시 폴백) ──
