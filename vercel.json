@@ -9,16 +9,8 @@
       "schedule": "15 9 * * 1-5"
     },
     {
-      "path": "/api/cron/live-events",
-      "schedule": "3 9 * * *"
-    },
-    {
       "path": "/api/cron/postgame",
       "schedule": "4 9 * * *"
-    },
-    {
-      "path": "/api/cron/check-highlight",
-      "schedule": "5 9 * * *"
     }
   ]
 }
