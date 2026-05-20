@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/postgame",
-      "schedule": "4 9 * * *"
+      "schedule": "0 16 * * *"
     }
   ]
 }
