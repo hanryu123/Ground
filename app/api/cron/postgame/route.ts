@@ -8,6 +8,7 @@ import {
   type PostGameFacts,
 } from "@/lib/postGameReport";
 import { isAlphaServerEnv, shouldSkipCronInAlpha } from "@/lib/appEnv";
+import { isKboPostgameHour } from "@/lib/cronGuard";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   authorizeCron,
@@ -184,9 +185,16 @@ export async function GET(req: Request) {
   if (shouldSkipCronInAlpha(url)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
 
   const force = url.searchParams.get("force") === "1";
+
+  // mock 모드나 force 파라미터 없으면 경기 종료 시간대 밖에서 즉시 스킵
+  // (주중 21:00~23:30, 주말 19:30~22:30 KST)
+  const mock = readMockOverrides(url);
+  if (!mock && !force && !isKboPostgameHour()) {
+    return NextResponse.json({ ok: true, skipped: "OUT_OF_POSTGAME_HOURS" });
+  }
+
   const teamFilter = (url.searchParams.get("teamId") ?? "").trim().toLowerCase();
   const date = todayKstDate();
-  const mock = readMockOverrides(url);
 
   let jobs: PostgameJob[];
   if (mock) {
