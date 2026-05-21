@@ -237,11 +237,13 @@ export async function GET(req: Request) {
   const liveGames = schedule.today.filter((game) => game.status === "LIVE");
   let sent = 0;
   let skipped = 0;
+  const debugRelays: Array<{ gameId: string; relayCount: number; eventKeys: string[] }> = [];
   // Claude 호출 캐시: 같은 (gameId:kind:seqNo:isPitching) 조합은 1회만 호출
   const llmCache = new Map<string, Promise<string>>();
 
   for (const game of liveGames) {
     const relays = await fetchRelayInfo(game.id);
+    debugRelays.push({ gameId: game.id, relayCount: relays.length, eventKeys: relays.map(r => r.eventKey) });
     if (relays.length === 0) continue;
 
     for (const relay of relays) {
@@ -311,5 +313,5 @@ export async function GET(req: Request) {
       }
     }
   }
-  return NextResponse.json({ ok: true, date, sent, skipped, liveGames: liveGames.length });
+  return NextResponse.json({ ok: true, date, sent, skipped, liveGames: liveGames.length, debug: debugRelays });
 }
