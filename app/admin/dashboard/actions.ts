@@ -22,7 +22,7 @@ export async function testClaude(): Promise<{ ok: boolean; result?: unknown; err
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: 50,
         messages: [{ role: "user", content: "한화이글스 팬처럼 삼진 잡았을 때 단톡방 리액션 한 줄만 써줘." }],
       }),

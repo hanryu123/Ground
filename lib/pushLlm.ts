@@ -21,7 +21,7 @@ type GenerateScorePushOptions = {
 };
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
+const ANTHROPIC_MODEL = "claude-haiku-4-5";
 
 function compactText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
