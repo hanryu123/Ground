@@ -4,7 +4,6 @@ import { sendWebPush } from "@/lib/webPushServer";
 import { findTeam } from "@/lib/teams";
 import { buildBiasedScoreCopy, computePulseState } from "@/lib/pushTemplate";
 import { generateScorePushCopy } from "@/lib/pushLlm";
-import { isAlphaServerEnv } from "@/lib/appEnv";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   isTopicEnabled,
@@ -81,10 +80,6 @@ export async function dispatchScoreAlertsForGame(input: {
   fastMode: boolean;
   origin: string;
 }): Promise<{ sent: number; disabled: number; inboxCreated: number; llmCalls: number }> {
-  if (isAlphaServerEnv() && process.env.ALPHA_ALLOW_REAL_PUSH !== "1") {
-    return { sent: 0, disabled: 0, inboxCreated: 0, llmCalls: 0 };
-  }
-
   const homeDelta = input.game.homeScore - input.previousHomeScore;
   const awayDelta = input.game.awayScore - input.previousAwayScore;
 

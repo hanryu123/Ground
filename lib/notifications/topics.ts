@@ -55,7 +55,8 @@ export function isTopicEnabled(topics: unknown, key: TopicKey): boolean {
   if (typeof value === "boolean") return value;
   if (key === "highlight") return Boolean(parsed.postGame);
   if (key === "livePitcherChange" || key === "liveStrikeout") return true;
-  return false;
+  // score, pitcher, preGame, postGame — 명시 없으면 ON으로 간주 (기존 구독자 호환)
+  return true;
 }
 
 /**
