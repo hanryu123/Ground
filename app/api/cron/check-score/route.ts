@@ -14,7 +14,7 @@ import type { LiveScoreGame } from "@/lib/score/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 10;
+export const maxDuration = 45;
 
 /**
  * 점수 변동 cron — 6대 알림 시스템 중 "스코어 알림" 책임만 담당.
@@ -288,7 +288,6 @@ export async function GET(req: Request) {
           data: { lastScoreAlertKey: scoreAlertKey, lastScoreAlertAt: new Date() },
         });
         if (dedupe.count === 0) continue;
-        summary.changed += 1;
 
         const latestPlayText = fastMode
           ? `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`
@@ -304,6 +303,7 @@ export async function GET(req: Request) {
           fastMode,
           origin: url.origin,
         });
+        summary.changed += 1;
         summary.pushSent += result.sent;
         summary.disabled += result.disabled;
         summary.inboxCreated += result.inboxCreated;
