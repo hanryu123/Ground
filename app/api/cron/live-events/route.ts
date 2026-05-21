@@ -58,7 +58,7 @@ function extractRelayEntries(json: Record<string, unknown>): RelayEntry[] {
   return [];
 }
 
-async function fetchRelayInfo(gameId: string): Promise<RelayInfo | null> {
+async function fetchRelayInfo(gameId: string): Promise<RelayInfo[]> {
   const endpoints = [
     `${NAVER_BASE}/schedule/games/${gameId}/relay`,
     `${NAVER_BASE}/schedule/games/${gameId}/relayTexts`,
@@ -79,31 +79,35 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo | null> {
       const entries = extractRelayEntries(json);
 
       if (entries.length > 0) {
-        // ★ 가장 최신 엔트리 1개만 검사 — 과거 히스토리 false positive 완전 차단
-        const lastEntry = entries[entries.length - 1];
-        const lastText = lastEntry.text ?? "";
+        // 최근 5개 엔트리 검사 — 1분 크론 주기 사이에 밀린 이벤트 커버
+        const recentEntries = entries.slice(-5);
+        const results: RelayInfo[] = [];
 
-        const eventKinds: Array<"pitcherChange" | "strikeout"> = [];
-        if (/투수\s*교체|투수교체/.test(lastText)) eventKinds.push("pitcherChange");
-        if (/삼진|탈삼진/.test(lastText)) eventKinds.push("strikeout");
-        if (eventKinds.length === 0) return null;
+        for (const entry of recentEntries) {
+          const text = entry.text ?? "";
+          const eventKinds: Array<"pitcherChange" | "strikeout"> = [];
+          if (/투수\s*교체|투수교체/.test(text)) eventKinds.push("pitcherChange");
+          if (/삼진|탈삼진/.test(text)) eventKinds.push("strikeout");
+          if (eventKinds.length === 0) continue;
 
-        // 이벤트 키: seqNo 기반 (없으면 텍스트 앞 60자)
-        const seqId = lastEntry.seqNo != null ? String(lastEntry.seqNo) : lastText.slice(0, 60);
-        const eventKey = `seq:${seqId}`;
+          const seqId = entry.seqNo != null ? String(entry.seqNo) : text.slice(0, 60);
+          const eventKey = `seq:${seqId}`;
 
-        // 이닝 정보 — entry 레벨 먼저, 없으면 루트 JSON fallback
-        const inning = typeof lastEntry.inning === "number" ? lastEntry.inning : null;
-        const entrySub = lastEntry.inningSub;
-        let battingSide: "home" | "away" | null = null;
-        if (entrySub === "1" || entrySub === 1) battingSide = "away";
-        else if (entrySub === "2" || entrySub === 2) battingSide = "home";
-        else battingSide = resolveInningSide(json); // 루트 JSON 에서 현재 이닝 초/말 탐색
+          const inning = typeof entry.inning === "number" ? entry.inning : null;
+          const entrySub = entry.inningSub;
+          let battingSide: "home" | "away" | null = null;
+          if (entrySub === "1" || entrySub === 1) battingSide = "away";
+          else if (entrySub === "2" || entrySub === 2) battingSide = "home";
+          else battingSide = resolveInningSide(json);
 
-        const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
-        const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
+          const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
+          const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
 
-        return { eventKinds, battingSide, inning, inningLabel, eventKey };
+          results.push({ eventKinds, battingSide, inning, inningLabel, eventKey });
+        }
+
+        if (results.length > 0) return results;
+        return [];
       }
 
       // entries 배열 파싱 실패 — 이 endpoint 포기, false positive 방지를 위해 skip
@@ -112,7 +116,7 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo | null> {
       // ignore, try next endpoint
     }
   }
-  return null;
+  return [];
 }
 
 /**
@@ -237,76 +241,73 @@ export async function GET(req: Request) {
   const llmCache = new Map<string, Promise<string>>();
 
   for (const game of liveGames) {
-    const relay = await fetchRelayInfo(game.id);
-    if (!relay || relay.eventKinds.length === 0) continue;
+    const relays = await fetchRelayInfo(game.id);
+    if (relays.length === 0) continue;
 
-    for (const kind of relay.eventKinds) {
-      for (const teamId of [game.homeId, game.awayId]) {
-        const lock = await markDispatchOnce({
-          alertKind: "live-event",
-          teamScope: teamId,
-          eventKey: `${game.id}:${kind}:${relay.eventKey}`,
-          gameExternalId: game.id,
-        });
-        if (!lock) {
-          skipped += 1;
-          continue;
-        }
-
-        const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
-        const teamSide: "home" | "away" = teamId === game.homeId ? "home" : "away";
-
-        // isPitching: 현재 수비 중인 팀인지 판단
-        // battingSide = 공격 중인 쪽 → 반대 쪽이 수비(투구)
-        let isPitching: boolean | null = null;
-        if (relay.battingSide !== null) {
-          // 내 팀이 공격 중이면 isPitching=false, 수비 중이면 isPitching=true
-          isPitching = relay.battingSide !== teamSide;
-        }
-
-        const myTeamShort  = findTeam(teamId).short;
-        const oppTeamShort = findTeam(opponentTeamId).short;
-        const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel);
-
-        // Claude 캐시: 같은 이벤트+관점 조합은 1회만 호출해서 비용 절감
-        const llmCacheKey = `${game.id}:${kind}:${relay.eventKey}:${String(isPitching)}`;
-        let llmPromise = llmCache.get(llmCacheKey);
-        if (!llmPromise) {
-          llmPromise = generateLiveEventCopy({
-            kind,
-            myTeamShort,
-            oppTeamShort,
-            isPitching,
-            inningLabel: relay.inningLabel,
-            fallbackBody: fallback.body,
+    for (const relay of relays) {
+      for (const kind of relay.eventKinds) {
+        for (const teamId of [game.homeId, game.awayId]) {
+          const lock = await markDispatchOnce({
+            alertKind: "live-event",
+            teamScope: teamId,
+            eventKey: `${game.id}:${kind}:${relay.eventKey}`,
+            gameExternalId: game.id,
           });
-          llmCache.set(llmCacheKey, llmPromise);
-        }
-        const llmBody = await llmPromise;
+          if (!lock) {
+            skipped += 1;
+            continue;
+          }
 
-        // 이닝 레이블 prefix 보장
-        const inningPrefix = relay.inningLabel ? `[${relay.inningLabel}] ` : "";
-        const finalBody = llmBody.startsWith("[") ? llmBody : `${inningPrefix}${llmBody}`;
+          const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
+          const teamSide: "home" | "away" = teamId === game.homeId ? "home" : "away";
 
-        const result = await sendTeamTopicNotification({
-          teamId,
-          topicKey: kind === "pitcherChange" ? "livePitcherChange" : "liveStrikeout",
-          title: fallback.title,
-          body: finalBody,
-          url: "/today",
-          payload: {
-            kind: "live-event",
-            eventKind: kind,
-            gameId: game.id,
+          let isPitching: boolean | null = null;
+          if (relay.battingSide !== null) {
+            isPitching = relay.battingSide !== teamSide;
+          }
+
+          const myTeamShort  = findTeam(teamId).short;
+          const oppTeamShort = findTeam(opponentTeamId).short;
+          const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel);
+
+          const llmCacheKey = `${game.id}:${kind}:${relay.eventKey}:${String(isPitching)}`;
+          let llmPromise = llmCache.get(llmCacheKey);
+          if (!llmPromise) {
+            llmPromise = generateLiveEventCopy({
+              kind,
+              myTeamShort,
+              oppTeamShort,
+              isPitching,
+              inningLabel: relay.inningLabel,
+              fallbackBody: fallback.body,
+            });
+            llmCache.set(llmCacheKey, llmPromise);
+          }
+          const llmBody = await llmPromise;
+
+          const inningPrefix = relay.inningLabel ? `[${relay.inningLabel}] ` : "";
+          const finalBody = llmBody.startsWith("[") ? llmBody : `${inningPrefix}${llmBody}`;
+
+          const result = await sendTeamTopicNotification({
             teamId,
-            opponentTeamId,
-            battingSide: relay.battingSide,
-            isPitching,
-          },
-          type: "SYSTEM",
-          origin: url.origin,
-        });
-        sent += result.sent;
+            topicKey: kind === "pitcherChange" ? "livePitcherChange" : "liveStrikeout",
+            title: fallback.title,
+            body: finalBody,
+            url: "/today",
+            payload: {
+              kind: "live-event",
+              eventKind: kind,
+              gameId: game.id,
+              teamId,
+              opponentTeamId,
+              battingSide: relay.battingSide,
+              isPitching,
+            },
+            type: "SYSTEM",
+            origin: url.origin,
+          });
+          sent += result.sent;
+        }
       }
     }
   }
