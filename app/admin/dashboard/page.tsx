@@ -4,6 +4,7 @@ import { findTeam, TEAMS } from "@/lib/teams";
 import PendingNotificationsSection from "./PendingNotificationsSection";
 import PushSenderForm from "./PushSenderForm";
 import MarketingPushStats from "./MarketingPushStats";
+import CronTrigger from "./CronTrigger";
 
 export const dynamic = "force-dynamic";
 
@@ -315,6 +316,8 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
             </ul>
           )}
         </div>
+
+        <CronTrigger />
 
         <PushSenderForm
           adminKey={key!}
