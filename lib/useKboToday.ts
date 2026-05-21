@@ -28,6 +28,11 @@ export type KboTodayPayload = {
     visibleUntil: string | null;
     generatedAt: string | null;
   } | null;
+  highlightVideo?: {
+    url: string;
+    thumbnailUrl: string | null;
+    videoId: string;
+  } | null;
 };
 
 type UseKboTodayOptions = {

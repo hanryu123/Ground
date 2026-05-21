@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Play } from "lucide-react";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -17,6 +18,12 @@ type PostGameReportView = {
   content: string | null;
 };
 
+type HighlightVideoView = {
+  url: string;
+  thumbnailUrl: string | null;
+  videoId: string;
+} | null;
+
 type InsightOverlayProps =
   | {
       kind: "pregame";
@@ -30,6 +37,7 @@ type InsightOverlayProps =
       kind: "postgame";
       postGameReport: PostGameReportView | null;
       postGameVisibleUntilLabel: string | null;
+      highlightVideo?: HighlightVideoView;
       onClose: () => void;
       onDismiss: () => void;
     }
@@ -83,6 +91,7 @@ export default function InsightOverlay(props: InsightOverlayProps) {
                 <PostGameContent
                   report={props.postGameReport}
                   visibleUntilLabel={props.postGameVisibleUntilLabel}
+                  highlightVideo={props.highlightVideo ?? null}
                 />
               ) : null}
             </div>
@@ -144,12 +153,68 @@ function PregameContent({ preview }: { preview: PregamePreviewView | null }) {
   );
 }
 
+function HighlightPlayer({ video }: { video: NonNullable<HighlightVideoView> }) {
+  const [playing, setPlaying] = useState(false);
+  const embedUrl = `https://www.youtube.com/embed/${video.videoId}?autoplay=1&playsinline=1&rel=0`;
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+      {playing ? (
+        <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+          <iframe
+            src={embedUrl}
+            className="absolute inset-0 h-full w-full"
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+            title="KBO 하이라이트"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPlaying(true)}
+          className="group relative block w-full overflow-hidden"
+          aria-label="하이라이트 재생"
+        >
+          {video.thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={video.thumbnailUrl}
+              alt="하이라이트 썸네일"
+              className="w-full object-cover"
+              style={{ aspectRatio: "16/9" }}
+            />
+          ) : (
+            <div
+              className="flex w-full items-center justify-center bg-black/60"
+              style={{ aspectRatio: "16/9" }}
+            >
+              <span className="text-sm text-white/50">하이라이트 영상</span>
+            </div>
+          )}
+          {/* 다크 오버레이 + 플레이 버튼 */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition group-active:bg-black/50">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/90 shadow-[0_4px_20px_rgba(0,0,0,0.5)] transition group-active:scale-95">
+              <Play size={22} className="translate-x-0.5 text-black" fill="black" />
+            </div>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2.5">
+            <p className="text-left text-[11px] font-semibold text-white/90">🎬 하이라이트 재생</p>
+          </div>
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PostGameContent({
   report,
   visibleUntilLabel,
+  highlightVideo,
 }: {
   report: PostGameReportView | null;
   visibleUntilLabel: string | null;
+  highlightVideo: HighlightVideoView;
 }) {
   return (
     <>
@@ -186,6 +251,7 @@ function PostGameContent({
           경기 종료 분석 리포트 생성 중... 잠시만 기다려줘.
         </p>
       )}
+      {highlightVideo && <HighlightPlayer video={highlightVideo} />}
     </>
   );
 }

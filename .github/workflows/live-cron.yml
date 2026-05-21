@@ -1,0 +1,21 @@
+name: Live Game Crons
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub Actions minimum)
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check-score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check-score
+        run: |
+          curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/check-score" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+
+      - name: live-events
+        run: |
+          curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/live-events" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true

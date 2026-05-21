@@ -253,6 +253,7 @@ export default function HeroCard({ team }: Props) {
     Boolean(pregamePreview?.active) &&
     !isPregamePreviewDismissed;
   const postGameReport = live?.postGameReport ?? null;
+  const highlightVideo = live?.highlightVideo ?? null;
   const postGameDismissKey = `${team.id}:${live?.date ?? ""}`;
   // localStorage 기반 영구 숨김 (다시 보지 않기)
   const [isPostGameReportDismissed, setIsPostGameReportDismissed] = useState(false);
@@ -571,6 +572,7 @@ export default function HeroCard({ team }: Props) {
           kind="postgame"
           postGameReport={postGameReport}
           postGameVisibleUntilLabel={postGameVisibleUntilLabel}
+          highlightVideo={highlightVideo}
           onClose={() => setIsPostGameReportClosed(true)}
           onDismiss={dismissPostGameReportForToday}
         />
@@ -871,13 +873,13 @@ export default function HeroCard({ team }: Props) {
               {dateLabel ? (
                 <>
                   <span>{dateLabel}</span>
-                  <span className="mx-2 text-white/25">·</span>
+                  <span className="mx-2" style={{ color: themedText(0.25) }}>·</span>
                 </>
               ) : null}
               <span>{match.game.time}</span>
               {liveView?.game.status === "LIVE" && (
                 <>
-                  <span className="mx-2 text-white/25">·</span>
+                  <span className="mx-2" style={{ color: themedText(0.25) }}>·</span>
                   <span className="inline-flex items-center gap-1.5 font-medium tracking-[0.18em] text-[#ff5c5c]">
                     <span
                       className="inline-block h-1 w-1 animate-pulse rounded-full bg-[#ff5c5c]"
@@ -889,8 +891,8 @@ export default function HeroCard({ team }: Props) {
               )}
               {liveView?.game.status === "RESULT" && (
                 <>
-                  <span className="mx-2 text-white/25">·</span>
-                  <span className="text-white/45">종료</span>
+                  <span className="mx-2" style={{ color: themedText(0.25) }}>·</span>
+                  <span style={{ color: themedText(0.55) }}>종료</span>
                 </>
               )}
             </p>

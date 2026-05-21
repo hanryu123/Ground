@@ -84,6 +84,11 @@ export async function GET(req: Request) {
         })
       : null;
 
+    let highlightVideo: {
+      url: string;
+      thumbnailUrl: string | null;
+      videoId: string;
+    } | null = null;
     let postGameReport: {
       status: "PENDING" | "GENERATING" | "READY" | "FAILED";
       headline: string | null;
@@ -99,6 +104,26 @@ export async function GET(req: Request) {
       active: boolean;
       generatedAt: string | null;
     } | null = null;
+
+    // 하이라이트 영상 — Game DB에 저장된 highlightVideoUrl 조회
+    if (teamId && teamGame?.status === "RESULT" && teamGame.id) {
+      const gameRow = await prisma.game.findUnique({
+        where: { externalId: teamGame.id },
+        select: { highlightVideoUrl: true },
+      });
+      if (gameRow?.highlightVideoUrl) {
+        const vidIdMatch = /[?&]v=([^&]+)/.exec(gameRow.highlightVideoUrl) ??
+          /youtu\.be\/([^?]+)/.exec(gameRow.highlightVideoUrl);
+        const videoId = vidIdMatch?.[1] ?? null;
+        highlightVideo = {
+          url: gameRow.highlightVideoUrl,
+          thumbnailUrl: videoId
+            ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+            : null,
+          videoId: videoId ?? "",
+        };
+      }
+    }
 
     if (teamId && teamGame?.status === "RESULT") {
       const report = await prisma.postGameReport.findUnique({
@@ -198,6 +223,7 @@ export async function GET(req: Request) {
       standings,
       pregamePreview,
       postGameReport,
+      highlightVideo,
       fallback: schedule.fallback,
     });
   } catch (err) {
