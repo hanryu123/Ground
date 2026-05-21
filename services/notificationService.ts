@@ -1,7 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWebPush } from "@/lib/webPushServer";
-import { isAlphaServerEnv } from "@/lib/appEnv";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   isTopicEnabled,
@@ -199,11 +198,6 @@ export async function sendTeamTopicNotification(input: {
   type: "GAME_START" | "GAME_RESULT" | "SCORE_UPDATE" | "SYSTEM";
   origin: string;
 }): Promise<{ sent: number; disabled: number; inboxCreated: number; queued?: number }> {
-  // alpha 안전장치
-  if (isAlphaServerEnv() && process.env.ALPHA_ALLOW_REAL_PUSH !== "1") {
-    return { sent: 0, disabled: 0, inboxCreated: 0 };
-  }
-
   // AUTO_CONFIRM_PUSH=false 로 명시해야만 PENDING 저장, 그 외(미설정 포함)는 즉시 발송
   const autoConfirm = process.env.AUTO_CONFIRM_PUSH !== "false";
 
