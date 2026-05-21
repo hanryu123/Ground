@@ -194,6 +194,7 @@ export async function GET(req: Request) {
   }
 
   const teamFilter = (url.searchParams.get("teamId") ?? "").trim().toLowerCase();
+  const gameIdFilter = (url.searchParams.get("gameId") ?? "").trim();
   const date = todayKstDate();
 
   let jobs: PostgameJob[];
@@ -201,7 +202,10 @@ export async function GET(req: Request) {
     jobs = buildMockJobs(mock);
   } else {
     const schedule = await fetchKboSchedule(date);
-    const games = schedule.today.filter((g) => g.status === "RESULT" && g.result);
+    const games = schedule.today.filter((g) =>
+      g.status === "RESULT" && g.result &&
+      (!gameIdFilter || g.id === gameIdFilter)
+    );
     jobs = [];
     for (const game of games) {
       for (const teamId of [game.homeId, game.awayId]) {

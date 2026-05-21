@@ -292,6 +292,13 @@ export async function GET(req: Request) {
               lastHighlightCheckedAt: null,
             },
           });
+          // 경기 종료 즉시 postgame 리포트 트리거 (fire-and-forget)
+          const postgameUrl = `${url.origin}/api/cron/postgame?force=1&gameId=${game.externalId}`;
+          fetch(postgameUrl, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${process.env.CRON_SECRET ?? ""}` },
+          }).catch((e) => console.error("[check-score] postgame trigger failed", e));
+          console.log("[check-score] postgame triggered for", game.externalId);
         }
 
         if (justCancelled) {
