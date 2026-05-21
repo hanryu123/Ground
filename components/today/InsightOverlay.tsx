@@ -52,16 +52,17 @@ export default function InsightOverlay(props: InsightOverlayProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2, ease }}
-          className="absolute inset-0 z-[85]"
+          className="absolute inset-0 z-[85] flex items-center justify-center px-5"
+          style={{ paddingBottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))", paddingTop: "3.5rem" }}
         >
           <div className="absolute inset-0 bg-black/45 backdrop-blur-[3px]" />
-          {/* 세로 중심보다 약간 위: top-[44%] → BottomNav 영역 제외한 시각 중심 */}
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 18, scale: 0.96 }}
             transition={{ duration: 0.28, ease }}
-            className="absolute inset-x-5 top-[44%] mx-auto w-[min(92vw,680px)] -translate-y-1/2 rounded-3xl border border-white/10 bg-black/40 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl backdrop-saturate-150"
+            className="relative w-[min(92vw,680px)] overflow-y-auto rounded-3xl border border-white/10 bg-black/40 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl backdrop-saturate-150"
+            style={{ maxHeight: "100%" }}
           >
             {/* 닫기 X — 세션 내 닫기만 */}
             <button

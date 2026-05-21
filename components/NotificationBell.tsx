@@ -183,6 +183,22 @@ const ITEMS_ALPHA: ToggleItem[] = [
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+/** 알림 패널은 항상 다크 배경 — accent가 검정/회색이면 보이지 않으므로 고정 빨강 사용 */
+const TOGGLE_ON_COLOR = "#E0283E";
+
+function hexYiq(hex: string): number {
+  const n = hex.trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(n)) return 0;
+  const v = Number.parseInt(n, 16);
+  return ((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114;
+}
+
+/** accent 색이 다크 패널에서 잘 안 보이는 경우(어둡거나 무채색) 빨강으로 대체 */
+function resolveToggleOnColor(accent: string): string {
+  const yiq = hexYiq(accent);
+  return yiq < 80 || yiq > 195 ? TOGGLE_ON_COLOR : accent;
+}
+
 type Props = {
   /** 활성 dot / 토글 ON 색상 (응원 팀 accent) */
   accent: string;
@@ -214,6 +230,7 @@ export default function NotificationBell({
   accent,
   iconColor = "rgba(255,255,255,0.85)",
 }: Props) {
+  const toggleOnColor = resolveToggleOnColor(accent);
   const isAlphaEnv = process.env.NEXT_PUBLIC_APP_ENV === "alpha";
   const items = isAlphaEnv ? ITEMS_ALPHA : ITEMS_DEFAULT;
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -686,9 +703,9 @@ export default function NotificationBell({
                       className="mt-[2px] flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors"
                       style={{
                         backgroundColor: on
-                          ? `${accent}24`
+                          ? `${toggleOnColor}28`
                           : "rgba(255,255,255,0.05)",
-                        color: on ? accent : "rgba(255,255,255,0.55)",
+                        color: on ? toggleOnColor : "rgba(255,255,255,0.55)",
                       }}
                     >
                       <Icon size={14} strokeWidth={1.8} />
@@ -709,7 +726,7 @@ export default function NotificationBell({
                       className="mt-1 inline-flex h-[20px] w-[34px] shrink-0 items-center rounded-full px-[2px] transition-colors"
                       style={{
                         backgroundColor: on
-                          ? accent
+                          ? toggleOnColor
                           : "rgba(255,255,255,0.16)",
                       }}
                     >
@@ -760,7 +777,7 @@ export default function NotificationBell({
             >
               {anyOn || subscribed ? (
                 <span className="flex items-center gap-1.5">
-                  <Check size={11} strokeWidth={2.2} style={{ color: accent }} />
+                  <Check size={11} strokeWidth={2.2} style={{ color: toggleOnColor }} />
                   구독 중 {loading ? "· 저장중" : ""}
                 </span>
               ) : (
