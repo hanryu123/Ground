@@ -153,7 +153,7 @@ export default function OnboardingTutorial({ onDone }: Props) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3, ease }}
-      className="absolute inset-0 z-[200] flex flex-col overflow-hidden"
+      className="fixed inset-0 z-[200] flex flex-col overflow-hidden"
       style={{
         background: "rgba(0,0,0,0.78)",
         backdropFilter: "blur(12px)",
