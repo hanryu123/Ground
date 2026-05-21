@@ -160,6 +160,7 @@ export async function dispatchScoreAlertsForGame(input: {
           opponentTeam: oppTeamId,
           myScore,
           oppScore,
+          tone,
           latestPlayText: input.latestPlayText,
           fallbackTitle: fallback.title,
           fallbackBody: fallback.body,

@@ -5,6 +5,8 @@ type GenerateScorePushInput = {
   opponentTeam: string;
   myScore: number;
   oppScore: number;
+  /** "for"=내 팀 득점, "against"=상대 팀 득점. 미지정 시 스코어로 추정 */
+  tone?: "for" | "against";
   latestPlayText: string;
   fallbackTitle: string;
   fallbackBody: string;
@@ -318,11 +320,17 @@ function buildUserPrompt(input: GenerateScorePushInput): string {
   const tier = resolveScoreGapTier(input);
   const phase = resolveInningPhase(input.latestPlayText);
   const phaseLabel = phase === "early" ? "초반(1~3회)" : phase === "mid" ? "중반(4~6회)" : "후반(7회~)";
+  const resolvedTone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
+  const scoredTeam = resolvedTone === "for"
+    ? `${favorite.short} 득점 🎉`
+    : `${opponent.short} 득점 (실점)`;
   const statusLabel = input.myScore > input.oppScore ? "리드 중" : input.myScore < input.oppScore ? "뒤지는 중" : "동점";
-  return `현재 스코어: ${favorite.short} ${input.myScore} : ${input.oppScore} ${opponent.short}
+  return `내 팀: ${favorite.short} (상대: ${opponent.short})
+방금 득점: ${scoredTeam}
+현재 스코어: ${favorite.short} ${input.myScore} : ${input.oppScore} ${opponent.short}
 이닝: [${inningTag}] (${phaseLabel})
 상황: ${statusLabel}, 점수차 ${gap}점 (${tier})
-발생 이벤트: ${input.latestPlayText}`;
+최근 플레이: ${input.latestPlayText}`;
 }
 
 function extractAnthropicText(payload: unknown): string | null {

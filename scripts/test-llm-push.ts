@@ -20,6 +20,7 @@ async function main() {
       opponentTeam: "ssg",
       myScore: 3,
       oppScore: 5,
+      tone: "against" as const,
       latestPlayText:
         "5회초 LG 오스틴 좌익수 뒤 홈런 (홈런거리:120M) 투수 김건우 119Km/h 커브, 3루주자 신민재 홈인, 2루주자 홍창기 홈인",
       fallbackTitle: "⚾️ LG 실시간",
@@ -39,6 +40,7 @@ async function main() {
       opponentTeam: "lg",
       myScore: 6,
       oppScore: 4,
+      tone: "for" as const,
       latestPlayText: "8회말 SSG 에레디아 좌중간 뒤 홈런 (홈런거리:125M) 투수 김영우 151Km/h 직구",
       fallbackTitle: "⚾️ SSG 실시간",
       fallbackBody: "[8회말] 에레디아 홈런! 승기 굳힌다 🚀",

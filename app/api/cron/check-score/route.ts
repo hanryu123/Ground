@@ -101,12 +101,9 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     const homeCode = gs?.["homeTeamCode"] as string | undefined;
     const awayCode = gs?.["awayTeamCode"] as string | undefined;
 
-    const scoreStr = homeScore != null && awayScore != null && homeCode && awayCode
-      ? ` | ${homeCode} ${homeScore}:${awayScore} ${awayCode}`
-      : "";
-
+    // 스코어는 buildUserPrompt에서 팬 관점으로 별도 전달 — 여기선 제외해야 Claude가 혼동하지 않음
     const parts = [inningLabel, title, playDesc].filter(Boolean);
-    const text = parts.join(" ") + scoreStr;
+    const text = parts.join(" ");
     return text.length > 5 ? { text, inningLabel } : null;
   } catch {
     return null;

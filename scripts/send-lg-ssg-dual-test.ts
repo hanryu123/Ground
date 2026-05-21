@@ -11,6 +11,7 @@ type Step = {
   opponentTeam: "lg" | "ssg";
   myScore: number;
   oppScore: number;
+  tone?: "for" | "against";
   latestPlayText: string;
   fallbackBody: string;
 };
@@ -72,6 +73,7 @@ async function main() {
           opponentTeam: step.opponentTeam,
           myScore: step.myScore,
           oppScore: step.oppScore,
+          tone: step.tone,
           latestPlayText: step.latestPlayText,
           fallbackTitle: "⚾️ TEST 실시간",
           fallbackBody: step.fallbackBody,
