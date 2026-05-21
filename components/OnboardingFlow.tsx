@@ -439,7 +439,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                 >
                   <p>
                     #1. 사파리 하단 <ShareGuideIcon />
-                    <span className="font-semibold">공유</span> 버튼(사각형 + 위 화살표)을 선택하세요.
+                    <span className="font-semibold">공유</span> 버튼을 선택하세요.
                   </p>
                   <p className="text-white/70">
                     (공유 버튼이 안 보인다면, 주소창 옆 ... 버튼을 선택하면 나와요!)
