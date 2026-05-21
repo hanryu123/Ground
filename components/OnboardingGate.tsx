@@ -79,14 +79,13 @@ export default function OnboardingGate({
         >
           <OnboardingFlow
             onComplete={() => {
-              setIsOnboardingDone(true);
-              if (!teamId) {
-                try {
-                  setTeamId(localStorage.getItem(MY_TEAM_KEY));
-                } catch {
-                  setTeamId(null);
-                }
+              try {
+                setTeamId(localStorage.getItem(MY_TEAM_KEY));
+                setHasSeenTutorial(localStorage.getItem(TUTORIAL_SEEN_KEY) === "1");
+              } catch {
+                setTeamId(null);
               }
+              setIsOnboardingDone(true);
             }}
           />
         </motion.div>
