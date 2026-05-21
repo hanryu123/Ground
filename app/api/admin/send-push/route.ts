@@ -15,6 +15,16 @@ function isAuthorized(req: Request): boolean {
   return new URL(req.url).searchParams.get("key") === secret;
 }
 
+export async function GET() {
+  const s = process.env.ADMIN_SECRET;
+  const p = process.env.ADMIN_PASSWORD;
+  return NextResponse.json({
+    ADMIN_SECRET: s === undefined ? "undefined" : s === "" ? "empty_string" : `set(len=${s.length})`,
+    ADMIN_PASSWORD: p === undefined ? "undefined" : p === "" ? "empty_string" : `set(len=${p.length})`,
+    resolved: (() => { const v = s ?? p; return v === undefined ? "undefined" : v === "" ? "empty_string" : `set(len=${v.length})`; })(),
+  });
+}
+
 /**
  * POST /api/admin/send-push
  * Auth: Authorization: Bearer <ADMIN_SECRET>
