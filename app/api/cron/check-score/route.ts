@@ -61,33 +61,80 @@ function dayRangeKst(date: string): { start: Date; end: Date } {
   return { start, end };
 }
 
+const SCORE_NAVER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+/**
+ * Naver relay JSON에서 최근 플레이 텍스트를 의미 있는 한국어 문자열로 추출.
+ * Claude 프롬프트용으로 "7회말 좌전안타 — 롯데 3:2 두산" 형태로 반환.
+ */
+function parseLatestPlayFromRelay(json: Record<string, unknown>): string | null {
+  try {
+    const result = json["result"] as Record<string, unknown> | undefined;
+    const trd = result?.["textRelayData"] as Record<string, unknown> | undefined;
+    const textRelays = trd?.["textRelays"];
+    if (!Array.isArray(textRelays) || textRelays.length === 0) return null;
+
+    // 가장 최근 항목 (마지막)
+    const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
+    const title = (last["title"] as string | undefined) ?? "";
+    const inn = last["inn"] as number | undefined;
+    const homeOrAway = last["homeOrAway"];
+    const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
+
+    // 이닝 레이블
+    const halfLabel = homeOrAway === 0 || homeOrAway === "0" ? "초" : homeOrAway === 1 || homeOrAway === "1" ? "말" : "";
+    const inningLabel = inn != null ? `${inn}회${halfLabel}` : "";
+
+    // playText 추출 (실제 플레이 내용)
+    const plays = (textOptions ?? [])
+      .map((o) => (o["playText"] as string | undefined) ?? "")
+      .filter(Boolean);
+    const playDesc = plays.slice(0, 2).join(", ");
+
+    // 현재 스코어
+    const firstOption = (textOptions ?? [])[0];
+    const gs = firstOption?.["currentGameState"] as Record<string, unknown> | undefined;
+    const homeScore = gs?.["homeScore"] as string | undefined;
+    const awayScore = gs?.["awayScore"] as string | undefined;
+    const homeCode = gs?.["homeTeamCode"] as string | undefined;
+    const awayCode = gs?.["awayTeamCode"] as string | undefined;
+
+    const scoreStr = homeScore != null && awayScore != null && homeCode && awayCode
+      ? ` | ${homeCode} ${homeScore}:${awayScore} ${awayCode}`
+      : "";
+
+    const parts = [inningLabel, title, playDesc].filter(Boolean);
+    const text = parts.join(" ") + scoreStr;
+    return text.length > 5 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchLatestPlayText(externalId: string): Promise<string | null> {
-  const endpoints = [
-    `https://api-gw.sports.naver.com/schedule/games/${externalId}/relay`,
-    `https://api-gw.sports.naver.com/schedule/games/${externalId}/relayTexts`,
-  ];
-  for (const endpoint of endpoints) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 900);
-      const res = await fetch(endpoint, {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(
+      `https://api-gw.sports.naver.com/schedule/games/${externalId}/relay`,
+      {
         headers: {
-          "user-agent": "Mozilla/5.0 GroundBot/1.0",
+          "user-agent": SCORE_NAVER_UA,
           accept: "application/json",
           referer: "https://m.sports.naver.com/",
+          "accept-language": "ko-KR,ko;q=0.9",
         },
         cache: "no-store",
         signal: controller.signal,
-      }).finally(() => clearTimeout(timeout));
-      if (!res.ok) continue;
-      const json = await res.json();
-      const text = JSON.stringify(json).replace(/\s+/g, " ").trim();
-      if (text.length >= 8) return text.slice(0, 600);
-    } catch {
-      // ignore and try next endpoint
-    }
+      }
+    ).finally(() => clearTimeout(timeout));
+    if (!res.ok) return null;
+    const json = await res.json() as Record<string, unknown>;
+    return parseLatestPlayFromRelay(json);
+  } catch {
+    return null;
   }
-  return null;
 }
 
 export async function GET(req: Request) {
