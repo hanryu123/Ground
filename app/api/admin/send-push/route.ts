@@ -22,7 +22,20 @@ function isAuthorized(req: Request): boolean {
  */
 export async function POST(req: Request) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const secret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD;
+    const urlKey = new URL(req.url).searchParams.get("key");
+    const authHeader = req.headers.get("authorization");
+    return NextResponse.json({
+      error: "unauthorized",
+      debug: {
+        hasSecret: !!secret,
+        secretLen: secret?.length ?? 0,
+        urlKeyLen: urlKey?.length ?? 0,
+        urlKeyMatch: urlKey === secret,
+        authHeaderLen: authHeader?.length ?? 0,
+        authHeaderMatch: authHeader === `Bearer ${secret}`,
+      },
+    }, { status: 401 });
   }
 
   const body = await req.json().catch(() => null);
