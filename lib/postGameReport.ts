@@ -1,8 +1,18 @@
-import { findTeam } from "@/lib/teams";
+import { findTeam, TEAMS } from "@/lib/teams";
 
 const NAVER_BASE = "https://api-gw.sports.naver.com";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = process.env.POSTGAME_LLM_MODEL ?? "claude-sonnet-4-6";
+
+/** 팀 ID로 홈구장(도시) 반환. 정보 없으면 null. */
+function homeCity(teamId: string): string | null {
+  return TEAMS.find((t) => t.id === teamId.toLowerCase())?.city ?? null;
+}
+
+/** 경기가 열린 구장 도시 이름 */
+function stadiumCity(mySide: "home" | "away", myTeamId: string, oppTeamId: string): string | null {
+  return mySide === "home" ? homeCity(myTeamId) : homeCity(oppTeamId);
+}
 
 type Tone = "win" | "loss" | "draw";
 
@@ -415,6 +425,8 @@ export async function fetchPostGameFacts(input: {
 
 export async function generatePostGameReport(input: {
   teamId: string;
+  opponentTeamId: string;
+  mySide: "home" | "away";
   tone: Tone;
   facts: PostGameFacts;
   strictLlm?: boolean;
@@ -427,6 +439,11 @@ export async function generatePostGameReport(input: {
   }
 
   const team = findTeam(input.teamId).short;
+  const stadium = stadiumCity(input.mySide, input.teamId, input.opponentTeamId);
+  const locationLine = stadium
+    ? `경기장: ${stadium} (${input.mySide === "home" ? "홈" : "원정"} 경기)`
+    : `경기: ${input.mySide === "home" ? "홈" : "원정"} 경기`;
+
   const system = `너는 오늘 경기를 직관하고 온 ${team} 극성팬이다.
 기계적인 스포츠 기사 말투 절대 금지. 요약체/브리핑체/불릿체 금지.
 점수 차이, 안타 수, 실책 수, 홈런 수를 근거로 칭찬하거나 날카롭게 비판한다.
@@ -438,9 +455,11 @@ export async function generatePostGameReport(input: {
 - 우리 팀 관점 고정
 - 상대팀과 똑같은 내용 재사용 금지
 - 아래 금칙어 금지: "확인 중", "정보 없음", "탓할 수 없는"
-- 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용`;
+- 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용
+- 경기장/구장 언급 시 반드시 아래 제공된 실제 경기장 위치를 사용할 것`;
   const prompt = `팀:${input.facts.myTeam}
 상대:${input.facts.oppTeam}
+${locationLine}
 결과:${input.tone}
 스코어:${input.facts.myScore}:${input.facts.oppScore}
 안타:${input.facts.myHits ?? "unknown"}:${input.facts.oppHits ?? "unknown"}

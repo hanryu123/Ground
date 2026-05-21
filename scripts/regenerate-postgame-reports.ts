@@ -53,6 +53,8 @@ async function main() {
       });
       const report = await generatePostGameReport({
         teamId: job.teamId,
+        opponentTeamId: job.oppId,
+        mySide: job.mySide,
         tone,
         facts,
         strictLlm: true,
