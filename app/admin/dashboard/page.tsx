@@ -75,12 +75,25 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const db = prisma as any;
 
   const todayStart = startOfTodayKst();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const [totalUsers, teamRows, todaysTriggers, todayNotifications, recentMarketingPushes] = await Promise.all([
+  const [totalUsers, recentUsers, teamRows, todaysTriggers, todayNotifications, recentMarketingPushes] = await Promise.all([
+    db.user.count({
+      where: {
+        pushSubscriptions: { some: { enabled: true } },
+      },
+    }),
+    // 최근 30일 내 lastSeenAt 또는 createdAt 기준 실제 활성 구독자
     db.user.count({
       where: {
         pushSubscriptions: {
-          some: { enabled: true },
+          some: {
+            enabled: true,
+            OR: [
+              { lastSeenAt: { gte: thirtyDaysAgo } },
+              { createdAt: { gte: thirtyDaysAgo } },
+            ],
+          },
         },
       },
     }),
@@ -242,7 +255,13 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Total Active Users</p>
             <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatNumber(totalUsers)}</p>
-            <p className="mt-1 text-xs text-slate-400">enabled 푸시 구독 기준</p>
+            <p className="mt-1 text-xs text-slate-400">enabled 구독 기준 (앱 삭제 포함 가능)</p>
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+              <span className="text-xs text-slate-300">
+                최근 30일 활성: <span className="font-bold text-white">{formatNumber(recentUsers)}명</span>
+              </span>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">

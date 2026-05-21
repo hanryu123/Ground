@@ -42,28 +42,66 @@ export async function testClaude(): Promise<{ ok: boolean; result?: unknown; err
   }
 }
 
-export async function previewInactiveUsers(): Promise<{ ok: boolean; count?: number; error?: string }> {
+export async function previewInactiveUsers(): Promise<{ ok: boolean; noSub?: number; stale?: number; error?: string }> {
   try {
-    const count = await prisma.user.count({
-      where: {
-        email: null,
-        pushSubscriptions: { none: { enabled: true } },
-      },
-    });
-    return { ok: true, count };
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [noSub, stale] = await Promise.all([
+      // 구독 자체 없는 유저
+      prisma.user.count({
+        where: {
+          email: null,
+          pushSubscriptions: { none: { enabled: true } },
+        },
+      }),
+      // 구독은 있지만 30일 이상 미활동 (앱 삭제 추정)
+      prisma.user.count({
+        where: {
+          email: null,
+          pushSubscriptions: {
+            every: {
+              OR: [
+                { enabled: false },
+                {
+                  enabled: true,
+                  lastSeenAt: { lt: thirtyDaysAgo },
+                  createdAt: { lt: thirtyDaysAgo },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    ]);
+    return { ok: true, noSub, stale };
   } catch (e) {
     return { ok: false, error: String(e).slice(0, 200) };
   }
 }
 
-export async function cleanInactiveUsers(): Promise<{ ok: boolean; deleted?: number; error?: string }> {
+export async function cleanInactiveUsers(includeStale: boolean): Promise<{ ok: boolean; deleted?: number; error?: string }> {
   try {
-    const result = await prisma.user.deleteMany({
-      where: {
-        email: null,
-        pushSubscriptions: { none: { enabled: true } },
-      },
-    });
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const whereClause = includeStale
+      ? {
+          email: null,
+          pushSubscriptions: {
+            every: {
+              OR: [
+                { enabled: false },
+                {
+                  enabled: true,
+                  lastSeenAt: { lt: thirtyDaysAgo },
+                  createdAt: { lt: thirtyDaysAgo },
+                },
+              ],
+            },
+          },
+        }
+      : {
+          email: null,
+          pushSubscriptions: { none: { enabled: true } },
+        };
+    const result = await prisma.user.deleteMany({ where: whereClause });
     return { ok: true, deleted: result.count };
   } catch (e) {
     return { ok: false, error: String(e).slice(0, 200) };
