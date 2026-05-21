@@ -42,7 +42,8 @@ type RelayEntry = {
   inn?: number;
   inningSub?: string | number;
   homeOrAway?: string | number;
-  textOptions?: Array<{ text?: string; title?: string; [k: string]: unknown }>;
+  titleStyle?: string | number;
+  textOptions?: Array<{ text?: string; title?: string; playText?: string; [k: string]: unknown }>;
 };
 
 /**
@@ -131,7 +132,11 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
 
       const entries = extractRelayEntries(json);
 
-      console.log(`[live-events] entries count for ${gameId}:`, entries.length, entries.slice(-2).map(e => e.text?.slice(0, 30)));
+      console.log(`[live-events] entries count for ${gameId}:`, entries.length,
+        entries.slice(-3).map(e => ({
+          title: e.title?.slice(0, 20),
+          plays: (e.textOptions ?? []).map(o => o.playText).filter(Boolean).slice(0, 3),
+        })));
       if (entries.length > 0) {
         // 최근 5개 엔트리 검사 — 1분 크론 주기 사이에 밀린 이벤트 커버
         const recentEntries = entries.slice(-5);
@@ -141,12 +146,12 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           // title 우선, text fallback, textOptions 안 텍스트도 합산
           const mainText = (entry.title ?? entry.text ?? "");
           const optionTexts = (entry.textOptions ?? [])
-            .map((o) => o.title ?? o.text ?? "")
+            .map((o) => [o.playText, o.title, o.text].filter(Boolean).join(" "))
             .join(" ");
           const fullText = `${mainText} ${optionTexts}`;
 
           const eventKinds: Array<LiveEventKind> = [];
-          if (/투수\s*교체|투수교체/.test(fullText)) eventKinds.push("pitcherChange");
+          if (/투수\s*교체|투수교체|구원등판/.test(fullText)) eventKinds.push("pitcherChange");
           if (/삼진|탈삼진/.test(fullText)) eventKinds.push("strikeout");
           if (/홈런/.test(fullText)) eventKinds.push("homeRun");
           if (eventKinds.length === 0) continue;
