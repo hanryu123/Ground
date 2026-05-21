@@ -437,8 +437,9 @@ export async function generateLiveEventCopy(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 12000);
   const nonce2 = Date.now() % 9999;
+  console.log("[LiveEventLLM] calling Claude, kind:", input.kind, "keyPrefix:", apiKey.slice(0, 12));
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -458,7 +459,7 @@ export async function generateLiveEventCopy(
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
-      console.error("[LiveEventLLM] API fail:", res.status, errBody.slice(0, 200));
+      console.error("[LiveEventLLM] API fail:", res.status, errBody.slice(0, 300));
       return input.fallbackBody;
     }
     const json = await res.json();
@@ -466,7 +467,11 @@ export async function generateLiveEventCopy(
     console.log("[LiveEventLLM] kind:", input.kind, "raw:", text?.slice(0, 80) ?? "null");
     return text ? compactText(text).slice(0, 60) : input.fallbackBody;
   } catch (e) {
-    console.error("[LiveEventLLM] exception:", String(e).slice(0, 100));
+    const errStr = String(e);
+    console.error("[LiveEventLLM] exception:", errStr.slice(0, 200));
+    if (errStr.includes("abort") || errStr.includes("AbortError")) {
+      console.error("[LiveEventLLM] TIMEOUT after 12s — Anthropic too slow or network issue");
+    }
     return input.fallbackBody;
   } finally {
     clearTimeout(timeout);
@@ -500,7 +505,7 @@ export async function generateScorePushCopyWithOptions(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 5000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12000);
   // 매번 다른 문구 유도를 위해 타임스탬프 기반 노이즈를 유저 프롬프트에 추가
   const nonce = Date.now() % 9999;
   try {
@@ -554,7 +559,11 @@ export async function generateScorePushCopyWithOptions(
       body: finalized,
     };
   } catch (error) {
-    console.error("[Claude API Fail]: ", error);
+    const errStr = String(error);
+    console.error("[ScoreLLM] exception:", errStr.slice(0, 200));
+    if (errStr.includes("abort") || errStr.includes("AbortError")) {
+      console.error("[ScoreLLM] TIMEOUT after 12s — Anthropic too slow or network issue");
+    }
     return {
       title: input.fallbackTitle,
       body: normalizeAndFinalize(input.fallbackBody),

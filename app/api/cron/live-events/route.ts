@@ -8,7 +8,7 @@ import { isKboGameHour } from "@/lib/cronGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
