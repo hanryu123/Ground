@@ -248,30 +248,64 @@ function ensureNovelBody(input: GenerateScorePushInput, body: string): string {
   return isNearDuplicate(creative, recentBodies) ? `${creative} ⚾️` : creative;
 }
 
+function resolveInningPhase(latestPlayText: string): "early" | "mid" | "late" {
+  const { inning } = parseInningState(latestPlayText);
+  if (inning == null) return "mid";
+  if (inning <= 3) return "early";
+  if (inning <= 6) return "mid";
+  return "late";
+}
+
 function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]): string {
   const favoriteTeam = findTeam(input.favoriteTeam).short;
   const gap = resolveScoreGap(input);
   const tier = resolveScoreGapTier(input);
   const trailing = input.myScore < input.oppScore;
+  const leading = input.myScore > input.oppScore;
+  const phase = resolveInningPhase(input.latestPlayText);
+
   const avoid =
     recentBodies.length > 0
-      ? `\n- 최근 문구와 같은 표현 재사용 금지: ${recentBodies
-          .slice(0, 4)
+      ? `\n\n⛔ 아래 표현과 비슷한 문구는 절대 재사용 금지:\n${recentBodies
+          .slice(0, 5)
           .map((line) => `"${clipForPush(line)}"`)
-          .join(", ")}`
+          .join("\n")}`
       : "";
-  return `너는 ${favoriteTeam} 극성팬이다.
-- 한 줄만 출력
-- 24~48자
-- 푸시 본문만 출력(설명/따옴표 금지)
-- 현재 스코어와 이벤트를 반영
-- 경기종료는 반드시 [경기종료] 톤으로 마무리
-- 스코어 갭(점수 차이) 기반 감정선 강제:
-  1) 1~2점 차(close): 간절함/긴장감/초조함
-  2) 3~5점 차(danger): 짜증/원망/분노
-  3) 6점 차 이상(garbage): 해탈/허탈/자조, 짧고 냉소적으로
-- 특히 우리 팀이 크게 지는 garbage 구간에서 "아직 안 끝났다" 금지
-- 현재 상태: 점수차=${gap}, tier=${tier}, 우리팀=${trailing ? "지고 있음" : "안 지고 있음"}${avoid}`;
+
+  const phaseGuide = phase === "early"
+    ? `⏰ 지금은 경기 초반(1~3회) — 탐색전·기선제압 국면이야.
+  • 득점 시: "기선제압 성공! 타격감 날카롭다" 류의 가벼운 흥분
+  • 실점 시: "초반이라 아직 여유 있다, 힘내자" 류의 격려`
+    : phase === "mid"
+    ? `⏰ 지금은 경기 중반(4~6회) — 허리 싸움·추격/굳히기 국면이야.
+  • 동점·추격: "기어코 따라잡는다, 승부는 이제부터" 류의 텐션 상승
+  • 추가 득점: "추가점 진짜 꿀맛, 흐름 완전히 가져옴" 류의 자신감`
+    : `⏰ 지금은 경기 후반(7회~연장) — 도파민 폭발·클러치 국면이야.
+  • 역전/극적 득점: "미쳤다 이걸 뒤집네 ㅋㅋㅋ" 류의 폭발적 환호
+  • 쐐기점: "사실상 확인사살 ㅋㅋㅋ 마무리만 잘 하면 끝" 류
+  • 실점 위기: "숨 막힌다 ㄷㄷ 여기서 막느냐 못 막느냐 갈림길" 류`;
+
+  const gapGuide = trailing
+    ? tier === "garbage"
+      ? `\n⚠️ 6점 이상 지고 있음 → 해탈/허탈/냉소 톤. "아직 안 끝났다" 절대 금지. 짧게.`
+      : tier === "danger"
+      ? `\n⚠️ 3~5점 지고 있음 → 짜증/분노/빨리 따라잡자 톤.`
+      : `\n⚠️ 1~2점 지고 있음 → 간절함/초조함/피 말린다 톤.`
+    : leading
+    ? `\n✅ 우리 팀이 앞서고 있음 → 자신감/흥분/굳혀라 톤.`
+    : `\n➡️ 동점 상황 → 긴장감/역전각/승부 갈린다 톤.`;
+
+  return `너는 KBO를 10년 넘게 챙겨온 30대 ${favoriteTeam} 찐팬이야.
+친한 친구들과 야구 단톡방에서 떠드는 것처럼 짧고, 타격감 있고, 위트 있게 써줘.
+ㅋㅋㅋ, ㄷㄷ 같은 초성도 자연스럽게 섞어도 돼. 스포츠 기사처럼 딱딱하게 쓰지 마.
+
+${phaseGuide}
+${gapGuide}
+
+📐 출력 규칙:
+- 반드시 푸시 본문 한 줄만 출력 (설명·따옴표·이닝 태그 다시 쓰지 마 — 앞에 이미 붙음)
+- 20~45자 이내
+- 이모지 0~2개만${avoid}`;
 }
 
 function buildUserPrompt(input: GenerateScorePushInput): string {
@@ -280,14 +314,13 @@ function buildUserPrompt(input: GenerateScorePushInput): string {
   const inningTag = extractInningTag(input.latestPlayText);
   const gap = resolveScoreGap(input);
   const tier = resolveScoreGapTier(input);
+  const phase = resolveInningPhase(input.latestPlayText);
+  const phaseLabel = phase === "early" ? "초반(1~3회)" : phase === "mid" ? "중반(4~6회)" : "후반(7회~)";
+  const statusLabel = input.myScore > input.oppScore ? "리드 중" : input.myScore < input.oppScore ? "뒤지는 중" : "동점";
   return `현재 스코어: ${favorite.short} ${input.myScore} : ${input.oppScore} ${opponent.short}
-점수 차이: ${gap} (${tier})
-
-이닝 태그: [${inningTag}]
-
-발생 이벤트: ${input.latestPlayText}
-
-최근 문구(피해야 함): ${(input.recentBodies ?? []).slice(0, 6).join(" | ") || "없음"}`;
+이닝: [${inningTag}] (${phaseLabel})
+상황: ${statusLabel}, 점수차 ${gap}점 (${tier})
+발생 이벤트: ${input.latestPlayText}`;
 }
 
 function extractAnthropicText(payload: unknown): string | null {
