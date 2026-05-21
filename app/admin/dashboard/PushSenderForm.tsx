@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { sendMarketingPush } from "./actions";
 
 type Team = { id: string; name: string; short: string };
 
@@ -11,16 +12,7 @@ type Props = {
 
 type SendState = "idle" | "sending" | "done" | "error";
 
-function getAdminKey(propKey: string): string {
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const urlKey = params.get("key");
-    if (urlKey) return urlKey;
-  }
-  return propKey;
-}
-
-export default function PushSenderForm({ adminKey, teams }: Props) {
+export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [url, setUrl] = useState("/today");
@@ -28,41 +20,31 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
   const [state, setState] = useState<SendState>("idle");
   const [testState, setTestState] = useState<SendState>("idle");
   const [result, setResult] = useState<{ sentCount?: number; error?: string } | null>(null);
+  const [, startTransition] = useTransition();
 
-  const send = async (testOnly: boolean) => {
+  const send = (testOnly: boolean) => {
     const setter = testOnly ? setTestState : setState;
     setter("sending");
     setResult(null);
-    try {
-      const key = getAdminKey(adminKey);
-      const res = await fetch(`/api/admin/send-push?key=${encodeURIComponent(key)}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          body: body.trim(),
-          url: url.trim() || "/today",
-          targetTeamId: targetTeamId || null,
-          testOnly,
-        }),
+
+    startTransition(async () => {
+      const res = await sendMarketingPush({
+        title: title.trim(),
+        body: body.trim(),
+        url: url.trim() || "/today",
+        targetTeamId: targetTeamId || null,
+        testOnly,
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setter("error");
-        const debugStr = json.debug ? ` | ${JSON.stringify(json.debug)}` : "";
-        setResult({ error: (json.error ?? "unknown error") + debugStr });
-      } else {
+
+      if (res.ok) {
         setter("done");
-        setResult({ sentCount: json.sentCount });
+        setResult({ sentCount: res.sentCount });
+      } else {
+        setter("error");
+        setResult({ error: res.error });
       }
-    } catch {
-      setter("error");
-      setResult({ error: "network error" });
-    }
-    setTimeout(() => setter("idle"), 4000);
+      setTimeout(() => setter("idle"), 4000);
+    });
   };
 
   const isValid = title.trim().length > 0 && body.trim().length > 0;
@@ -79,7 +61,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
       </p>
 
       <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* 제목 */}
         <div className="md:col-span-2">
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
             알림 제목
@@ -94,7 +75,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
           />
         </div>
 
-        {/* 본문 */}
         <div className="md:col-span-2">
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
             알림 본문
@@ -109,7 +89,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
           />
         </div>
 
-        {/* URL */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
             이동 URL
@@ -123,7 +102,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
           />
         </div>
 
-        {/* 타겟 */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
             발송 대상
@@ -143,7 +121,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
         </div>
       </div>
 
-      {/* 결과 메시지 */}
       {result && (
         <div
           className={`mt-4 rounded-lg px-4 py-2.5 text-sm font-medium ${
@@ -158,7 +135,6 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
         </div>
       )}
 
-      {/* 버튼 */}
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           onClick={() => send(true)}
