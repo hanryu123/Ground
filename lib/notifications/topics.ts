@@ -12,7 +12,8 @@ export type TopicKey =
   | "highlight"
   | "score"
   | "livePitcherChange"
-  | "liveStrikeout";
+  | "liveStrikeout"
+  | "liveHomeRun";
 
 export const TOPIC_KEYS: readonly TopicKey[] = [
   "pitcher",
@@ -22,6 +23,7 @@ export const TOPIC_KEYS: readonly TopicKey[] = [
   "score",
   "livePitcherChange",
   "liveStrikeout",
+  "liveHomeRun",
 ] as const;
 
 export type AlertKind =
@@ -54,7 +56,7 @@ export function isTopicEnabled(topics: unknown, key: TopicKey): boolean {
   const value = parsed[key];
   if (typeof value === "boolean") return value;
   if (key === "highlight") return Boolean(parsed.postGame);
-  if (key === "livePitcherChange" || key === "liveStrikeout") return true;
+  if (key === "livePitcherChange" || key === "liveStrikeout" || key === "liveHomeRun") return true;
   // score, pitcher, preGame, postGame — 명시 없으면 ON으로 간주 (기존 구독자 호환)
   return true;
 }

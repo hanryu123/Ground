@@ -20,8 +20,10 @@ const NAVER_UA =
  *            "2" = 말(bottom) = 홈팀 공격 / 원정팀 수비
  *            null = 판별 불가
  */
+type LiveEventKind = "pitcherChange" | "strikeout" | "homeRun";
+
 type RelayInfo = {
-  eventKinds: Array<"pitcherChange" | "strikeout">;
+  eventKinds: Array<LiveEventKind>;
   /** 현재 공격 중인 팀 측 ("home" | "away" | null) */
   battingSide: "home" | "away" | null;
   /** 현재 이닝 번호 (null=불명) */
@@ -143,9 +145,10 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
             .join(" ");
           const fullText = `${mainText} ${optionTexts}`;
 
-          const eventKinds: Array<"pitcherChange" | "strikeout"> = [];
+          const eventKinds: Array<LiveEventKind> = [];
           if (/투수\s*교체|투수교체/.test(fullText)) eventKinds.push("pitcherChange");
           if (/삼진|탈삼진/.test(fullText)) eventKinds.push("strikeout");
+          if (/홈런/.test(fullText)) eventKinds.push("homeRun");
           if (eventKinds.length === 0) continue;
 
           const seqNo = entry.seqNo ?? entry.no;
@@ -239,13 +242,32 @@ function resolveInningSide(json: Record<string, unknown>): "home" | "away" | nul
  * 모든 body 앞에 "[X회 초/말]" 이닝 레이블을 포함.
  */
 function buildLiveEventCopy(
-  kind: "pitcherChange" | "strikeout",
+  kind: LiveEventKind,
   myTeamShort: string,
   oppTeamShort: string,
   isPitching: boolean | null,
   inningLabel: string | null,
 ): { title: string; body: string } {
   const inning = inningLabel ? `[${inningLabel}] ` : "";
+
+  if (kind === "homeRun") {
+    if (isPitching === false) {
+      return {
+        title: "💥 홈런!",
+        body: `${inning}${myTeamShort} 홈런 작렬!! 점수 추가됐다!`,
+      };
+    }
+    if (isPitching === true) {
+      return {
+        title: "💥 홈런 허용",
+        body: `${inning}${myTeamShort} 홈런 맞았다... 빨리 따라잡자.`,
+      };
+    }
+    return {
+      title: "💥 홈런 발생",
+      body: `${inning}${myTeamShort}-${oppTeamShort}전 홈런 발생.`,
+    };
+  }
 
   if (kind === "strikeout") {
     if (isPitching === true) {
@@ -341,7 +363,7 @@ export async function GET(req: Request) {
           let llmPromise = llmCache.get(llmCacheKey);
           if (!llmPromise) {
             llmPromise = generateLiveEventCopy({
-              kind,
+                              kind: kind as "strikeout" | "pitcherChange" | "homeRun",
               myTeamShort,
               oppTeamShort,
               isPitching,
@@ -357,7 +379,7 @@ export async function GET(req: Request) {
 
           const result = await sendTeamTopicNotification({
             teamId,
-            topicKey: kind === "pitcherChange" ? "livePitcherChange" : "liveStrikeout",
+            topicKey: kind === "pitcherChange" ? "livePitcherChange" : kind === "homeRun" ? "liveHomeRun" : "liveStrikeout",
             title: fallback.title,
             body: finalBody,
             url: "/today",

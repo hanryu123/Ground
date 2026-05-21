@@ -24,6 +24,7 @@ type SubscribeBody = {
     score?: boolean;
     livePitcherChange?: boolean;
     liveStrikeout?: boolean;
+    liveHomeRun?: boolean;
   };
   favoriteTeam?: string;
 };
@@ -36,6 +37,7 @@ type PushTopicFlags = {
   score: boolean;
   livePitcherChange: boolean;
   liveStrikeout: boolean;
+  liveHomeRun: boolean;
   appEnv: "production" | "alpha" | "development";
 };
 
@@ -50,6 +52,7 @@ function normalizeTopics(input: SubscribeBody["topics"]): PushTopicFlags {
     score: toEnabledByDefault(input?.score),
     livePitcherChange: toEnabledByDefault(input?.livePitcherChange),
     liveStrikeout: toEnabledByDefault(input?.liveStrikeout),
+    liveHomeRun: toEnabledByDefault(input?.liveHomeRun),
     appEnv,
   };
 }

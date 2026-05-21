@@ -306,7 +306,7 @@ function extractAnthropicText(payload: unknown): string | null {
 // ─── Live Event (Strikeout / Pitcher Change) ─────────────────────────────────
 
 type GenerateLiveEventInput = {
-  kind: "strikeout" | "pitcherChange";
+  kind: "strikeout" | "pitcherChange" | "homeRun";
   myTeamShort: string;
   oppTeamShort: string;
   /** true=내 팀 수비(투구), false=내 팀 공격(타석), null=불명 */
@@ -322,7 +322,7 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
     input.isPitching === false ? `${input.myTeamShort}이 공격(타석) 중` :
     "공수 불명";
 
-  const kindKo = input.kind === "strikeout" ? "탈삼진" : "투수 교체";
+  const kindKo = input.kind === "strikeout" ? "탈삼진" : input.kind === "homeRun" ? "홈런" : "투수 교체";
   const avoid =
     (input.recentBodies ?? []).length > 0
       ? `\n- 최근 문구 재사용 금지: ${(input.recentBodies ?? []).slice(0, 4).map((l) => `"${l.slice(0, 30)}"`).join(", ")}`
@@ -339,11 +339,13 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
   • 공격 중 삼진 아웃 → 아쉬움, 짜증, 다음 타자 기대
   • 내 팀 투수 교체 → 위기감, 제발 막아라 간절함
   • 상대 투수 교체 → 기대감, 지금이 찬스다 텐션
+  • 내 팀 홈런 → 환호, 폭발적 흥분, 선수 이름 없이도 됨
+  • 상대 팀 홈런 → 허탈함, 분노, 빨리 따라잡자는 의지
   • 이닝 레이블은 절대 다시 쓰지 마(이미 앞에 붙음)${avoid}`;
 }
 
 function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
-  const kindKo = input.kind === "strikeout" ? "탈삼진" : "투수 교체";
+  const kindKo = input.kind === "strikeout" ? "탈삼진" : input.kind === "homeRun" ? "홈런" : "투수 교체";
   const inning = input.inningLabel ?? "경기 중";
   return `이닝: ${inning}
 이벤트: ${kindKo}

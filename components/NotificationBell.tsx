@@ -52,6 +52,7 @@ const TOPIC_KEYS: Array<keyof NotifPrefs> = [
   "score",
   "livePitcherChange",
   "liveStrikeout",
+  "liveHomeRun",
 ];
 
 const DEFAULT_PREFS: NotifPrefs = {
@@ -62,6 +63,7 @@ const DEFAULT_PREFS: NotifPrefs = {
   score: true,
   livePitcherChange: true,
   liveStrikeout: true,
+  liveHomeRun: true,
 } as const;
 const OFF_PREFS: NotifPrefs = {
   pitcher: false,
@@ -71,6 +73,7 @@ const OFF_PREFS: NotifPrefs = {
   score: false,
   livePitcherChange: false,
   liveStrikeout: false,
+  liveHomeRun: false,
 } as const;
 
 type ToggleItem = {
@@ -124,6 +127,13 @@ const ITEMS_DEFAULT: ToggleItem[] = [
     hint: "투수 삼진 상황을 실시간으로 푸시.",
     Icon: Trophy,
   },
+  {
+    id: "liveHomeRun",
+    topicKeys: ["liveHomeRun"],
+    label: "경기중 · 홈런",
+    hint: "홈런 발생 시 즉시 푸시.",
+    Icon: Bell,
+  },
 ];
 
 const ITEMS_ALPHA: ToggleItem[] = [
@@ -150,9 +160,9 @@ const ITEMS_ALPHA: ToggleItem[] = [
   },
   {
     id: "liveSituation",
-    topicKeys: ["livePitcherChange", "liveStrikeout"],
+    topicKeys: ["livePitcherChange", "liveStrikeout", "liveHomeRun"],
     label: "라이브 경기 상황",
-    hint: "투수 교체, 탈삼진 등 알려드려요.",
+    hint: "투수 교체, 탈삼진, 홈런 등 알려드려요.",
     Icon: Crosshair,
   },
   {
@@ -245,6 +255,7 @@ export default function NotificationBell({
           score: true,
           livePitcherChange: true,
           liveStrikeout: true,
+          liveHomeRun: true,
         };
         setPrefs(hydratedPrefs);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(hydratedPrefs));

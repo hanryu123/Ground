@@ -11,6 +11,7 @@ export type PushTopics = {
   score: boolean;
   livePitcherChange: boolean;
   liveStrikeout: boolean;
+  liveHomeRun: boolean;
 };
 
 export function getOrCreateNotifyUserId(): string {
