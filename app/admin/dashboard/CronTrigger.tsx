@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { forceCron } from "./actions";
+import { forceCron, testClaude } from "./actions";
 
 const CRONS = [
   { key: "preview" as const, label: "프리뷰 생성 + 푸시", emoji: "⚾" },
@@ -13,6 +13,7 @@ const CRONS = [
 
 export default function CronTrigger() {
   const [results, setResults] = useState<Record<string, string>>({});
+  const [claudeResult, setClaudeResult] = useState<string>("");
   const [, startTransition] = useTransition();
 
   const trigger = (key: "preview" | "postgame" | "game-start" | "check-score" | "live-events") => {
@@ -25,6 +26,23 @@ export default function CronTrigger() {
           ? `✓ ${JSON.stringify(res.result)}`
           : `✗ ${res.error ?? "오류"}`,
       }));
+    });
+  };
+
+  const handleTestClaude = () => {
+    setClaudeResult("테스트 중…");
+    startTransition(async () => {
+      const res = await testClaude();
+      if (res.ok) {
+        const r = res.result as { ok: boolean; text?: string; status?: number; error?: string; keyPrefix?: string };
+        if (r.text) {
+          setClaudeResult(`✓ 연결 OK | ${r.keyPrefix} | "${r.text}"`);
+        } else {
+          setClaudeResult(`✗ 응답 이상: ${r.error ?? JSON.stringify(r)}`);
+        }
+      } else {
+        setClaudeResult(`✗ ${res.error ?? "오류"}`);
+      }
     });
   };
 
@@ -49,6 +67,23 @@ export default function CronTrigger() {
             )}
           </div>
         ))}
+      </div>
+
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={handleTestClaude}
+            disabled={claudeResult === "테스트 중…"}
+            className="w-fit rounded-lg border border-violet-500/40 bg-violet-900/50 px-4 py-2 text-sm font-semibold text-violet-200 transition hover:bg-violet-800/60 disabled:opacity-40"
+          >
+            🤖 Claude 연결 테스트
+          </button>
+          {claudeResult && (
+            <p className={`max-w-xl text-[11px] break-all ${claudeResult.startsWith("✓") ? "text-emerald-400" : claudeResult === "테스트 중…" ? "text-slate-400" : "text-red-400"}`}>
+              {claudeResult}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
