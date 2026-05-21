@@ -32,10 +32,15 @@ type RelayInfo = {
 };
 
 type RelayEntry = {
-  text: string;
+  text?: string;
+  title?: string;
   seqNo?: number | string;
+  no?: number | string;
   inning?: number;
+  inn?: number;
   inningSub?: string | number;
+  homeOrAway?: string | number;
+  textOptions?: Array<{ text?: string; title?: string; [k: string]: unknown }>;
 };
 
 /**
@@ -46,15 +51,16 @@ function extractRelayEntries(json: Record<string, unknown>): RelayEntry[] {
   const result = json["result"] as Record<string, unknown> | undefined;
   const trd = result?.["textRelayData"];
 
-  // textRelayData 가 직접 배열인 경우
-  if (Array.isArray(trd) && trd.length > 0) return trd as RelayEntry[];
-
-  // textRelayData 가 객체인 경우 — 중첩 배열 탐색
+  // 실제 Naver 구조: result.textRelayData.textRelays
   if (trd && typeof trd === "object" && !Array.isArray(trd)) {
+    const textRelays = (trd as Record<string, unknown>)["textRelays"];
+    if (Array.isArray(textRelays) && textRelays.length > 0) return textRelays as RelayEntry[];
+    // 다른 배열 필드 fallback
     for (const v of Object.values(trd as object)) {
       if (Array.isArray(v) && v.length > 0) return v as RelayEntry[];
     }
   }
+  if (Array.isArray(trd) && trd.length > 0) return trd as RelayEntry[];
 
   // 기존 fallback 경로들
   const candidates = [
@@ -130,20 +136,31 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
         const results: RelayInfo[] = [];
 
         for (const entry of recentEntries) {
-          const text = entry.text ?? "";
+          // title 우선, text fallback, textOptions 안 텍스트도 합산
+          const mainText = (entry.title ?? entry.text ?? "");
+          const optionTexts = (entry.textOptions ?? [])
+            .map((o) => o.title ?? o.text ?? "")
+            .join(" ");
+          const fullText = `${mainText} ${optionTexts}`;
+
           const eventKinds: Array<"pitcherChange" | "strikeout"> = [];
-          if (/투수\s*교체|투수교체/.test(text)) eventKinds.push("pitcherChange");
-          if (/삼진|탈삼진/.test(text)) eventKinds.push("strikeout");
+          if (/투수\s*교체|투수교체/.test(fullText)) eventKinds.push("pitcherChange");
+          if (/삼진|탈삼진/.test(fullText)) eventKinds.push("strikeout");
           if (eventKinds.length === 0) continue;
 
-          const seqId = entry.seqNo != null ? String(entry.seqNo) : text.slice(0, 60);
+          const seqNo = entry.seqNo ?? entry.no;
+          const seqId = seqNo != null ? String(seqNo) : mainText.slice(0, 60);
           const eventKey = `seq:${seqId}`;
 
-          const inning = typeof entry.inning === "number" ? entry.inning : null;
-          const entrySub = entry.inningSub;
+          const inning = typeof entry.inn === "number" ? entry.inn
+            : typeof entry.inning === "number" ? entry.inning : null;
+
+          // homeOrAway: "0"=초(top)=away batting, "1"=말(bottom)=home batting
+          const ha = entry.homeOrAway ?? entry.inningSub;
           let battingSide: "home" | "away" | null = null;
-          if (entrySub === "1" || entrySub === 1) battingSide = "away";
-          else if (entrySub === "2" || entrySub === 2) battingSide = "home";
+          if (ha === "0" || ha === 0) battingSide = "away";
+          else if (ha === "1" || ha === 1) battingSide = "home";
+          else if (ha === "2" || ha === 2) battingSide = "home";
           else battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
