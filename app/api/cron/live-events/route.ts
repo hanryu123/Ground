@@ -60,13 +60,16 @@ function extractRelayEntries(json: Record<string, unknown>): RelayEntry[] {
   return [];
 }
 
-async function fetchRelayInfo(gameId: string): Promise<RelayInfo[]> {
+async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; debugStatuses: string[] }> {
   const endpoints = [
     `${NAVER_BASE}/schedule/games/${gameId}/relay`,
     `${NAVER_BASE}/schedule/games/${gameId}/relay?fields=relayTexts`,
     `${NAVER_BASE}/schedule/games/${gameId}?fields=relay`,
     `${NAVER_BASE}/schedule/games/${gameId}/relayTexts`,
+    `${NAVER_BASE}/schedule/games/${gameId}/liveText`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relay?size=50`,
   ];
+  const debugStatuses: string[] = [];
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(endpoint, {
@@ -78,10 +81,12 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo[]> {
         },
         cache: "no-store",
       });
-      console.log(`[live-events] relay fetch ${gameId} ${endpoint} → ${res.status}`);
+      const shortPath = endpoint.replace(`${NAVER_BASE}/schedule/games/${gameId}`, "");
+      debugStatuses.push(`${shortPath}→${res.status}`);
       if (!res.ok) continue;
       const json = (await res.json()) as Record<string, unknown>;
-      console.log(`[live-events] relay keys for ${gameId}:`, Object.keys(json).slice(0, 10));
+      const topKeys = Object.keys(json).slice(0, 10).join(",");
+      debugStatuses.push(`keys:${topKeys}`);
 
       const entries = extractRelayEntries(json);
 
@@ -114,17 +119,18 @@ async function fetchRelayInfo(gameId: string): Promise<RelayInfo[]> {
           results.push({ eventKinds, battingSide, inning, inningLabel, eventKey });
         }
 
-        if (results.length > 0) return results;
-        return [];
+        if (results.length > 0) return { relays: results, debugStatuses };
+        debugStatuses.push("no_event_in_entries");
+        return { relays: [], debugStatuses };
       }
 
-      // entries 배열 파싱 실패 — 이 endpoint 포기, false positive 방지를 위해 skip
+      debugStatuses.push("entries_empty");
       continue;
-    } catch {
-      // ignore, try next endpoint
+    } catch (e) {
+      debugStatuses.push(`err:${String(e).slice(0, 40)}`);
     }
   }
-  return [];
+  return { relays: [], debugStatuses };
 }
 
 /**
@@ -246,13 +252,13 @@ export async function GET(req: Request) {
   const liveGames = schedule.today.filter((game) => game.status === "LIVE");
   let sent = 0;
   let skipped = 0;
-  const debugRelays: Array<{ gameId: string; relayCount: number; eventKeys: string[] }> = [];
+  const debugRelays: Array<{ gameId: string; relayCount: number; eventKeys: string[]; debugStatuses: string[] }> = [];
   // Claude 호출 캐시: 같은 (gameId:kind:seqNo:isPitching) 조합은 1회만 호출
   const llmCache = new Map<string, Promise<string>>();
 
   for (const game of liveGames) {
-    const relays = await fetchRelayInfo(game.id);
-    debugRelays.push({ gameId: game.id, relayCount: relays.length, eventKeys: relays.map(r => r.eventKey) });
+    const { relays, debugStatuses } = await fetchRelayInfo(game.id);
+    debugRelays.push({ gameId: game.id, relayCount: relays.length, eventKeys: relays.map(r => r.eventKey), debugStatuses });
     if (relays.length === 0) continue;
 
     for (const relay of relays) {
