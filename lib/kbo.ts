@@ -68,6 +68,8 @@ export type LiveGame = Game & {
   /** 선발 라인업 (미발표/파싱 실패 시 null) */
   homeLineup: LineupItem[] | null;
   awayLineup: LineupItem[] | null;
+  /** 경기 중 실시간 스코어 (LIVE 상태일 때만 존재) */
+  liveScore?: { homeScore: number; awayScore: number };
 };
 
 export type TodayFeedStatus =
@@ -217,6 +219,13 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
     };
   }
 
+  const liveScore =
+    status === "LIVE" &&
+    typeof raw.homeTeamScore === "number" &&
+    typeof raw.awayTeamScore === "number"
+      ? { homeScore: raw.homeTeamScore, awayScore: raw.awayTeamScore }
+      : undefined;
+
   return {
     id: raw.gameId ?? `${date}-${awayId}-${homeId}`,
     date,
@@ -229,6 +238,7 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
     homeLineup: null,
     awayLineup: null,
     result,
+    liveScore,
     status,
     cancelReason: inferCancelReason(raw),
   };
