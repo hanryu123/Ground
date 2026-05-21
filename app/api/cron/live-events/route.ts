@@ -87,6 +87,20 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
       const json = (await res.json()) as Record<string, unknown>;
       const topKeys = Object.keys(json).slice(0, 10).join(",");
       debugStatuses.push(`keys:${topKeys}`);
+      // 첫 번째 200 응답의 result 구조 샘플링
+      if (shortPath === "/relay") {
+        const result = json["result"] as Record<string, unknown> | undefined;
+        if (result) {
+          debugStatuses.push(`result_keys:${Object.keys(result).slice(0, 15).join(",")}`);
+          // result 안의 첫 번째 배열 필드 찾기
+          for (const [k, v] of Object.entries(result)) {
+            if (Array.isArray(v) && v.length > 0) {
+              debugStatuses.push(`result.${k}[0]:${JSON.stringify(v[0]).slice(0, 120)}`);
+              break;
+            }
+          }
+        }
+      }
 
       const entries = extractRelayEntries(json);
 
