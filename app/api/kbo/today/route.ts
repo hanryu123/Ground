@@ -132,7 +132,10 @@ export async function GET(req: Request) {
       }
     }
 
-    if (teamId && !postGameReport) {
+    // 오늘 경기가 아직 시작 전(BEFORE)이거나 취소된 경우엔 이전 경기 report를 노출하지 않는다.
+    // 폴백은 오늘 경기가 없거나(rest day) RESULT인데 report 생성이 아직 안 된 경우에만 허용.
+    const canShowFallbackReport = teamGame == null || teamGame.status === "RESULT";
+    if (teamId && !postGameReport && canShowFallbackReport) {
       const latest = await prisma.postGameReport.findFirst({
         where: {
           teamId,

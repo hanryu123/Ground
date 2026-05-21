@@ -246,6 +246,8 @@ export async function GET(req: Request) {
       }));
     const report = await generatePostGameReport({
       teamId: job.teamId,
+      opponentTeamId: job.opponentTeamId,
+      mySide: job.mySide,
       tone: resolveTone(job.myScore, job.oppScore),
       facts,
     });
