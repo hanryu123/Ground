@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
  * 2) 301 redirect → 원래 URL
  */
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
+  const reqUrl = new URL(req.url);
+  const { searchParams } = reqUrl;
   const notificationId = searchParams.get("n");
   const redirectUrl = searchParams.get("u");
 
@@ -21,6 +22,11 @@ export async function GET(req: Request) {
       .catch(() => {});
   }
 
-  const destination = redirectUrl ? decodeURIComponent(redirectUrl) : "/today";
-  return NextResponse.redirect(destination, 301);
+  const raw = redirectUrl ? decodeURIComponent(redirectUrl) : "/today";
+  // 절대 URL이 아니면 현재 origin 기준으로 변환
+  const destination = raw.startsWith("http://") || raw.startsWith("https://")
+    ? raw
+    : `${reqUrl.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
+
+  return NextResponse.redirect(destination, 302);
 }

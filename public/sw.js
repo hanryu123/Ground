@@ -36,14 +36,25 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || "/today";
+  const rawUrl = event.notification.data?.url || "/today";
+  // 상대 경로면 절대 URL로 변환
+  const targetUrl =
+    rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+      ? rawUrl
+      : self.location.origin + (rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl);
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      const match = clients.find((c) => c.url.includes(targetUrl));
+      const match = clients.find((c) => {
+        try {
+          return new URL(c.url).origin === new URL(targetUrl).origin;
+        } catch {
+          return false;
+        }
+      });
       if (match) {
-        match.focus();
-        return match.navigate(targetUrl);
+        match.navigate(targetUrl);
+        return match.focus();
       }
       return self.clients.openWindow(targetUrl);
     })
