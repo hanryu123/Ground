@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import OnboardingFlow from "./OnboardingFlow";
+import OnboardingTutorial, { TUTORIAL_SEEN_KEY } from "./OnboardingTutorial";
 import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -31,18 +32,22 @@ export default function OnboardingGate({
   const [isReady, setIsReady] = useState(false);
   const [teamId, setTeamId] = useState<string | null>(null);
   const [isOnboardingDone, setIsOnboardingDone] = useState(false);
+  const [hasSeenTutorial, setHasSeenTutorial] = useState(true); // true by default to avoid flash
 
   useEffect(() => {
     const sync = () => {
       try {
         const selected = localStorage.getItem(MY_TEAM_KEY);
         const done = localStorage.getItem(ONBOARDING_DONE_KEY) === "1";
+        const seenTutorial = localStorage.getItem(TUTORIAL_SEEN_KEY) === "1";
         setTeamId(selected);
         setIsOnboardingDone(done);
+        setHasSeenTutorial(seenTutorial);
         setIsReady(true);
       } catch {
         setTeamId(null);
         setIsOnboardingDone(false);
+        setHasSeenTutorial(true);
         setIsReady(true);
       }
     };
@@ -93,8 +98,14 @@ export default function OnboardingGate({
             opacity: 1,
             transition: { duration: 0.5, ease, delay: 0.05 },
           }}
+          className="relative"
         >
           {children}
+          <AnimatePresence>
+            {!hasSeenTutorial && (
+              <OnboardingTutorial onDone={() => setHasSeenTutorial(true)} />
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
