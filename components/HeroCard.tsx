@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Cormorant_Garamond } from "next/font/google";
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { CloudRain, User } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CloudRain, User, Play, X } from "lucide-react";
 import { findTeam, heroLeftEpithetLabel, type Team } from "@/lib/teams";
 import {
   getKboTeamThemeByTeamId,
@@ -254,6 +254,7 @@ export default function HeroCard({ team }: Props) {
     !isPregamePreviewDismissed;
   const postGameReport = live?.postGameReport ?? null;
   const highlightVideo = live?.highlightVideo ?? null;
+  const [isHighlightPlayerOpen, setIsHighlightPlayerOpen] = useState(false);
   const postGameDismissKey = `${team.id}:${live?.date ?? ""}`;
   // localStorage 기반 영구 숨김 (다시 보지 않기)
   const [isPostGameReportDismissed, setIsPostGameReportDismissed] = useState(false);
@@ -906,6 +907,22 @@ export default function HeroCard({ team }: Props) {
             ) : null}
           </div>
 
+          {/* 하이라이트 버튼 — RESULT + 영상 있을 때 */}
+          {liveView?.game.status === "RESULT" && highlightVideo && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease, delay: 0.38 }}
+              onClick={() => setIsHighlightPlayerOpen(true)}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[11px] font-semibold tracking-[0.06em] text-white shadow-[0_6px_20px_rgba(0,0,0,0.35)] transition active:scale-95"
+              style={{ backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.18)" }}
+            >
+              <Play size={11} fill="white" className="shrink-0" />
+              하이라이트 보기
+            </motion.button>
+          )}
+
           <div
             className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/38"
             style={{ color: themedText(0.38) }}
@@ -961,6 +978,53 @@ export default function HeroCard({ team }: Props) {
         isLightThemeText={isLightThemeText}
         themedText={themedText}
       />
+
+      {/* 하이라이트 YouTube 플레이어 모달 */}
+      <AnimatePresence>
+        {isHighlightPlayerOpen && highlightVideo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm"
+            onClick={() => setIsHighlightPlayerOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ duration: 0.25, ease }}
+              className="w-full max-w-lg px-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* 닫기 버튼 */}
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[12px] font-semibold tracking-wide text-white/70">
+                  🎬 하이라이트
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsHighlightPlayerOpen(false)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/70 transition active:bg-white/20"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {/* iframe 플레이어 */}
+              <div className="overflow-hidden rounded-2xl" style={{ paddingBottom: "56.25%", position: "relative" }}>
+                <iframe
+                  src={`https://www.youtube.com/embed/${highlightVideo.videoId}?autoplay=1&playsinline=1&rel=0`}
+                  className="absolute inset-0 h-full w-full"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  title="KBO 하이라이트"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

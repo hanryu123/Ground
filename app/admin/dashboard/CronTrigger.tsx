@@ -9,6 +9,7 @@ const CRONS = [
   { key: "game-start" as const, label: "경기 시작 알림", emoji: "🚨" },
   { key: "check-score" as const, label: "스코어 체크", emoji: "🏆" },
   { key: "live-events" as const, label: "라이브 이벤트", emoji: "⚡" },
+  { key: "check-highlight" as const, label: "하이라이트 감지", emoji: "🎬" },
 ];
 
 export default function CronTrigger() {
@@ -16,7 +17,7 @@ export default function CronTrigger() {
   const [claudeResult, setClaudeResult] = useState<string>("");
   const [, startTransition] = useTransition();
 
-  const trigger = (key: "preview" | "postgame" | "game-start" | "check-score" | "live-events") => {
+  const trigger = (key: "preview" | "postgame" | "game-start" | "check-score" | "live-events" | "check-highlight") => {
     setResults((r) => ({ ...r, [key]: "실행 중…" }));
     startTransition(async () => {
       const res = await forceCron(key);

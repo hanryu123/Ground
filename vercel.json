@@ -38,7 +38,31 @@
     },
     {
       "path": "/api/cron/check-highlight",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
+      "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
+      "schedule": "30 14 * * *"
+    },
+    {
+      "path": "/api/cron/check-highlight",
+      "schedule": "0 15 * * *"
     }
   ]
 }

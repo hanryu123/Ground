@@ -108,7 +108,7 @@ export async function cleanInactiveUsers(includeStale: boolean): Promise<{ ok: b
   }
 }
 
-export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events" | "check-highlight"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const cronSecret = process.env.CRON_SECRET;
   const headersList = await headers();
   const host = headersList.get("host") ?? "ground-alpha.vercel.app";
