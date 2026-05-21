@@ -101,7 +101,7 @@ export async function GET(req: Request) {
         topicKey: "highlight",
         title: copy.title,
         body: copy.body,
-        url: hit.url,
+        url: `${url.origin}/`,
         payload: {
           kind: "highlight",
           gameExternalId: game.externalId,
