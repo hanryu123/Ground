@@ -37,14 +37,6 @@
       "schedule": "0 16 * * *"
     },
     {
-      "path": "/api/cron/check-score",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/live-events",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/check-highlight",
       "schedule": "0 14 * * *"
     }
