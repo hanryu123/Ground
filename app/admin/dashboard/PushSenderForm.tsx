@@ -11,6 +11,15 @@ type Props = {
 
 type SendState = "idle" | "sending" | "done" | "error";
 
+function getAdminKey(propKey: string): string {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const urlKey = params.get("key");
+    if (urlKey) return urlKey;
+  }
+  return propKey;
+}
+
 export default function PushSenderForm({ adminKey, teams }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -25,11 +34,12 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
     setter("sending");
     setResult(null);
     try {
-      const res = await fetch(`/api/admin/send-push?key=${encodeURIComponent(adminKey)}`, {
+      const key = getAdminKey(adminKey);
+      const res = await fetch(`/api/admin/send-push?key=${encodeURIComponent(key)}`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${adminKey}`,
+          authorization: `Bearer ${key}`,
         },
         body: JSON.stringify({
           title: title.trim(),
