@@ -68,31 +68,32 @@ const SCORE_NAVER_UA =
  * Naver relay JSON에서 최근 플레이 텍스트를 의미 있는 한국어 문자열로 추출.
  * Claude 프롬프트용으로 "7회말 좌전안타 — 롯데 3:2 두산" 형태로 반환.
  */
-function parseLatestPlayFromRelay(json: Record<string, unknown>): string | null {
+type RelayParseResult = {
+  text: string;
+  inningLabel: string | null;
+};
+
+function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResult | null {
   try {
     const result = json["result"] as Record<string, unknown> | undefined;
     const trd = result?.["textRelayData"] as Record<string, unknown> | undefined;
     const textRelays = trd?.["textRelays"];
     if (!Array.isArray(textRelays) || textRelays.length === 0) return null;
 
-    // 가장 최근 항목 (마지막)
     const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
     const title = (last["title"] as string | undefined) ?? "";
     const inn = last["inn"] as number | undefined;
     const homeOrAway = last["homeOrAway"];
     const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
 
-    // 이닝 레이블
     const halfLabel = homeOrAway === 0 || homeOrAway === "0" ? "초" : homeOrAway === 1 || homeOrAway === "1" ? "말" : "";
-    const inningLabel = inn != null ? `${inn}회${halfLabel}` : "";
+    const inningLabel = inn != null ? `${inn}회${halfLabel}` : null;
 
-    // playText 추출 (실제 플레이 내용)
     const plays = (textOptions ?? [])
       .map((o) => (o["playText"] as string | undefined) ?? "")
       .filter(Boolean);
     const playDesc = plays.slice(0, 2).join(", ");
 
-    // 현재 스코어
     const firstOption = (textOptions ?? [])[0];
     const gs = firstOption?.["currentGameState"] as Record<string, unknown> | undefined;
     const homeScore = gs?.["homeScore"] as string | undefined;
@@ -106,13 +107,13 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): string | null 
 
     const parts = [inningLabel, title, playDesc].filter(Boolean);
     const text = parts.join(" ") + scoreStr;
-    return text.length > 5 ? text : null;
+    return text.length > 5 ? { text, inningLabel } : null;
   } catch {
     return null;
   }
 }
 
-async function fetchLatestPlayText(externalId: string): Promise<string | null> {
+async function fetchLatestPlayText(externalId: string): Promise<RelayParseResult | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
@@ -326,10 +327,11 @@ export async function GET(req: Request) {
         });
         if (dedupe.count === 0) continue;
 
-        const latestPlayText = fastMode
-          ? `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`
-          : (await fetchLatestPlayText(game.externalId)) ??
-            `스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
+        const relayResult = fastMode ? null : await fetchLatestPlayText(game.externalId);
+        // relay 실패 시에도 이닝 레이블을 최대한 보존 — Claude 프롬프트에서 [N회] 태그 생성에 필수
+        const inningPrefix = relayResult?.inningLabel ? `${relayResult.inningLabel} ` : "";
+        const latestPlayText = relayResult?.text ??
+          `${inningPrefix}스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
 
         const result = await dispatchScoreAlertsForGame({
           game,

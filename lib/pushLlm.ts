@@ -100,6 +100,8 @@ function ensureInningPrefix(text: string, inningTag: string): string {
   const compact = compactText(text);
   if (/^\[[^\]]+\]/.test(compact)) return compact;
   if (compact.includes("[경기종료]")) return compact;
+  // 이닝 정보 없으면 태그 생략
+  if (inningTag === "경기중" || !inningTag) return compact;
   return `[${inningTag}] ${compact}`;
 }
 
