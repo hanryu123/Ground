@@ -6,19 +6,40 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 
 export async function testClaude(): Promise<{ ok: boolean; result?: unknown; error?: string }> {
-  const secret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD;
-  const headersList = await headers();
-  const host = headersList.get("host") ?? "ground-alpha.vercel.app";
-  const proto = host.includes("localhost") ? "http" : "https";
-  const origin = `${proto}://${host}`;
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
+    return { ok: false, error: "ANTHROPIC_API_KEY not set in Vercel env" };
+  }
 
-  const res = await fetch(`${origin}/api/admin/test-claude`, {
-    headers: secret ? { "x-admin-secret": secret } : {},
-    cache: "no-store",
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) return { ok: false, error: JSON.stringify(json) };
-  return { ok: true, result: json };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 50,
+        messages: [{ role: "user", content: "한화이글스 팬처럼 삼진 잡았을 때 단톡방 리액션 한 줄만 써줘." }],
+      }),
+    });
+    const status = res.status;
+    const body = await res.text();
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${status}: ${body.slice(0, 300)}` };
+    }
+    const json = JSON.parse(body);
+    const text = json?.content?.[0]?.text ?? null;
+    return { ok: true, result: { status, text, keyPrefix: apiKey.slice(0, 12) + "..." } };
+  } catch (e) {
+    return { ok: false, error: String(e).slice(0, 200) };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
