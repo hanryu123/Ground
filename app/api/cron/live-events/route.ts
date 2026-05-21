@@ -364,23 +364,37 @@ export async function GET(req: Request) {
           const oppTeamShort = findTeam(opponentTeamId).short;
           const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel);
 
+          const myCurrentScore = teamSide === "home"
+            ? game.liveScore?.homeScore
+            : game.liveScore?.awayScore;
+          const oppCurrentScore = teamSide === "home"
+            ? game.liveScore?.awayScore
+            : game.liveScore?.homeScore;
+
           const llmCacheKey = `${game.id}:${kind}:${relay.eventKey}:${String(isPitching)}`;
           let llmPromise = llmCache.get(llmCacheKey);
           if (!llmPromise) {
             llmPromise = generateLiveEventCopy({
-                              kind: kind as "strikeout" | "pitcherChange" | "homeRun",
+              kind: kind as "strikeout" | "pitcherChange" | "homeRun",
               myTeamShort,
               oppTeamShort,
               isPitching,
               inningLabel: relay.inningLabel,
+              myCurrentScore,
+              oppCurrentScore,
               fallbackBody: fallback.body,
             });
             llmCache.set(llmCacheKey, llmPromise);
           }
           const llmBody = await llmPromise;
 
-          const inningPrefix = relay.inningLabel ? `[${relay.inningLabel}] ` : "";
-          const finalBody = llmBody.startsWith("[") ? llmBody : `${inningPrefix}${llmBody}`;
+          // header: [N회] 내팀 S:O 상대팀 |
+          const inning = relay.inningLabel ?? "";
+          const scoreHeader = myCurrentScore != null && oppCurrentScore != null
+            ? `[${inning}] ${myTeamShort} ${myCurrentScore}:${oppCurrentScore} ${oppTeamShort} | `
+            : inning ? `[${inning}] ` : "";
+          // Claude가 이미 헤더 포함해서 뱉은 경우 중복 방지
+          const finalBody = llmBody.startsWith("[") ? llmBody : `${scoreHeader}${llmBody}`;
 
           const result = await sendTeamTopicNotification({
             teamId,

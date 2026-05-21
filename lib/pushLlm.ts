@@ -355,45 +355,68 @@ type GenerateLiveEventInput = {
   /** true=내 팀 수비(투구), false=내 팀 공격(타석), null=불명 */
   isPitching: boolean | null;
   inningLabel: string | null;
+  /** 현재 내 팀 점수 */
+  myCurrentScore?: number;
+  /** 현재 상대 팀 점수 */
+  oppCurrentScore?: number;
   recentBodies?: string[];
   fallbackBody: string;
 };
 
 function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
-  const side =
-    input.isPitching === true  ? `${input.myTeamShort}이 수비(투구) 중` :
-    input.isPitching === false ? `${input.myTeamShort}이 공격(타석) 중` :
-    "공수 불명";
-
   const kindKo = input.kind === "strikeout" ? "탈삼진" : input.kind === "homeRun" ? "홈런" : "투수 교체";
+  const side =
+    input.isPitching === true  ? `${input.myTeamShort} 수비 중 (투구)` :
+    input.isPitching === false ? `${input.myTeamShort} 공격 중 (타격)` :
+    "공수 불명";
   const avoid =
     (input.recentBodies ?? []).length > 0
-      ? `\n- 최근 문구 재사용 금지: ${(input.recentBodies ?? []).slice(0, 4).map((l) => `"${l.slice(0, 30)}"`).join(", ")}`
+      ? `\n\n⛔ 아래 표현 재사용 금지:\n${(input.recentBodies ?? []).slice(0, 5).map((l) => `"${l.slice(0, 30)}"`).join("\n")}`
       : "";
 
-  return `너는 ${input.myTeamShort} 극성팬이다.
-- 지금 경기 중 '${kindKo}' 이벤트가 발생했다.
-- 현재 상황: ${side}
-- 내 팀 관점에서 한 줄 리액션을 써라.
-- 규칙:
-  • 한 줄, 20~40자
-  • 푸시 본문만 출력(따옴표/설명 금지)
-  • 수비 중 탈삼진 → 투수 응원, 흥분, 자신감 폭발
-  • 공격 중 삼진 아웃 → 아쉬움, 짜증, 다음 타자 기대
-  • 내 팀 투수 교체 → 위기감, 제발 막아라 간절함
-  • 상대 투수 교체 → 기대감, 지금이 찬스다 텐션
-  • 내 팀 홈런 → 환호, 폭발적 흥분, 선수 이름 없이도 됨
-  • 상대 팀 홈런 → 허탈함, 분노, 빨리 따라잡자는 의지
-  • 이닝 레이블은 절대 다시 쓰지 마(이미 앞에 붙음)${avoid}`;
+  return `너는 KBO 10년 이상 챙겨온 30대 ${input.myTeamShort} 찐팬이야.
+야구 단톡방에서 떠드는 것처럼 짧고, 타격감 있고, 위트 있게 써줘.
+ㅋㅋㅋ, ㄷㄷ, ㅠㅠ 같은 초성도 자연스럽게 섞어도 됨.
+
+📌 지금 이벤트: ${kindKo} (${side})
+
+📐 출력 규칙:
+- | 뒤에 올 멘트만 출력 (헤더 "[N회] 팀 O:O 팀 |"는 자동으로 붙음 — 절대 다시 쓰지 마)
+- 15~30자 이내 한 줄
+- 따옴표/설명/이닝/스코어 다시 쓰기 금지
+
+🎯 이벤트별 톤:
+• [삼진] 수비 중 삼진 → 투수 환호, "KKK!", 흥분 폭발
+• [삼진] 공격 중 삼진 아웃 → 아쉬움, 짜증, 다음 타자 기대
+• [투수교체] 내 팀 강판 → 위기감, 간절함, "제발 막아라"
+• [투수교체] 상대 교체 → 기대감, 지금이 찬스, "잠가보자"
+• [홈런] 내 팀 → 폭발적 환호, "미쳤다!", "소리질러"
+• [홈런] 상대 팀 → 허탈, 분노, 빨리 따라잡자
+
+💡 문구 예시 (스타일 참고용):
+헛스윙 삼진 ㅋㅋㅋ 방망이 허공 가릅니다 👊
+루킹 삼진 ㄷㄷ 저걸 그냥 쳐다보네 얼음! 🥶
+KKK! 이 위기를 헛스윙 삼진으로 넘깁니다 ㄷㄷ
+투수 교체! 여기서 필승조 올립니다 잠가보자 🔒
+투수 강판 ㅠㅠ 오늘 제구 진짜 안 잡히네요 🤦
+여기서 투수 바꿉니다. 벤치 싸움 치열하네 ㄷㄷ
+흐름 끊기 위한 투수 교체! 분위기 바꿀 수 있을까?
+미쳤다 이 타이밍에 홈런!! 소리 질러~~ 🗣️🔥
+홈런 맞았다 ㅠㅠ 빨리 따라잡자 제발${avoid}`;
 }
 
 function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
   const kindKo = input.kind === "strikeout" ? "탈삼진" : input.kind === "homeRun" ? "홈런" : "투수 교체";
   const inning = input.inningLabel ?? "경기 중";
+  const scoreStr = input.myCurrentScore != null && input.oppCurrentScore != null
+    ? `${input.myTeamShort} ${input.myCurrentScore}:${input.oppCurrentScore} ${input.oppTeamShort}`
+    : `${input.myTeamShort} vs ${input.oppTeamShort}`;
+  const sideLabel = input.isPitching === true ? "내 팀 수비 중" : input.isPitching === false ? "내 팀 공격 중" : "공수 불명";
   return `이닝: ${inning}
+스코어: ${scoreStr}
 이벤트: ${kindKo}
-팀: ${input.myTeamShort} vs ${input.oppTeamShort}
-상황: ${input.isPitching === true ? "내 팀 수비 중" : input.isPitching === false ? "내 팀 공격 중" : "공수 불명"}`;
+공수: ${sideLabel}
+→ | 뒤 멘트만 출력`;
 }
 
 export async function generateLiveEventCopy(
