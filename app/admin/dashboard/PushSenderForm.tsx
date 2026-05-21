@@ -52,7 +52,8 @@ export default function PushSenderForm({ adminKey, teams }: Props) {
       const json = await res.json();
       if (!res.ok) {
         setter("error");
-        setResult({ error: json.error ?? "unknown error" });
+        const debugStr = json.debug ? ` | ${JSON.stringify(json.debug)}` : "";
+        setResult({ error: (json.error ?? "unknown error") + debugStr });
       } else {
         setter("done");
         setResult({ sentCount: json.sentCount });
