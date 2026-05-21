@@ -5,7 +5,7 @@ import { sendWebPush } from "@/lib/webPushServer";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 
-export async function forceCron(path: "preview" | "postgame" | "game-start"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const cronSecret = process.env.CRON_SECRET;
   const headersList = await headers();
   const host = headersList.get("host") ?? "ground-alpha.vercel.app";
