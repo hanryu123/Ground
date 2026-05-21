@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { findTeam, TEAMS } from "@/lib/teams";
-import PendingNotificationsSection from "./PendingNotificationsSection";
 import PushSenderForm from "./PushSenderForm";
 import MarketingPushStats from "./MarketingPushStats";
 import CronTrigger from "./CronTrigger";
@@ -76,7 +75,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
   const todayStart = startOfTodayKst();
 
-  const [totalUsers, teamRows, todaysTriggers, todayNotifications, pendingNotifications, recentMarketingPushes] = await Promise.all([
+  const [totalUsers, teamRows, todaysTriggers, todayNotifications, recentMarketingPushes] = await Promise.all([
     db.user.count({
       where: {
         pushSubscriptions: {
@@ -123,21 +122,6 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         },
       },
       take: 3000,
-    }),
-    db.pendingPushNotification.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        teamId: true,
-        topicKey: true,
-        title: true,
-        body: true,
-        url: true,
-        type: true,
-        status: true,
-        createdAt: true,
-      },
     }),
     db.marketingPush.findMany({
       orderBy: { sentAt: "desc" },
@@ -326,13 +310,6 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
         <MarketingPushStats rows={marketingPushRows} />
 
-        <PendingNotificationsSection
-          initialItems={pendingNotifications.map((n: any) => ({
-            ...n,
-            createdAt: n.createdAt.toISOString(),
-          }))}
-          adminKey={key!}
-        />
 
         <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">오늘 발송 알럿 히스토리</h2>
