@@ -71,7 +71,7 @@ function isNearDuplicate(candidate: string, recentBodies: string[]): boolean {
     if (!normalizedBody) return false;
     if (normalizedBody === normalizedCandidate) return true;
     const overlap = calcTokenOverlapRatio(normalizedCandidate, normalizedBody);
-    return overlap >= 0.68;
+    return overlap >= 0.80;
   });
 }
 
@@ -490,16 +490,20 @@ export async function generateScorePushCopyWithOptions(
     }
     const json = await res.json();
     const generated = extractAnthropicText(json);
+    console.log("[ScoreLLM] latestPlayText:", input.latestPlayText?.slice(0, 80));
+    console.log("[ScoreLLM] claude_raw:", generated?.slice(0, 80) ?? "null");
     if (!generated) {
       return {
         title: input.fallbackTitle,
         body: normalizeAndFinalize(input.fallbackBody),
       };
     }
+    const finalized = normalizeAndFinalize(generated);
+    console.log("[ScoreLLM] finalized:", finalized);
     const team = findTeam(input.favoriteTeam);
     return {
       title: `⚾️ ${team.short} 실시간`,
-      body: normalizeAndFinalize(generated),
+      body: finalized,
     };
   } catch (error) {
     console.error("[Claude API Fail]: ", error);
