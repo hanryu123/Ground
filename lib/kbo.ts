@@ -764,22 +764,117 @@ function deriveStandingsFromGames(games: LiveGame[]): StandingRow[] {
   return rows;
 }
 
-/** KBO 정규시즌 순위. 네이버 schedule 일정 → 결과 누적 derive. 실패 시 정적 STANDINGS. */
+// ────────────────────────────────────────────────────────────────────
+// KBO 공식 사이트 순위 파싱 (1차 소스)
+// ────────────────────────────────────────────────────────────────────
+
+const KBO_TEAM_NAME_MAP: Record<string, string> = {
+  삼성: "samsung",
+  LG: "lg",
+  KT: "kt",
+  SSG: "ssg",
+  KIA: "kia",
+  두산: "doosan",
+  한화: "hanwha",
+  롯데: "lotte",
+  키움: "kiwoom",
+  NC: "nc",
+};
+
+/**
+ * koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx 파싱.
+ * 테이블: 순위 / 팀명 / 경기 / 승 / 패 / 무 / 승률 / 게임차 / 최근10경기 / 연속 / 홈 / 방문
+ */
+async function fetchKboOfficialStandings(): Promise<StandingRow[]> {
+  const url =
+    "https://www.koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx";
+  const res = await fetch(url, {
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8",
+      referer: "https://www.koreabaseball.com/",
+    },
+    next: { revalidate: 300 },
+  });
+  if (!res.ok) throw new Error(`KBO official standings HTTP ${res.status}`);
+  const html = await res.text();
+
+  const tbodyMatch = /<tbody>([\s\S]*?)<\/tbody>/.exec(html);
+  if (!tbodyMatch) throw new Error("tbody not found in KBO standings page");
+  const tbody = tbodyMatch[1];
+
+  const getText = (td: string) =>
+    td
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&nbsp;/g, " ")
+      .trim();
+
+  const rows: StandingRow[] = [];
+  const rowPattern = /<tr>([\s\S]*?)<\/tr>/g;
+  let rowMatch: RegExpExecArray | null;
+
+  while ((rowMatch = rowPattern.exec(tbody)) !== null) {
+    const cells = [...rowMatch[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(
+      (m) => getText(m[0])
+    );
+    if (cells.length < 10) continue;
+
+    const rank = parseInt(cells[0], 10);
+    const teamId = KBO_TEAM_NAME_MAP[cells[1]];
+    const games = parseInt(cells[2], 10);
+    const wins = parseInt(cells[3], 10);
+    const losses = parseInt(cells[4], 10);
+    const draws = parseInt(cells[5], 10);
+    const winRate = parseFloat(cells[6]);
+    const gamesBehind = parseFloat(cells[7]) || 0;
+    // "2승" → "2W", "3패" → "3L", "1무" → "1D"
+    const streak = (cells[9] ?? "")
+      .replace(/승/g, "W")
+      .replace(/패/g, "L")
+      .replace(/무/g, "D");
+
+    if (!teamId || isNaN(rank) || isNaN(games) || isNaN(wins)) continue;
+    rows.push({ rank, teamId, games, wins, losses, draws, winRate, gamesBehind, streak });
+  }
+
+  if (rows.length < 5) throw new Error(`KBO official: parsed only ${rows.length} rows`);
+  return rows;
+}
+
+/**
+ * KBO 정규시즌 순위.
+ *  1차: KBO 공식 사이트 (koreabaseball.com) HTML 파싱
+ *  2차: 네이버 schedule 전 시즌 게임 결과 집계
+ *  3차: 정적 STANDINGS 폴백
+ */
 export async function fetchKboStandings(): Promise<StandingRow[]> {
+  // 1차: KBO 공식 사이트
+  try {
+    return await fetchKboOfficialStandings();
+  } catch (err) {
+    console.warn(`[kbo] official standings failed (${(err as Error).message}); trying Naver derive`);
+  }
+  // 2차: Naver 시즌 게임 집계
   try {
     const year = parseInt(todayKstDate().slice(0, 4), 10);
     const all = await fetchKboSeasonGames(year);
     const opener = seasonOpenerForYear(year);
     const regular = all.filter((g) => g.date >= opener);
-    const rows = deriveStandingsFromGames(regular);
-    if (rows.length === 0) throw new Error("derived 0 rows");
-    return rows;
+    const derived = deriveStandingsFromGames(regular);
+    if (derived.length === 0) throw new Error("derived 0 rows");
+    return derived;
   } catch (err) {
     console.warn(
       `[kbo] standings derive failed (${(err as Error).message}); falling back to static STANDINGS`
     );
-    return STANDINGS;
   }
+  // 3차: 정적 폴백
+  return STANDINGS;
 }
 
 // ────────────────────────────────────────────────────────────────────

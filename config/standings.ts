@@ -1,9 +1,11 @@
 /**
- * KBO 정규시즌 순위 — 목업 데이터.
+ * KBO 정규시즌 순위 — 정적 폴백 데이터.
  *
- *  - `teamId` 는 lib/teams.ts 의 id 와 1:1 매칭 (소문자, "lg", "doosan" …)
- *  - 추후 실시간 API 연동 시 이 모듈을 fetch wrapper 로 교체하면 된다.
- *  - 화면(드로어) 표시 항목: 순위 / 팀명 / W-L-D / 승률 / 게임차 / 최근 연승·연패
+ *  - 라이브 데이터 fetch 실패 시 이 값이 표시됨.
+ *  - 실제 순위는 lib/kbo.ts fetchKboStandings() 에서
+ *    koreabaseball.com → Naver API → 이 파일 순서로 소싱됨.
+ *
+ *  최종 업데이트: 2026-05-21 (KBO 공식 사이트 기준)
  */
 
 export type StandingRow = {
@@ -17,125 +19,21 @@ export type StandingRow = {
   winRate: number;
   /** 1위와의 게임차. 1위는 0 */
   gamesBehind: number;
-  /** 최근 5경기 흐름 — "5W" / "2L" / "1W4L" 등 자유 문자열 */
+  /** 최근 흐름 — "2W" / "3L" 등 */
   streak: string;
 };
 
-/**
- * 2026 시즌 가상 순위 (디자인 검수용 목업).
- * 1위는 작년 우승팀 KIA, 그 다음으로 라이온즈/트윈스 강세 가정.
- */
 export const STANDINGS: StandingRow[] = [
-  {
-    rank: 1,
-    teamId: "kia",
-    games: 12,
-    wins: 9,
-    losses: 3,
-    draws: 0,
-    winRate: 0.75,
-    gamesBehind: 0,
-    streak: "4W",
-  },
-  {
-    rank: 2,
-    teamId: "samsung",
-    games: 12,
-    wins: 8,
-    losses: 4,
-    draws: 0,
-    winRate: 0.667,
-    gamesBehind: 1,
-    streak: "2W",
-  },
-  {
-    rank: 3,
-    teamId: "lg",
-    games: 13,
-    wins: 8,
-    losses: 5,
-    draws: 0,
-    winRate: 0.615,
-    gamesBehind: 1.5,
-    streak: "1W",
-  },
-  {
-    rank: 4,
-    teamId: "doosan",
-    games: 12,
-    wins: 7,
-    losses: 5,
-    draws: 0,
-    winRate: 0.583,
-    gamesBehind: 2,
-    streak: "3W",
-  },
-  {
-    rank: 5,
-    teamId: "kt",
-    games: 12,
-    wins: 6,
-    losses: 5,
-    draws: 1,
-    winRate: 0.545,
-    gamesBehind: 2.5,
-    streak: "1L",
-  },
-  {
-    rank: 6,
-    teamId: "ssg",
-    games: 13,
-    wins: 6,
-    losses: 7,
-    draws: 0,
-    winRate: 0.462,
-    gamesBehind: 3.5,
-    streak: "2L",
-  },
-  {
-    rank: 7,
-    teamId: "lotte",
-    games: 12,
-    wins: 5,
-    losses: 7,
-    draws: 0,
-    winRate: 0.417,
-    gamesBehind: 4,
-    streak: "1W",
-  },
-  {
-    rank: 8,
-    teamId: "hanwha",
-    games: 12,
-    wins: 5,
-    losses: 7,
-    draws: 0,
-    winRate: 0.417,
-    gamesBehind: 4,
-    streak: "1L",
-  },
-  {
-    rank: 9,
-    teamId: "nc",
-    games: 12,
-    wins: 4,
-    losses: 7,
-    draws: 1,
-    winRate: 0.364,
-    gamesBehind: 4.5,
-    streak: "3L",
-  },
-  {
-    rank: 10,
-    teamId: "kiwoom",
-    games: 12,
-    wins: 4,
-    losses: 8,
-    draws: 0,
-    winRate: 0.333,
-    gamesBehind: 5,
-    streak: "2L",
-  },
+  { rank: 1, teamId: "samsung", games: 44, wins: 26, losses: 17, draws: 1, winRate: 0.605, gamesBehind: 0,   streak: "2W" },
+  { rank: 2, teamId: "lg",      games: 44, wins: 26, losses: 18, draws: 0, winRate: 0.591, gamesBehind: 0.5, streak: "1W" },
+  { rank: 3, teamId: "kt",      games: 44, wins: 25, losses: 18, draws: 1, winRate: 0.581, gamesBehind: 1,   streak: "2L" },
+  { rank: 4, teamId: "ssg",     games: 45, wins: 22, losses: 22, draws: 1, winRate: 0.500, gamesBehind: 4.5, streak: "4L" },
+  { rank: 4, teamId: "kia",     games: 45, wins: 22, losses: 22, draws: 1, winRate: 0.500, gamesBehind: 4.5, streak: "1L" },
+  { rank: 4, teamId: "doosan",  games: 45, wins: 22, losses: 22, draws: 1, winRate: 0.500, gamesBehind: 4.5, streak: "4W" },
+  { rank: 7, teamId: "hanwha",  games: 44, wins: 20, losses: 24, draws: 0, winRate: 0.455, gamesBehind: 6.5, streak: "3L" },
+  { rank: 8, teamId: "lotte",   games: 43, wins: 18, losses: 24, draws: 1, winRate: 0.429, gamesBehind: 7.5, streak: "2W" },
+  { rank: 9, teamId: "kiwoom",  games: 46, wins: 19, losses: 26, draws: 1, winRate: 0.422, gamesBehind: 8,   streak: "4W" },
+  { rank: 10, teamId: "nc",     games: 44, wins: 18, losses: 25, draws: 1, winRate: 0.419, gamesBehind: 8,   streak: "3L" },
 ];
 
 /** 승률을 .000 형식 문자열로 (".750", ".615") */
