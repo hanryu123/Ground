@@ -431,7 +431,10 @@ export async function generateLiveEventCopy(
   input: GenerateLiveEventInput
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return input.fallbackBody;
+  if (!apiKey) {
+    console.error("[LiveEventLLM] ANTHROPIC_API_KEY missing");
+    return input.fallbackBody;
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -453,11 +456,17 @@ export async function generateLiveEventCopy(
       }),
       signal: controller.signal,
     });
-    if (!res.ok) return input.fallbackBody;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error("[LiveEventLLM] API fail:", res.status, errBody.slice(0, 200));
+      return input.fallbackBody;
+    }
     const json = await res.json();
     const text = extractAnthropicText(json);
+    console.log("[LiveEventLLM] kind:", input.kind, "raw:", text?.slice(0, 80) ?? "null");
     return text ? compactText(text).slice(0, 60) : input.fallbackBody;
-  } catch {
+  } catch (e) {
+    console.error("[LiveEventLLM] exception:", String(e).slice(0, 100));
     return input.fallbackBody;
   } finally {
     clearTimeout(timeout);
