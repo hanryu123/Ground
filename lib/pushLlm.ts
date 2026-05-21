@@ -19,7 +19,7 @@ type GenerateScorePushOptions = {
 };
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-3-haiku-20240307";
+const ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
 
 function compactText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -358,7 +358,8 @@ export async function generateLiveEventCopy(
   if (!apiKey) return input.fallbackBody;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2400);
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  const nonce2 = Date.now() % 9999;
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -369,10 +370,10 @@ export async function generateLiveEventCopy(
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 64,
-        temperature: 0.95,
+        max_tokens: 80,
+        temperature: 1.0,
         system: buildLiveEventSystemPrompt(input),
-        messages: [{ role: "user", content: buildLiveEventUserPrompt(input) }],
+        messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}\n(seed:${nonce2})` }],
       }),
       signal: controller.signal,
     });
@@ -414,7 +415,9 @@ export async function generateScorePushCopyWithOptions(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 2600);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 5000);
+  // 매번 다른 문구 유도를 위해 타임스탬프 기반 노이즈를 유저 프롬프트에 추가
+  const nonce = Date.now() % 9999;
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -425,13 +428,13 @@ export async function generateScorePushCopyWithOptions(
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: options.maxTokens ?? 72,
-        temperature: options.temperature ?? 0.96,
+        max_tokens: options.maxTokens ?? 80,
+        temperature: options.temperature ?? 1.0,
         system: buildSystemPrompt(input, input.recentBodies ?? []),
         messages: [
           {
             role: "user",
-            content: buildUserPrompt(input),
+            content: `${buildUserPrompt(input)}\n\n(variation_seed: ${nonce})`,
           },
         ],
       }),
