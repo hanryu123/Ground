@@ -204,8 +204,8 @@ export async function sendTeamTopicNotification(input: {
     return { sent: 0, disabled: 0, inboxCreated: 0 };
   }
 
-  // AUTO_CONFIRM_PUSH=true 이면 즉시 발송, false(또는 미설정)면 PENDING 저장
-  const autoConfirm = process.env.AUTO_CONFIRM_PUSH === "true";
+  // AUTO_CONFIRM_PUSH=false 로 명시해야만 PENDING 저장, 그 외(미설정 포함)는 즉시 발송
+  const autoConfirm = process.env.AUTO_CONFIRM_PUSH !== "false";
 
   if (!autoConfirm) {
     await prisma.pendingPushNotification.create({
