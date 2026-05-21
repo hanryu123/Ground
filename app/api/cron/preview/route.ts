@@ -190,7 +190,7 @@ export async function GET(req: Request) {
       return;
     }
 
-    const lock = await markDispatchOnce({
+    const lock = force || await markDispatchOnce({
       alertKind: "preview",
       teamScope: teamId,
       eventKey: `${date}:${game.id}:preview`,
