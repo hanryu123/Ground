@@ -736,6 +736,25 @@ export default function HeroCard({ team }: Props) {
                       ? liveView.game.result.homeScore
                       : liveView.game.result.awayScore}
                   </span>
+                ) : liveView?.game.status === "LIVE" && liveView.game.liveScore ? (
+                  <span
+                    className={`tabular-nums ${displaySerif.className}`}
+                    style={{
+                      color: themedText(0.95),
+                      fontWeight: 600,
+                      fontSize: "clamp(20px, 5.2vw, 30px)",
+                      letterSpacing: "0.04em",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {heroMatch.leftIsAway
+                      ? liveView.game.liveScore.awayScore
+                      : liveView.game.liveScore.homeScore}
+                    <span className="mx-2 font-light" style={{ color: themedText(0.28) }}>:</span>
+                    {heroMatch.leftIsAway
+                      ? liveView.game.liveScore.homeScore
+                      : liveView.game.liveScore.awayScore}
+                  </span>
                 ) : (
                   <span
                     className={`${displaySerif.className} uppercase text-white/36`}
@@ -798,6 +817,31 @@ export default function HeroCard({ team }: Props) {
               {countdownHms}
             </motion.p>
           ) : null}
+
+          {venueUnderDate.primary ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.45, ease, delay: 0.36 }}
+              className={`text-center ${countdownHms ? "mt-3" : "mt-6"}`}
+            >
+              <p
+                className="text-[11px] font-semibold tracking-[0.18em] uppercase"
+                style={{ color: themedText(0.52) }}
+              >
+                📍 {venueUnderDate.primary}
+              </p>
+              {venueUnderDate.secondary ? (
+                <p
+                  className="mt-0.5 text-[10px] font-normal tracking-wide normal-case"
+                  style={{ color: themedText(0.35) }}
+                >
+                  {venueUnderDate.secondary}
+                </p>
+              ) : null}
+            </motion.div>
+          ) : null}
+
           {hasSelectedTeamLineup && (
             <motion.button
               type="button"
@@ -857,24 +901,6 @@ export default function HeroCard({ team }: Props) {
               >
                 {feedMessage}
               </p>
-            ) : null}
-            {venueUnderDate.primary ? (
-              <div className="mt-2.5 space-y-1">
-                <p
-                  className="text-[12px] font-semibold leading-snug tracking-[0.14em] text-white/55"
-                  style={{ fontWeight: 600, color: themedText(0.55) }}
-                >
-                  {venueUnderDate.primary}
-                </p>
-                {venueUnderDate.secondary ? (
-                  <p
-                    className="px-3 text-[10px] font-normal leading-snug tracking-wide text-white/38 normal-case"
-                    style={{ fontWeight: 400, color: themedText(0.38) }}
-                  >
-                    {venueUnderDate.secondary}
-                  </p>
-                ) : null}
-              </div>
             ) : null}
           </div>
 
