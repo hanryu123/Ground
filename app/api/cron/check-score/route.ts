@@ -140,17 +140,7 @@ export async function GET(req: Request) {
   let snapshot: LiveScoreGame[] = [];
 
   try {
-    lockAcquired = dev.bypassLock ? true : await tryAcquireCheckScoreLock();
-    if (!lockAcquired) {
-      summary.skipped = "OVERLAPPED_RUN";
-      await finishCronRun({
-        id: runId,
-        status: "partial",
-        summary,
-        error: "overlapped run skipped by advisory lock",
-      });
-      return NextResponse.json({ ok: true, runId, ...summary });
-    }
+    lockAcquired = true; // advisory lock removed — PgBouncer transaction mode incompatible
 
     if (isOffDay && dev.tick == null) {
       const { start, end } = dayRangeKst(targetDate);
