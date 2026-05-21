@@ -43,16 +43,27 @@ type RelayEntry = {
  * Naver API 응답 구조가 버전마다 다르므로 여러 경로를 시도.
  */
 function extractRelayEntries(json: Record<string, unknown>): RelayEntry[] {
-  // 가능한 배열 경로들
+  const result = json["result"] as Record<string, unknown> | undefined;
+  const trd = result?.["textRelayData"];
+
+  // textRelayData 가 직접 배열인 경우
+  if (Array.isArray(trd) && trd.length > 0) return trd as RelayEntry[];
+
+  // textRelayData 가 객체인 경우 — 중첩 배열 탐색
+  if (trd && typeof trd === "object" && !Array.isArray(trd)) {
+    for (const v of Object.values(trd as object)) {
+      if (Array.isArray(v) && v.length > 0) return v as RelayEntry[];
+    }
+  }
+
+  // 기존 fallback 경로들
   const candidates = [
     json["relayTexts"],
-    (json["result"] as Record<string, unknown> | undefined)?.["relayTexts"],
-    (json["relay"]  as Record<string, unknown> | undefined)?.["relayTexts"],
-    (json["result"] as Record<string, unknown> | undefined)
-      ?.["relay"] &&
-      ((json["result"] as Record<string, unknown>)["relay"] as Record<string, unknown>)?.["relayTexts"],
+    result?.["relayTexts"],
+    (json["relay"] as Record<string, unknown> | undefined)?.["relayTexts"],
+    result?.["relay"] && (result["relay"] as Record<string, unknown>)?.["relayTexts"],
     json["texts"],
-    (json["result"] as Record<string, unknown> | undefined)?.["texts"],
+    result?.["texts"],
   ];
   for (const c of candidates) {
     if (Array.isArray(c) && c.length > 0) return c as RelayEntry[];
@@ -92,12 +103,20 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
         const result = json["result"] as Record<string, unknown> | undefined;
         if (result) {
           debugStatuses.push(`result_keys:${Object.keys(result).slice(0, 15).join(",")}`);
-          // result 안의 첫 번째 배열 필드 찾기
-          for (const [k, v] of Object.entries(result)) {
-            if (Array.isArray(v) && v.length > 0) {
-              debugStatuses.push(`result.${k}[0]:${JSON.stringify(v[0]).slice(0, 120)}`);
-              break;
+          // textRelayData 구조 확인
+          const trd = result["textRelayData"];
+          debugStatuses.push(`textRelayData_type:${Array.isArray(trd) ? `array(${(trd as unknown[]).length})` : typeof trd}`);
+          if (trd && typeof trd === "object" && !Array.isArray(trd)) {
+            debugStatuses.push(`textRelayData_obj_keys:${Object.keys(trd as object).slice(0, 10).join(",")}`);
+            // 중첩 배열 찾기
+            for (const [k2, v2] of Object.entries(trd as object)) {
+              if (Array.isArray(v2) && v2.length > 0) {
+                debugStatuses.push(`textRelayData.${k2}[0]:${JSON.stringify(v2[0]).slice(0, 150)}`);
+                break;
+              }
             }
+          } else if (Array.isArray(trd) && (trd as unknown[]).length > 0) {
+            debugStatuses.push(`textRelayData[0]:${JSON.stringify((trd as unknown[])[0]).slice(0, 150)}`);
           }
         }
       }
