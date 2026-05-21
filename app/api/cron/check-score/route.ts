@@ -292,13 +292,26 @@ export async function GET(req: Request) {
               lastHighlightCheckedAt: null,
             },
           });
-          // 경기 종료 즉시 postgame 리포트 트리거 (fire-and-forget)
-          const postgameUrl = `${url.origin}/api/cron/postgame?force=1&gameId=${game.externalId}`;
-          fetch(postgameUrl, {
-            method: "GET",
-            headers: { Authorization: `Bearer ${process.env.CRON_SECRET ?? ""}` },
-          }).catch((e) => console.error("[check-score] postgame trigger failed", e));
-          console.log("[check-score] postgame triggered for", game.externalId);
+        }
+
+        // RESULT 상태인 경기 중 postgame이 아직 발송 안 된 경우 즉시 트리거
+        // justEnded(신규 전환) + 이미 RESULT였던 경기(이전 배포 전 종료) 모두 커버
+        if (game.status === "RESULT") {
+          const postgameDispatched = await prisma.notificationDispatchState.findFirst({
+            where: {
+              alertKind: "postgame",
+              gameExternalId: game.externalId,
+            },
+            select: { id: true },
+          });
+          if (!postgameDispatched) {
+            const postgameUrl = `${url.origin}/api/cron/postgame?force=1&gameId=${game.externalId}`;
+            fetch(postgameUrl, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${process.env.CRON_SECRET ?? ""}` },
+            }).catch((e) => console.error("[check-score] postgame trigger failed", e));
+            console.log("[check-score] postgame triggered for", game.externalId);
+          }
         }
 
         if (justCancelled) {
