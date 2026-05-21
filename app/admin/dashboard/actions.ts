@@ -42,6 +42,34 @@ export async function testClaude(): Promise<{ ok: boolean; result?: unknown; err
   }
 }
 
+export async function previewInactiveUsers(): Promise<{ ok: boolean; count?: number; error?: string }> {
+  try {
+    const count = await prisma.user.count({
+      where: {
+        email: null,
+        pushSubscriptions: { none: { enabled: true } },
+      },
+    });
+    return { ok: true, count };
+  } catch (e) {
+    return { ok: false, error: String(e).slice(0, 200) };
+  }
+}
+
+export async function cleanInactiveUsers(): Promise<{ ok: boolean; deleted?: number; error?: string }> {
+  try {
+    const result = await prisma.user.deleteMany({
+      where: {
+        email: null,
+        pushSubscriptions: { none: { enabled: true } },
+      },
+    });
+    return { ok: true, deleted: result.count };
+  } catch (e) {
+    return { ok: false, error: String(e).slice(0, 200) };
+  }
+}
+
 export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const cronSecret = process.env.CRON_SECRET;
   const headersList = await headers();

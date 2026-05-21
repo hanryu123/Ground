@@ -4,6 +4,7 @@ import { findTeam, TEAMS } from "@/lib/teams";
 import PushSenderForm from "./PushSenderForm";
 import MarketingPushStats from "./MarketingPushStats";
 import CronTrigger from "./CronTrigger";
+import UserCleanup from "./UserCleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -310,6 +311,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
         <MarketingPushStats rows={marketingPushRows} />
 
+        <UserCleanup />
 
         <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">오늘 발송 알럿 히스토리</h2>
