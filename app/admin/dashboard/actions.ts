@@ -5,6 +5,23 @@ import { sendWebPush } from "@/lib/webPushServer";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 
+export async function forceCron(path: "preview" | "postgame" | "game-start"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  const cronSecret = process.env.CRON_SECRET;
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "ground-alpha.vercel.app";
+  const proto = host.includes("localhost") ? "http" : "https";
+  const origin = `${proto}://${host}`;
+
+  const url = `${origin}/api/cron/${path}?force=1`;
+  const res = await fetch(url, {
+    headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {},
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: JSON.stringify(json) };
+  return { ok: true, result: json };
+}
+
 export type SendPushResult =
   | { ok: true; sentCount: number; total: number; id: string }
   | { ok: false; error: string };
