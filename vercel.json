@@ -9,12 +9,28 @@
       "schedule": "0 3 * * 0,6"
     },
     {
+      "path": "/api/cron/preview",
+      "schedule": "0 4 * * 0,6"
+    },
+    {
+      "path": "/api/cron/preview",
+      "schedule": "0 7 * * 0,6"
+    },
+    {
       "path": "/api/cron/game-start",
       "schedule": "15 9 * * 2-6"
     },
     {
       "path": "/api/cron/game-start",
+      "schedule": "45 3 * * 0,6"
+    },
+    {
+      "path": "/api/cron/game-start",
       "schedule": "45 4 * * 0,6"
+    },
+    {
+      "path": "/api/cron/game-start",
+      "schedule": "45 7 * * 0,6"
     },
     {
       "path": "/api/cron/postgame",
