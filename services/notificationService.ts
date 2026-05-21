@@ -77,22 +77,19 @@ export async function markDispatchOnce(input: {
   gameExternalId?: string | null;
   payload?: Prisma.InputJsonValue;
 }): Promise<boolean> {
-  try {
-    await prisma.notificationDispatchState.create({
-      data: {
-        alertKind: input.alertKind,
-        teamScope: input.teamScope,
-        eventKey: input.eventKey,
-        gameExternalId: input.gameExternalId ?? null,
-        payload: input.payload,
-      },
-    });
-    return true;
-  } catch (error) {
-    const prismaError = error as Prisma.PrismaClientKnownRequestError;
-    if (prismaError?.code === "P2002") return false;
-    throw error;
-  }
+  // createMany + skipDuplicates: unique 충돌 시 에러 없이 count=0 반환
+  // PgBouncer transaction mode 에서 P2002 catch가 불안정하여 이 방식으로 교체
+  const result = await prisma.notificationDispatchState.createMany({
+    data: [{
+      alertKind: input.alertKind,
+      teamScope: input.teamScope,
+      eventKey: input.eventKey,
+      gameExternalId: input.gameExternalId ?? null,
+      payload: input.payload ?? Prisma.JsonNull,
+    }],
+    skipDuplicates: true,
+  });
+  return result.count > 0;
 }
 
 const PUSH_FAIL_DISABLE_STATUSES = new Set([401, 403, 404, 410]);
