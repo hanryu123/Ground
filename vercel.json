@@ -38,11 +38,11 @@
     },
     {
       "path": "/api/cron/check-score",
-      "schedule": "*/2 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/live-events",
-      "schedule": "*/3 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/check-highlight",
