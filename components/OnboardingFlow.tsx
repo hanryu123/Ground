@@ -134,7 +134,15 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPledgeChecked, setIsPledgeChecked] = useState(false);
   const [installGuide, setInstallGuide] = useState<"none" | "ios" | "android">("none");
+  const [isNativeApp, setIsNativeApp] = useState(false);
   const { isStandalone, os, canPromptInstall, promptInstall } = usePwaInstallGate();
+
+  useEffect(() => {
+    // Capacitor 네이티브 앱 여부 감지
+    import("@capacitor/core")
+      .then(({ Capacitor }) => setIsNativeApp(Capacitor.isNativePlatform()))
+      .catch(() => setIsNativeApp(false));
+  }, []);
 
   async function fetchVapidKey(): Promise<string | null> {
     try {
@@ -203,6 +211,13 @@ export default function OnboardingFlow({ onComplete }: Props) {
     setErrorMsg(null);
     setLoading(true);
     try {
+      // 네이티브 앱: PWA 설치 안내 불필요, 웹 푸시 대신 FCM 사용 (OnboardingGate에서 등록)
+      if (isNativeApp) {
+        localStorage.setItem(ONBOARDING_DONE_KEY, "1");
+        onComplete();
+        return;
+      }
+
       if (!isStandalone) {
         if (os === "android") {
           const result = await promptInstall();
