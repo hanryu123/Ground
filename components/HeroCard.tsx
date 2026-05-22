@@ -821,18 +821,6 @@ export default function HeroCard({ team }: Props) {
             </motion.p>
           ) : null}
 
-          {/* 경기 전: 카운트다운 아래 장소 뱃지 (경기 중/후엔 date·time 줄에 인라인으로 표시) */}
-          {venueUnderDate.primary && countdownHms ? (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.45, ease, delay: 0.36 }}
-              className="mt-3 text-[13px] font-semibold tracking-[0.14em]"
-              style={{ color: themedText(0.48) }}
-            >
-              📍 {venueUnderDate.primary}
-            </motion.p>
-          ) : null}
 
           {hasSelectedTeamLineup && (
             <motion.button
