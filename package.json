@@ -19,9 +19,12 @@
     "train:lora-v2": "tsx scripts/trainLoraV2.ts",
     "train:lora-v2:dry": "DRY_RUN=1 tsx scripts/trainLoraV2.ts",
     "cap:sync": "npx cap sync",
+    "cap:sync:dev": "CAPACITOR_ENV=development npx cap sync",
     "cap:ios": "npx cap open ios",
+    "cap:ios:dev": "CAPACITOR_ENV=development npx cap sync && npx cap run ios",
     "cap:android": "npx cap open android",
-    "cap:build": "next build && npx cap sync"
+    "cap:android:dev": "CAPACITOR_ENV=development npx cap sync && npx cap run android",
+    "cap:build": "npx cap sync"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
