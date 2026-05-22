@@ -201,10 +201,13 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
         })));
       if (entries.length > 0) {
         // 워터마크 이후 새 엔트리만 처리 — 절대 중복 없음
-        const newEntries = entries.filter((e) => {
-          const seq = e.seqNo ?? e.no;
-          return seq != null && Number(seq) > lastSeqNo;
-        });
+        // lastSeqNo=-1: 마이그레이션 미적용 fallback → slice(-5)로 안전 처리
+        const newEntries = lastSeqNo < 0
+          ? entries.slice(-5)
+          : entries.filter((e) => {
+              const seq = e.seqNo ?? e.no;
+              return seq != null && Number(seq) > lastSeqNo;
+            });
         // seqNo 없는 엔트리는 안전하게 제외 (중복 위험)
         const maxSeqNo = entries.reduce((max, e) => {
           const seq = Number(e.seqNo ?? e.no ?? 0);
@@ -419,22 +422,32 @@ export async function GET(req: Request) {
   const llmCache = new Map<string, Promise<string>>();
 
   for (const game of liveGames) {
-    // 워터마크: 이 게임의 마지막 처리 seqNo 조회
-    const watermark = await prisma.liveEventWatermark.findUnique({
-      where: { gameExternalId: game.id },
-    });
-    const lastSeqNo = watermark?.lastSeqNo ?? 0;
+    // 워터마크: 이 게임의 마지막 처리 seqNo 조회 (테이블 미생성 시 graceful fallback)
+    let lastSeqNo = 0;
+    try {
+      const watermark = await prisma.liveEventWatermark.findUnique({
+        where: { gameExternalId: game.id },
+      });
+      lastSeqNo = watermark?.lastSeqNo ?? 0;
+    } catch {
+      // 마이그레이션 미적용 등 DB 에러 → 워터마크 없이 계속 (slice-5 안전망)
+      lastSeqNo = -1; // -1: 워터마크 DB 없음 표시 → 아래에서 slice-5 fallback
+    }
 
     const { relays, maxSeqNo, debugStatuses } = await fetchRelayInfo(game.id, lastSeqNo);
     debugRelays.push({ gameId: game.id, relayCount: relays.length, eventKeys: relays.map(r => r.eventKey), debugStatuses });
 
-    // 새 엔트리가 있었으면 워터마크를 무조건 업데이트 (이벤트 없어도)
-    if (maxSeqNo > lastSeqNo) {
-      await prisma.liveEventWatermark.upsert({
-        where: { gameExternalId: game.id },
-        create: { gameExternalId: game.id, lastSeqNo: maxSeqNo },
-        update: { lastSeqNo: maxSeqNo },
-      });
+    // 워터마크 업데이트 (DB 에러 시 skip)
+    if (lastSeqNo >= 0 && maxSeqNo > lastSeqNo) {
+      try {
+        await prisma.liveEventWatermark.upsert({
+          where: { gameExternalId: game.id },
+          create: { gameExternalId: game.id, lastSeqNo: maxSeqNo },
+          update: { lastSeqNo: maxSeqNo },
+        });
+      } catch {
+        // 마이그레이션 미적용 시 무시
+      }
     }
     if (relays.length === 0) continue;
 
