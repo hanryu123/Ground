@@ -460,6 +460,12 @@ function extractAnthropicText(payload: unknown): string | null {
 
 // ─── Live Event (Strikeout / Pitcher Change) ─────────────────────────────────
 
+type StrikeoutDetail = {
+  swingKind: "swinging" | "looking" | "unknown";
+  runners: "none" | "scoring_position" | "bases_loaded";
+  is3pitch: boolean;
+};
+
 type GenerateLiveEventInput = {
   kind: "strikeout" | "pitcherChange" | "homeRun";
   myTeamShort: string;
@@ -473,9 +479,59 @@ type GenerateLiveEventInput = {
   oppCurrentScore?: number;
   /** 릴레이 텍스트에서 파싱한 선수 이름 (투수 또는 타자) */
   playerName?: string;
+  /** 삼진 세부 상황 (kind === "strikeout"일 때만 유효) */
+  strikeoutDetail?: StrikeoutDetail;
   recentBodies?: string[];
   fallbackBody: string;
 };
+
+/**
+ * 삼진 상황(주자 유무 + 종류)에 따라 캐스터 감정 가이드를 반환.
+ * isPitching=true (우리 투수 탈삼진) 전용.
+ */
+function buildStrikeoutGuide(d: StrikeoutDetail, name: string | null): string {
+  const pitcher = name ? `${name} 투수` : "투수";
+
+  // 1) 득점권 / 만루 위기 탈출
+  if (d.runners === "bases_loaded" || d.runners === "scoring_position") {
+    const crisisLabel = d.runners === "bases_loaded" ? "만루" : "득점권";
+    return `🚨 [절체절명의 위기 탈출 — ${crisisLabel} 삼진]
+캐스터 상태: 안도+폭발적 샤우팅. ${pitcher}의 강심장을 극찬해야 함.
+톤: "이 위기를 스스로 지워버립니다!! 엄청난 강심장이네요! ${pitcher} 포효합니다!!" 류.
+키워드: 위기 탈출, 불을 끄다, 클러치 피칭, 포효, 강심장
+⚠️ 반드시 위기를 막아냈다는 안도+흥분 감정이 폭발해야 함.`;
+  }
+
+  // 2) 3구 삼진 (KKK) — 주자 없음
+  if (d.is3pitch) {
+    return `⚡ [압도적 지배 — 3구 삼진]
+캐스터 상태: 투수 구위에 경악. 타자의 무기력함 강조.
+톤: "3구 삼진! 오늘 이 투수 공은 칠 수가 없습니다! 타자들이 추풍낙엽처럼 쓰러집니다!" 류.
+키워드: 언터처블, 자비 없는, 압도적 구위, 농락, KKK`;
+  }
+
+  // 3) 루킹 삼진
+  if (d.swingKind === "looking") {
+    return `🎯 [루킹 삼진 — 완벽한 제구]
+캐스터 상태: 투수 제구력에 감탄. 타자의 얼어붙음 묘사.
+톤: "배트를 낼 엄두조차 내지 못합니다! 완벽한 코스에 꽂히는 공! 심판의 손이 올라갑니다!" 류.
+키워드: 꼼짝없이, 얼어붙다, 예술 같은 제구, 심판의 손`;
+  }
+
+  // 4) 헛스윙 삼진
+  if (d.swingKind === "swinging") {
+    return `💨 [헛스윙 삼진 — 완벽한 볼배합]
+캐스터 상태: 투수의 수싸움 승리를 칭찬. 타자 타이밍 뺏김 묘사.
+톤: "방망이가 허공을 헛돕니다! 투수의 완벽한 수싸움에 당했네요! 춤추는 변화구입니다!" 류.
+키워드: 헛스윙, 허공을 가르다, 타이밍을 뺏기다, 춤추는 변화구`;
+  }
+
+  // 5) 일반 삼진 (주자 없음, 종류 불명)
+  return `✅ [일상적 삼진 — 깔끔한 처리]
+캐스터 상태: 차분하게 상황 전달. 투수 템포·경제적 피칭 강조.
+톤: "깔끔하게 아웃카운트를 늘려갑니다. 투구수 관리도 좋네요!" 류.
+키워드: 깔끔한 처리, 템포, 경제적 피칭`;
+}
 
 function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
   const avoid =
@@ -578,13 +634,19 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
   }
 
   const nameHint = name
-    ? `\n선수 이름: ${name} — 문구에 이름을 자연스럽게 넣어줘 (예: "${name} 오늘 폼 미쳤네")`
+    ? `\n선수 이름: ${name} — 문구에 이름을 자연스럽게 넣어줘`
     : "";
 
-  return `이닝: ${inning} | 스코어: ${scoreStr}
-이벤트: ${eventDesc}${nameHint}
+  // 탈삼진(수비 중) 상황이면 세부 가이드 주입
+  const strikeoutGuide =
+    input.kind === "strikeout" && input.isPitching === true && input.strikeoutDetail
+      ? `\n\n${buildStrikeoutGuide(input.strikeoutDetail, name)}`
+      : "";
 
-위 예시들처럼 단톡방 스타일로 | 뒤 멘트만 출력해줘.`;
+  return `이닝: ${inning} | 스코어: ${scoreStr}
+이벤트: ${eventDesc}${nameHint}${strikeoutGuide}
+
+위 예시들처럼 존댓말 캐스터 스타일로 | 뒤 멘트만 출력해줘.`;
 }
 
 export async function generateLiveEventCopy(

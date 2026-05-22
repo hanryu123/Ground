@@ -22,6 +22,16 @@ const NAVER_UA =
  */
 type LiveEventKind = "pitcherChange" | "strikeout" | "homeRun";
 
+/** 삼진 발생 시 세부 상황 */
+type StrikeoutDetail = {
+  /** 삼진 종류: 헛스윙 / 루킹 / 불명 */
+  swingKind: "swinging" | "looking" | "unknown";
+  /** 주자 상황: 없음 / 득점권(2·3루) / 만루 */
+  runners: "none" | "scoring_position" | "bases_loaded";
+  /** 3구 삼진 여부 (KKK) */
+  is3pitch: boolean;
+};
+
 type RelayInfo = {
   eventKinds: Array<LiveEventKind>;
   /** 현재 공격 중인 팀 측 ("home" | "away" | null) */
@@ -31,7 +41,43 @@ type RelayInfo = {
   /** 이닝 초/말 레이블 (예: "7회 초") */
   inningLabel: string | null;
   eventKey: string;
+  /** 릴레이 텍스트에서 추출한 선수 이름 (투수/타자, null=파싱 실패) */
+  playerName: string | null;
+  /** 삼진 세부 상황 (strikeout 이벤트일 때만 의미 있음) */
+  strikeoutDetail: StrikeoutDetail | null;
 };
+
+/** 릴레이 텍스트에서 삼진 세부 상황 파싱 */
+function extractStrikeoutDetail(fullText: string): StrikeoutDetail {
+  const swingKind: StrikeoutDetail["swingKind"] =
+    /헛스윙/.test(fullText) ? "swinging" :
+    /루킹|낫\s?아웃|낫아웃|looking/i.test(fullText) ? "looking" :
+    "unknown";
+
+  const runners: StrikeoutDetail["runners"] =
+    /만루/.test(fullText) ? "bases_loaded" :
+    /[23]루\s*(주자|에|서)|득점권|2루.*3루|3루.*2루/.test(fullText) ? "scoring_position" :
+    "none";
+
+  const is3pitch = /3구\s*(삼진|만에)|3\s*pitch/i.test(fullText);
+
+  return { swingKind, runners, is3pitch };
+}
+
+/**
+ * 릴레이 텍스트에서 한국 선수 이름 추출.
+ * 네이버 중계 텍스트는 보통 "이름 구종/결과" 순서로 시작.
+ * e.g. "황동하 직구 헛스윙 삼진" → "황동하"
+ */
+function extractPlayerName(text: string): string | null {
+  if (!text) return null;
+  // 앞 공백 제거 후 2~4자 한글 이름 + 공백 패턴
+  const m = text.trim().match(/^([가-힣]{2,4})\s/);
+  if (!m) return null;
+  // 팀명·포지션 등 불용어 제외
+  const stopWords = new Set(["삼진", "홈런", "투수", "타자", "포수", "볼넷", "안타", "아웃", "득점", "실점", "경기", "이닝"]);
+  return stopWords.has(m[1]) ? null : m[1];
+}
 
 type RelayEntry = {
   text?: string;
@@ -174,7 +220,17 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
           const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
 
-          results.push({ eventKinds, battingSide, inning, inningLabel, eventKey });
+          // 릴레이 텍스트(title 우선)에서 선수 이름 추출
+          const playerName = extractPlayerName(mainText) ??
+            extractPlayerName((entry.textOptions ?? [])[0]?.playText ?? "") ??
+            null;
+
+          // 삼진 세부 상황 파싱 (strikeout 이벤트일 때만)
+          const strikeoutDetail = eventKinds.includes("strikeout")
+            ? extractStrikeoutDetail(fullText)
+            : null;
+
+          results.push({ eventKinds, battingSide, inning, inningLabel, eventKey, playerName, strikeoutDetail });
         }
 
         if (results.length > 0) return { relays: results, debugStatuses };
@@ -382,6 +438,8 @@ export async function GET(req: Request) {
               inningLabel: relay.inningLabel,
               myCurrentScore,
               oppCurrentScore,
+              playerName: relay.playerName ?? undefined,
+              strikeoutDetail: relay.strikeoutDetail ?? undefined,
               fallbackBody: fallback.body,
             });
             llmCache.set(llmCacheKey, llmPromise);
