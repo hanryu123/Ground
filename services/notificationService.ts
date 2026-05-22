@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWebPush } from "@/lib/webPushServer";
+import { sendFcmMulticast } from "@/lib/firebaseAdmin";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   isTopicEnabled,
@@ -174,7 +175,68 @@ async function _doDeliverPush(input: {
     inboxCreated = created.count;
   }
 
-  return { sent: sentRows.length, disabled, inboxCreated };
+  // ── 네이티브 FCM 발송 (NativePushToken) ──────────────────────────────
+  let nativeSent = 0;
+  try {
+    const nativeTokenRows = await prisma.nativePushToken.findMany({
+      where: {
+        enabled: true,
+        favoriteTeam: input.teamId,
+      },
+      select: { id: true, token: true, userId: true, topics: true, appEnv: true },
+    });
+
+    const filtered = nativeTokenRows.filter(
+      (r) =>
+        matchesCurrentPushEnv(r.topics) &&
+        isTopicEnabled(r.topics, input.topicKey)
+    );
+
+    if (filtered.length > 0) {
+      const tokens = filtered.map((r) => r.token);
+      const fcmResult = await sendFcmMulticast({
+        tokens,
+        title: input.title,
+        body: input.body,
+        url: input.url,
+        data: { teamId: input.teamId, topicKey: input.topicKey },
+      });
+
+      nativeSent = fcmResult.ok;
+
+      // 무효 토큰 비활성화
+      if (fcmResult.failed.length > 0) {
+        await prisma.nativePushToken.updateMany({
+          where: { token: { in: fcmResult.failed } },
+          data: { enabled: false },
+        });
+      }
+
+      // 인박스 기록 (토큰별 userId 매핑)
+      const tokenToUserId = new Map(filtered.map((r) => [r.token, r.userId]));
+      const successTokens = tokens.filter((t) => !fcmResult.failed.includes(t));
+      if (successTokens.length > 0) {
+        await prisma.notification.createMany({
+          data: successTokens.map((t) => ({
+            userId: tokenToUserId.get(t) ?? "unknown",
+            title: input.title,
+            body: input.body,
+            deeplinkUrl: input.url,
+            sentAt: new Date(),
+            type: input.type,
+            payload: input.payload,
+          })),
+          skipDuplicates: true,
+        });
+        inboxCreated += successTokens.length;
+      }
+    }
+  } catch (err) {
+    // FCM 실패는 Web Push 발송에 영향 주지 않음
+    console.warn("[notificationService] FCM send failed:", (err as Error).message);
+  }
+
+  return { sent: sentRows.length + nativeSent, disabled, inboxCreated };
 }
 
 /**

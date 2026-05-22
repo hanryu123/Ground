@@ -821,28 +821,17 @@ export default function HeroCard({ team }: Props) {
             </motion.p>
           ) : null}
 
-          {venueUnderDate.primary ? (
-            <motion.div
+          {/* 경기 전: 카운트다운 아래 장소 뱃지 (경기 중/후엔 date·time 줄에 인라인으로 표시) */}
+          {venueUnderDate.primary && countdownHms ? (
+            <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.45, ease, delay: 0.36 }}
-              className={`text-center ${countdownHms ? "mt-3" : "mt-6"}`}
+              className="mt-3 text-[11px] font-semibold tracking-[0.14em]"
+              style={{ color: themedText(0.48) }}
             >
-              <p
-                className="text-[11px] font-semibold tracking-[0.18em] uppercase"
-                style={{ color: themedText(0.52) }}
-              >
-                📍 {venueUnderDate.primary}
-              </p>
-              {venueUnderDate.secondary ? (
-                <p
-                  className="mt-0.5 text-[10px] font-normal tracking-wide normal-case"
-                  style={{ color: themedText(0.35) }}
-                >
-                  {venueUnderDate.secondary}
-                </p>
-              ) : null}
-            </motion.div>
+              📍 {venueUnderDate.primary}
+            </motion.p>
           ) : null}
 
           {hasSelectedTeamLineup && (
@@ -878,6 +867,12 @@ export default function HeroCard({ team }: Props) {
                 </>
               ) : null}
               <span>{match.game.time}</span>
+              {venueUnderDate.primary ? (
+                <>
+                  <span className="mx-2" style={{ color: themedText(0.25) }}>·</span>
+                  <span className="normal-case">{venueUnderDate.primary}</span>
+                </>
+              ) : null}
               {liveView?.game.status === "LIVE" && (
                 <>
                   <span className="mx-2" style={{ color: themedText(0.25) }}>·</span>

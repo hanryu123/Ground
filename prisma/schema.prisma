@@ -67,6 +67,7 @@ model User {
   lastNotifiedAt    DateTime?
   notifications     Notification[]
   pushSubscriptions PushSubscription[]
+  nativePushTokens  NativePushToken[]
 }
 
 model PushSubscription {
@@ -86,6 +87,28 @@ model PushSubscription {
 
   @@index([userId])
   @@index([enabled, userId])
+}
+
+/**
+ * Capacitor 네이티브 앱의 FCM/APNs 푸시 토큰.
+ * Web Push(PushSubscription)와 별개로 관리.
+ */
+model NativePushToken {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  platform     String   // "ios" | "android"
+  enabled      Boolean  @default(true)
+  favoriteTeam String?
+  topics       Json?
+  appEnv       String   @default("production")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastSeenAt   DateTime?
+
+  @@index([userId])
+  @@index([enabled, favoriteTeam])
 }
 
 model Notification {

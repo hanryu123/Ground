@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import OnboardingFlow from "./OnboardingFlow";
 import OnboardingTutorial, { TUTORIAL_SEEN_KEY } from "./OnboardingTutorial";
 import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
+import { registerNativePush } from "@/lib/nativePush";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -69,6 +70,17 @@ export default function OnboardingGate({
   }
 
   const unlocked = Boolean(teamId) && isOnboardingDone;
+
+  // 네이티브 앱: 온보딩 완료 후 FCM 토큰 등록
+  useEffect(() => {
+    if (!unlocked || !teamId) return;
+    try {
+      const userId = localStorage.getItem("ground-user-id") ?? "anonymous";
+      void registerNativePush({ userId, favoriteTeam: teamId });
+    } catch {
+      // 웹 환경에서는 무시
+    }
+  }, [unlocked, teamId]);
 
   return (
     <AnimatePresence mode="wait" initial={false}>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "878375889335",
+    "project_id": "ground-fd8bd",
+    "storage_bucket": "ground-fd8bd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:878375889335:android:c357235d10dda8da00e032",
+        "android_client_info": {
+          "package_name": "com.ground.kbo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCxN8FR9yYfEJgXY-VeXwo01RZPBy-UF0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

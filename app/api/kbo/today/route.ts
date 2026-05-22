@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import {
-  fetchKboSchedule,
+  fetchKboTodayGames,
   fetchKboStandings,
   resolveTodayFeedMessage,
   resolveTodayFeedStatus,
   todayKstDate,
+  type LiveGame,
 } from "@/lib/kbo";
 import { generateTodayStatusMessageWithLlm } from "@/lib/todayStatusLlm";
 import { prisma } from "@/lib/prisma";
@@ -54,15 +55,31 @@ function isPostGameWindowActive(gameDate: Date, now = new Date()): boolean {
  * withStandings=0 이면 standings 계산을 생략해 로딩 지연을 줄인다.
  * 월요일/우천취소 상태 문구는 LLM 우선 생성 후, 실패 시 즉시 폴백 문구를 반환한다.
  */
+/** 오늘 경기 static 폴백 — Naver API 완전 장애 시 */
+async function todayFallbackGames(): Promise<LiveGame[]> {
+  const { TODAY_GAMES } = await import("@/lib/games");
+  return TODAY_GAMES.map((g) => ({
+    ...g,
+    status: g.result ? ("RESULT" as const) : ("BEFORE" as const),
+    cancelReason: null as null,
+    homeLineup: null,
+    awayLineup: null,
+  }));
+}
+
 export async function GET(req: Request) {
   const date = todayKstDate();
   const search = new URL(req.url).searchParams;
   const teamId = search.get("teamId");
   const withStandings = search.get("withStandings") !== "0";
   try {
-    const schedule = await fetchKboSchedule(date);
-    const standings = withStandings ? await fetchKboStandings() : [];
-    const games = schedule.today;
+    // ── 핵심 최적화: 오늘 경기만 가져오기 + standings 병렬 실행 ──────────────
+    // 기존: fetchKboSchedule(date) → D-7~D+6 14일치 fetch + enrichStarters 70건+
+    // 개선: fetchKboTodayGames(date) → 오늘 경기(최대 5건) + 병렬 실행
+    const [games, standings] = await Promise.all([
+      fetchKboTodayGames(date).then((g) => (g.length > 0 ? g : todayFallbackGames())),
+      withStandings ? fetchKboStandings() : Promise.resolve([] as import("@/config/standings").StandingRow[]),
+    ]);
     const teamGame = teamId
       ? games.find((game) => game.homeId === teamId || game.awayId === teamId) ?? null
       : null;
@@ -84,134 +101,94 @@ export async function GET(req: Request) {
         })
       : null;
 
-    let highlightVideo: {
-      url: string;
-      thumbnailUrl: string | null;
-      videoId: string;
-    } | null = null;
+    // ── DB 쿼리 병렬 실행 ────────────────────────────────────────────────────
+    const canShowFallbackReport = teamGame == null || teamGame.status === "RESULT";
+    const isResult = teamId != null && teamGame?.status === "RESULT";
+    const isBefore = teamId != null && teamGame?.status === "BEFORE";
+
+    const [gameRow, directReport, latestReport, previewRow] = await Promise.all([
+      // 하이라이트 영상
+      isResult && teamGame.id
+        ? prisma.game.findUnique({ where: { externalId: teamGame.id }, select: { highlightVideoUrl: true } })
+        : Promise.resolve(null),
+      // 오늘 경기 포스트게임 리포트
+      isResult && teamGame.id
+        ? prisma.postGameReport.findUnique({
+            where: { externalId_teamId: { externalId: teamGame.id, teamId: teamId! } },
+            select: { status: true, gameDate: true, title: true, content: true, bodyLines: true, generatedAt: true },
+          })
+        : Promise.resolve(null),
+      // 가장 최근 READY 리포트 (폴백용 — RESULT 없거나 오늘 리포트 없을 때)
+      teamId != null && canShowFallbackReport
+        ? prisma.postGameReport.findFirst({
+            where: { teamId, status: "READY" },
+            orderBy: [{ gameDate: "desc" }, { generatedAt: "desc" }],
+            select: { status: true, gameDate: true, title: true, content: true, bodyLines: true, generatedAt: true },
+          })
+        : Promise.resolve(null),
+      // 프리뷰
+      isBefore
+        ? prisma.pregamePreview.findUnique({
+            where: { date_teamId: { date, teamId: teamId! } },
+            select: { status: true, title: true, bodyLines: true, generatedAt: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    // 하이라이트
+    let highlightVideo: { url: string; thumbnailUrl: string | null; videoId: string } | null = null;
+    if (gameRow?.highlightVideoUrl) {
+      const vidIdMatch = /[?&]v=([^&]+)/.exec(gameRow.highlightVideoUrl) ??
+        /youtu\.be\/([^?]+)/.exec(gameRow.highlightVideoUrl);
+      const videoId = vidIdMatch?.[1] ?? null;
+      highlightVideo = {
+        url: gameRow.highlightVideoUrl,
+        thumbnailUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null,
+        videoId: videoId ?? "",
+      };
+    }
+
+    // 포스트게임 리포트 (직접 → 최신 폴백)
     let postGameReport: {
       status: "PENDING" | "GENERATING" | "READY" | "FAILED";
-      headline: string | null;
-      content: string | null;
-      active: boolean;
-      visibleUntil: string | null;
-      generatedAt: string | null;
+      headline: string | null; content: string | null; active: boolean;
+      visibleUntil: string | null; generatedAt: string | null;
     } | null = null;
-    let pregamePreview: {
-      status: "PENDING" | "READY" | "FAILED";
-      title: string | null;
-      lines: string[];
-      active: boolean;
-      generatedAt: string | null;
-    } | null = null;
-
-    // 하이라이트 영상 — Game DB에 저장된 highlightVideoUrl 조회
-    if (teamId && teamGame?.status === "RESULT" && teamGame.id) {
-      const gameRow = await prisma.game.findUnique({
-        where: { externalId: teamGame.id },
-        select: { highlightVideoUrl: true },
-      });
-      if (gameRow?.highlightVideoUrl) {
-        const vidIdMatch = /[?&]v=([^&]+)/.exec(gameRow.highlightVideoUrl) ??
-          /youtu\.be\/([^?]+)/.exec(gameRow.highlightVideoUrl);
-        const videoId = vidIdMatch?.[1] ?? null;
-        highlightVideo = {
-          url: gameRow.highlightVideoUrl,
-          thumbnailUrl: videoId
-            ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-            : null,
-          videoId: videoId ?? "",
-        };
-      }
-    }
-
-    if (teamId && teamGame?.status === "RESULT") {
-      const report = await prisma.postGameReport.findUnique({
-        where: {
-          externalId_teamId: {
-            externalId: teamGame.id,
-            teamId,
-          },
-        },
-        select: {
-          status: true,
-          gameDate: true,
-          title: true,
-          content: true,
-          bodyLines: true,
-          generatedAt: true,
-        },
-      });
-      if (report) {
-        const fallbackContent = Array.isArray(report.bodyLines)
-          ? report.bodyLines.filter((line): line is string => typeof line === "string").join(" ")
-          : null;
+    const reportSource = directReport ?? (canShowFallbackReport ? latestReport : null);
+    if (reportSource) {
+      const fallbackContent = Array.isArray(reportSource.bodyLines)
+        ? reportSource.bodyLines.filter((l): l is string => typeof l === "string").join(" ")
+        : null;
+      const isActive = reportSource === directReport
+        ? (reportSource.gameDate ? isPostGameWindowActive(reportSource.gameDate) : true)
+        : (reportSource.gameDate ? isPostGameWindowActive(reportSource.gameDate) : false);
+      if (isActive) {
         postGameReport = {
-          status: report.status,
-          headline: report.title,
-          content: report.content ?? fallbackContent,
-          active: report.gameDate ? isPostGameWindowActive(report.gameDate) : true,
-          visibleUntil: report.gameDate ? postGameVisibleUntilKst(report.gameDate).toISOString() : null,
-          generatedAt: report.generatedAt ? report.generatedAt.toISOString() : null,
-        };
-      }
-    }
-
-    // 오늘 경기가 아직 시작 전(BEFORE)이거나 취소된 경우엔 이전 경기 report를 노출하지 않는다.
-    // 폴백은 오늘 경기가 없거나(rest day) RESULT인데 report 생성이 아직 안 된 경우에만 허용.
-    const canShowFallbackReport = teamGame == null || teamGame.status === "RESULT";
-    if (teamId && !postGameReport && canShowFallbackReport) {
-      const latest = await prisma.postGameReport.findFirst({
-        where: {
-          teamId,
-          status: "READY",
-        },
-        orderBy: [{ gameDate: "desc" }, { generatedAt: "desc" }],
-        select: {
-          status: true,
-          gameDate: true,
-          title: true,
-          content: true,
-          bodyLines: true,
-          generatedAt: true,
-        },
-      });
-      if (latest?.gameDate && isPostGameWindowActive(latest.gameDate)) {
-        const fallbackContent = Array.isArray(latest.bodyLines)
-          ? latest.bodyLines.filter((line): line is string => typeof line === "string").join(" ")
-          : null;
-        postGameReport = {
-          status: latest.status,
-          headline: latest.title,
-          content: latest.content ?? fallbackContent,
+          status: reportSource.status,
+          headline: reportSource.title,
+          content: reportSource.content ?? fallbackContent,
           active: true,
-          visibleUntil: postGameVisibleUntilKst(latest.gameDate).toISOString(),
-          generatedAt: latest.generatedAt ? latest.generatedAt.toISOString() : null,
+          visibleUntil: reportSource.gameDate ? postGameVisibleUntilKst(reportSource.gameDate).toISOString() : null,
+          generatedAt: reportSource.generatedAt ? reportSource.generatedAt.toISOString() : null,
         };
       }
     }
 
-    if (teamId && teamGame?.status === "BEFORE") {
-      const row = await prisma.pregamePreview.findUnique({
-        where: { date_teamId: { date, teamId } },
-        select: {
-          status: true,
-          title: true,
-          bodyLines: true,
-          generatedAt: true,
-        },
-      });
-      if (row) {
-        pregamePreview = {
-          status: row.status,
-          title: row.title,
-          lines: Array.isArray(row.bodyLines)
-            ? row.bodyLines.filter((line): line is string => typeof line === "string")
-            : [],
-          active: row.status === "READY" && isPregamePreviewWindow(teamGame.time, date),
-          generatedAt: row.generatedAt ? row.generatedAt.toISOString() : null,
-        };
-      }
+    // 프리뷰
+    let pregamePreview: {
+      status: "PENDING" | "READY" | "FAILED"; title: string | null;
+      lines: string[]; active: boolean; generatedAt: string | null;
+    } | null = null;
+    if (previewRow && isBefore && teamGame) {
+      pregamePreview = {
+        status: previewRow.status,
+        title: previewRow.title,
+        lines: Array.isArray(previewRow.bodyLines)
+          ? previewRow.bodyLines.filter((l): l is string => typeof l === "string")
+          : [],
+        active: previewRow.status === "READY" && isPregamePreviewWindow(teamGame.time, date),
+        generatedAt: previewRow.generatedAt ? previewRow.generatedAt.toISOString() : null,
+      };
     }
 
     return NextResponse.json({
@@ -224,7 +201,7 @@ export async function GET(req: Request) {
       pregamePreview,
       postGameReport,
       highlightVideo,
-      fallback: schedule.fallback,
+      fallback: false,
     });
   } catch (err) {
     return NextResponse.json(

@@ -12,10 +12,11 @@ import {
 const ease = [0.22, 1, 0.36, 1] as const;
 
 /**
- * 그리드 컬럼: 순위(20) · 팀명(1fr) · 승(28) · 패(28) · 무(24) · 승률(46) · 게임차(40)
+ * 그리드 컬럼: 순위(20) · 팀명(1fr, min 48px) · 승(26) · 패(26) · 무(22) · 승률(44) · 게임차(38)
  *  - 로고 없이 팀 약칭(한글/영문)만 표기.
+ *  - gap-2(8px) × 6 = 48px, 숫자 칼럼을 살짝 줄여 팀명 칼럼에 여유 확보 (SSG/NC 잘림 방지).
  */
-const STANDINGS_GRID = "20px 1fr 28px 28px 24px 46px 40px";
+const STANDINGS_GRID = "20px minmax(48px,1fr) 26px 26px 22px 44px 38px";
 
 type Props = {
   /** 응원팀 id — 행 하이라이트 (acccent tint + bold) */
@@ -67,7 +68,7 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
 
         {/* ── 컬럼 가이드 (한글 약식) ── */}
         <div
-          className="mb-2 grid items-baseline gap-3 px-3 text-[10px] tracking-[0.05em] text-white/55"
+          className="mb-2 grid items-baseline gap-2 px-3 text-[10px] tracking-[0.05em] text-white/55"
           style={{
             fontWeight: 700,
             gridTemplateColumns: STANDINGS_GRID,
@@ -142,7 +143,7 @@ function Row({
     <li>
       <motion.div
         {...enter}
-        className="relative grid items-center gap-3 rounded-2xl px-3 py-3"
+        className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
         style={{
           gridTemplateColumns: STANDINGS_GRID,
           backgroundColor: isMe ? `${t.accent}26` : "transparent",
@@ -269,8 +270,8 @@ function SkeletonList() {
     <ul role="list" className="flex flex-col" aria-label="순위표 로딩 중">
       {Array.from({ length: 10 }).map((_, i) => (
         <li key={i}>
-          <div
-            className="relative grid items-center gap-3 rounded-2xl px-3 py-3"
+            <div
+            className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
             style={{ gridTemplateColumns: STANDINGS_GRID }}
           >
             <ShimmerBar w={10} h={10} className="mx-auto rounded-sm" />

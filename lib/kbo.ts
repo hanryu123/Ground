@@ -36,6 +36,23 @@ const NAVER_TEAM_MAP: Record<string, string> = {
   KT: "kt",
 };
 
+/**
+ * homeId → 홈구장 짧은 지역명.
+ * Naver API 가 stadium 필드를 누락 / 빈 문자열로 내려보낼 때 폴백으로 사용.
+ */
+const HOME_VENUE_CITY: Record<string, string> = {
+  lg: "잠실",
+  doosan: "잠실",
+  kia: "광주",
+  samsung: "대구",
+  nc: "창원",
+  lotte: "부산",
+  ssg: "인천",
+  hanwha: "대전",
+  kt: "수원",
+  kiwoom: "고척",
+};
+
 /** 네이버 statusCode → 내부 단순화 */
 type LiveStatus = "BEFORE" | "LIVE" | "RESULT" | "CANCEL" | "OTHER";
 function normalizeStatus(code: string | undefined): LiveStatus {
@@ -232,7 +249,7 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
     time,
     awayId,
     homeId,
-    stadium: raw.stadium ?? "",
+    stadium: raw.stadium || HOME_VENUE_CITY[homeId] || "",
     awayPitcher: safeStarter(raw.awayStarterName) ?? "미정",
     homePitcher: safeStarter(raw.homeStarterName) ?? "미정",
     homeLineup: null,
