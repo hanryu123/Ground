@@ -198,8 +198,8 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           plays: (e.textOptions ?? []).map(o => o.playText).filter(Boolean).slice(0, 3),
         })));
       if (entries.length > 0) {
-        // 최근 12개 엔트리 검사 — 1분 크론 주기 + 빠른 릴레이 업데이트 커버
-        const recentEntries = entries.slice(-12);
+        // 최근 5개 엔트리 검사 — 1분 크론 주기 사이에 밀린 이벤트 커버
+        const recentEntries = entries.slice(-5);
         const results: RelayInfo[] = [];
 
         for (const entry of recentEntries) {
