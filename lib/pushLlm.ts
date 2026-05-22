@@ -11,6 +11,10 @@ type GenerateScorePushInput = {
   fallbackTitle: string;
   fallbackBody: string;
   recentBodies?: string[];
+  /** 이전 내 팀 점수 (역전 감지용) */
+  prevMyScore?: number;
+  /** 이전 상대 팀 점수 (역전 감지용) */
+  prevOppScore?: number;
 };
 
 type GenerateScorePushOptions = {
@@ -186,19 +190,27 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
   const trailing = input.myScore < input.oppScore;
   if (!trailing) return normalized;
 
+  const phase = resolveInningPhase(input.latestPlayText);
+
   if (tier === "garbage") {
-    // 대참사 구간에서 "아직 안 끝났다" 류를 강제 차단한다.
-    if (
-      /아직|역전|할 수 있다|끝났다\s*아님|쫓아간다|해보자|집중하자/.test(normalized) ||
-      normalized.length > 40
-    ) {
+    if (/아직|역전|할 수 있다|끝났다\s*아님|쫓아간다|해보자|집중하자/.test(normalized)) {
       const my = findTeam(input.favoriteTeam).short;
       const opp = findTeam(input.opponentTeam).short;
+      if (phase === "late") {
+        // 후반 + 6점+ → 완전 이성 붕괴
+        const candidates = [
+          `저도 이제 모르겠습니다... ${my} ${input.myScore}:${input.oppScore} ${opp}`,
+          `아 이게 무슨... 그냥 내일 봐야겠습니다.`,
+          `${my} ${input.myScore}:${input.oppScore} ${opp}. 캐스터도 말문이 막힙니다.`,
+          `오늘은 여기까지인 것 같습니다. 정말요.`,
+        ] as const;
+        return candidates[(input.myScore + input.oppScore) % candidates.length];
+      }
+      // 초/중반 + 6점+ → 체념·냉소
       const candidates = [
-        `${my} ${input.myScore}:${input.oppScore} ${opp}... 하.`,
-        `${input.myScore}:${input.oppScore} ㅋㅋ 오늘은 여기까지.`,
-        `........ 티비 껐다. 내일 보자.`,
-        `오늘 야구 안 합니다. 다들 귀가.`,
+        `${my} ${input.myScore}:${input.oppScore} ${opp}... 할 말이 없네요.`,
+        `${input.myScore}:${input.oppScore}, 도대체 왜 이러는 건지 모르겠습니다.`,
+        `오늘은 좀 힘들 것 같습니다. 솔직히.`,
       ] as const;
       return candidates[(input.myScore + input.oppScore) % candidates.length];
     }
@@ -206,12 +218,14 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
   }
 
   if (tier === "danger") {
-    // 3~5점 차에서는 분노/짜증 텐션을 우선한다.
     if (/아직|침착|할 수 있다/.test(normalized)) {
+      const replacement = phase === "late"
+        ? "제발 정신 좀 차려야 합니다"
+        : "빨리 따라잡아야 합니다";
       return normalized
         .replace(/아직/g, "")
         .replace(/침착/g, "")
-        .replace(/할 수 있다/g, "빨리 정신 차려야 한다")
+        .replace(/할 수 있다/g, replacement)
         .replace(/\s{2,}/g, " ")
         .trim();
     }
@@ -285,13 +299,89 @@ function resolveInningPhase(latestPlayText: string): "early" | "mid" | "late" {
   return "late";
 }
 
+// ─── 5가지 감정 상태 ─────────────────────────────────────────────────────────
+type EmotionState =
+  | "탐색전"       // 초반 (1~3회) × 모든 점수차 → 차분·분석적
+  | "피말리는승부"  // 중/후반 (4~9회) × 박빙 (0~1점) → 극도 긴장
+  | "일반적전개"   // 중반 (4~6회) × 격차 (2~4점) → 노련한 흐름 해설
+  | "광란샤우팅"   // 후반 (7~9회) × 큰 차이 (5점+) → 이성 붕괴·광분
+  | "역전";        // 이닝 무관, 리드 변경 발생 → 경악·기적 샤우팅
+
+function resolveEmotionState(input: GenerateScorePushInput, phase: "early" | "mid" | "late"): EmotionState {
+  const gap = Math.abs(input.myScore - input.oppScore);
+  const tone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
+
+  // 역전 감지: 이전에 뒤지고 있었는데 이번 득점으로 역전
+  if (input.prevMyScore != null && input.prevOppScore != null && tone === "for") {
+    const wasTrailing = input.prevMyScore < input.prevOppScore;
+    const nowLeading  = input.myScore > input.oppScore;
+    if (wasTrailing && nowLeading) return "역전";
+  }
+  // 역전 감지: 이전에 앞서고 있었는데 이번 실점으로 역전당함
+  if (input.prevMyScore != null && input.prevOppScore != null && tone === "against") {
+    const wasLeading   = input.prevMyScore > input.prevOppScore;
+    const nowTrailing  = input.myScore < input.oppScore;
+    if (wasLeading && nowTrailing) return "역전";
+  }
+
+  if (phase === "early") return "탐색전";
+  if (gap <= 1) return "피말리는승부";
+  if (gap >= 5 && phase === "late") return "광란샤우팅";
+  return "일반적전개";
+}
+
+function buildEmotionGuide(state: EmotionState, input: GenerateScorePushInput, favoriteTeam: string): string {
+  const tone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
+  const isWinning = input.myScore > input.oppScore;
+  const gap = Math.abs(input.myScore - input.oppScore);
+
+  switch (state) {
+    case "탐색전":
+      return `🎙️ [탐색전 — 초반 기싸움]
+캐스터 상태: 차분하고 분석적. 경기 전체를 조망하는 시선.
+톤: "아직 경기 초반입니다. 양 팀 선발들의 기싸움이 치열하네요." 류의 기대감.
+키워드: 기선제압, 팽팽한, 예열, 첫 단추`;
+
+    case "피말리는승부":
+      return `💓 [피말리는 승부 — 박빙 혈전]
+캐스터 상태: 극도의 긴장. 손에 땀을 쥐고 매 구마다 의미 부여.
+톤: "피가 마르는 승부입니다! 한 치 앞을 알 수 없어요! 숨을 참게 됩니다!" 류.
+키워드: 혈투, 살얼음판, 숨 막히는, 한 끗 차이, 쫄깃한
+⚠️ ${tone === "for" ? "방금 우리가 앞서거나 동점 → 흥분+안도 섞인 텐션 최고조" : "방금 상대가 따라오거나 역전 → 절망+긴장 극대화"}`;
+
+    case "일반적전개":
+      return `📊 [일반적 전개 — 노련한 흐름 해설]
+캐스터 상태: ${gap}점 차. 흐름을 짚어주는 노련함.
+톤: ${isWinning
+        ? `"점수 차를 벌렸습니다. 이 기세를 유지해야 합니다." 류의 자신감 있는 굳히기 촉구.`
+        : `"점수 차가 조금 벌어집니다. 여기서 반격의 불씨를 살려야 하는데요." 류의 추격 촉구.`}
+키워드: ${isWinning ? "달아나는, 흐름을 타는, 굳히기" : "추격의 불씨, 반격, 따라잡아야"}`;
+
+    case "광란샤우팅":
+      return `🔥 [광란의 샤우팅 — 이성 붕괴]
+캐스터 상태: ${gap}점 차 후반. 완전히 이성을 잃음. 텍스트에서 핏대가 서는 것이 느껴져야 함.
+톤: ${isWinning
+        ? `"완전히 무너뜨립니다!!! 경기장 지붕이 날아갑니다!! 사실상 쐐기포!!!" — 감탄사 폭발, 이모지(🔥🚀) 적극 사용`
+        : `"저도 이제 모르겠습니다... 자비가 없네요!" — 분노·체념·멘탈 붕괴`}
+키워드: ${isWinning ? "쐐기, 폭발, 자비 없는, 축제, 확인사살" : "멘탈 붕괴, 자비 없음, 포기 직전, 체념"}
+⚠️ 존댓말이 흔들려도 됨. 감탄사(-요! -습니다!!!)가 연속으로 나와도 됨.`;
+
+    case "역전":
+      return `🚨 [역전 — 기적 발생]
+캐스터 상태: 기적을 목격한 경악. 이닝·점수차 무관하고 무조건 최고 텐션.
+톤: ${tone === "for"
+        ? `"이걸 뒤집나요!! 기적입니다!! 대역전극!! 경기장이 발칵 뒤집혔습니다!!"`
+        : `"역전당했습니다... 이런 일이... 믿기지 않습니다 정말로."`}
+키워드: ${tone === "for" ? "뒤집다, 기적, 극장, 대폭발, 소름" : "충격, 망연자실, 믿기지 않는, 반전"}
+⚠️ 반드시 역전 상황임을 명시적으로 언급할 것.`;
+  }
+}
+
 function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]): string {
   const favoriteTeam = findTeam(input.favoriteTeam).short;
-  const gap = resolveScoreGap(input);
-  const tier = resolveScoreGapTier(input);
-  const trailing = input.myScore < input.oppScore;
-  const leading = input.myScore > input.oppScore;
   const phase = resolveInningPhase(input.latestPlayText);
+  const emotionState = resolveEmotionState(input, phase);
+  const emotionGuide = buildEmotionGuide(emotionState, input, favoriteTeam);
 
   const avoid =
     recentBodies.length > 0
@@ -301,61 +391,37 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
           .join("\n")}`
       : "";
 
-  const phaseGuide = phase === "early"
-    ? `⏰ 지금은 경기 초반(1~3회) — 탐색전·기선제압 국면이야.
-  • 득점 시: "기선제압 성공! 타격감 날카롭다" 류의 가벼운 흥분
-  • 실점 시: "초반이라 아직 여유 있다, 힘내자" 류의 격려`
-    : phase === "mid"
-    ? `⏰ 지금은 경기 중반(4~6회) — 허리 싸움·추격/굳히기 국면이야.
-  • 동점·추격: "기어코 따라잡는다, 승부는 이제부터" 류의 텐션 상승
-  • 추가 득점: "추가점 진짜 꿀맛, 흐름 완전히 가져옴" 류의 자신감`
-    : `⏰ 지금은 경기 후반(7회~연장) — 도파민 폭발·클러치 국면이야.
-  • 역전/극적 득점: "미쳤다 이걸 뒤집네 ㅋㅋㅋ" 류의 폭발적 환호
-  • 쐐기점: "사실상 확인사살 ㅋㅋㅋ 마무리만 잘 하면 끝" 류
-  • 실점 위기: "숨 막힌다 ㄷㄷ 여기서 막느냐 못 막느냐 갈림길" 류`;
+  const emojiRule = emotionState === "광란샤우팅" || emotionState === "역전"
+    ? `- 이모지 1~3개 적극 사용 (🔥 😱 🚀 등)`
+    : `- 이모지 0~2개만`;
 
-  const resolvedTone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
-  const gapGuide = trailing
-    ? tier === "garbage"
-      ? `\n⚠️ 6점 이상 지고 있음 → 해탈/허탈/냉소 톤. "아직 안 끝났다" 절대 금지. 짧게.`
-      : tier === "danger"
-      ? `\n⚠️ 3~5점 지고 있음 → 짜증/분노/빨리 따라잡자 톤.`
-      : `\n⚠️ 1~2점 지고 있음 → 간절함/초조함/피 말린다 톤.`
-    : leading
-    ? `\n✅ 우리 팀이 앞서고 있음 → 자신감/흥분/굳혀라 톤.`
-    : resolvedTone === "for"
-    ? `\n➡️ 동점 상황 (우리가 따라잡음) → "야!! 동점!!", "기어코 따라잡았다 ㅋㅋ" 류의 흥분/환호 톤.`
-    : `\n➡️ 동점 상황 (상대가 따라잡음) → "아 동점이라니", "여기서 잡았어야 했는데 ㅠ" 류의 불안/답답한 톤.`;
-
-  return `너는 KBO 전문 야구 캐스터야. 목소리는 프로 중계석이지만, 속마음은 ${favoriteTeam} 극성팬이야.
-해설은 반드시 존댓말(-습니다, -네요, -죠)로 하되, ${favoriteTeam} 경기면 티 나게 편파적으로 해줘.
-우리 팀 잘하면 흥분하고, 못하면 속 끓는 게 그대로 묻어나야 해. 방송 중계 느낌이지만 감정은 팬.
+  return `너는 KBO 전문 야구 캐스터야. 목소리는 프로 중계석이지만 속마음은 ${favoriteTeam} 극성팬이야.
+해설은 기본적으로 존댓말(-습니다, -네요, -죠)로 하되, 아래 [현재 감정 상태]에 따라 강도가 달라져.
+점수차가 크고 후반이면 존댓말이 흔들리고 감탄사가 폭발해도 됨.
 
 🚫 절대 금지:
-- 반말·단톡방 어투 금지 — 반드시 존댓말 (ㅋㅋ, ㄷㄷ 같은 초성 단독 사용 금지, 문장에 녹여쓰기만 허용)
 - "됐네", "가는군" 같은 건조한 방관자 어투 금지
-- 득점 상황인데 "아쉽다", "힘내자" 같은 실점 어투 금지
-- 실점 상황인데 "좋아!", "신난다" 같은 득점 어투 금지
-- "N회 남았으니까" 절대 금지 — [N회초/말]은 현재 N회 진행 중이라는 뜻, 남은 이닝 수가 아님
-- "먹히다/먹힌다" 절대 금지 — 실점이면 "내줬습니다/털렸습니다", 득점이면 "뽑아냈습니다/터졌습니다"로 대체
+- 득점 상황에서 "아쉽다", "힘내자" 금지 / 실점 상황에서 "좋아!", "신난다" 금지
+- "N회 남았으니까" 금지 — [N회초/말]은 현재 N회 진행 중이라는 뜻
+- "먹히다/먹힌다" 금지 — 실점이면 "내줬습니다/털렸습니다", 득점이면 "터졌습니다/뽑아냈습니다"
+- 우리 타자 삼진 시 상대 투수 칭찬 금지 → 우리 타자 실패·답답함에만 집중
 
-⚾ 야구 용어 절대 해석 규칙 (환각 방지 사전):
-아래 용어를 일상어·한자 직역으로 절대 해석하지 말 것.
-- 탈삼진: 투수가 타자를 삼진 아웃시킴 (주어=투수, 타자 아웃). "위기탈출"·"출루"가 아님
-- 병살타: 타구 하나로 주자 2명 동시 아웃 = 공격팀 최악의 실패. "병에 걸림"·"사망" 아님
-- 희생플라이/희생번트: 타자는 아웃되지만 주자를 진루/득점시키는 전략 플레이. 실제 희생·부상 아님
-- 사구(死球): 투수가 던진 공에 타자 몸이 맞아 1루 출루. "죽음"·"위험한 플레이" 아님
-- 볼넷(四球): 볼 4개로 타자 출루. 투수 실책에 가까움
-- 도루: 주자가 다음 베이스로 달려 안착. 범죄·절도 아님
-- 폭투: 투수가 너무 엉뚱하게 던져 포수가 못 잡음 → 주자 진루. "폭력"·"패스트볼"과 무관
+⚾ 야구 용어 사전 (환각 방지):
+- 탈삼진: 투수가 타자 삼진 아웃시킴 (투수 호투). "위기탈출"·"출루" 아님
+- 병살타: 타구 하나로 주자 2명 아웃 = 공격팀 최악의 실패
+- 희생플라이/번트: 타자 아웃 대신 주자 진루·득점 (전략적 선택)
+- 사구(死球): 공에 맞아 출루. "죽음" 아님 / 볼넷(四球): 볼 4개로 출루
+- 도루: 빠른 발로 다음 베이스 안착. 범죄 아님
+- 폭투: 포수가 못 잡아 주자 진루. "폭력"·"패스트볼" 아님
 
-${phaseGuide}
-${gapGuide}
+━━━ 현재 감정 상태 ━━━
+${emotionGuide}
+━━━━━━━━━━━━━━━━━━━
 
 📐 출력 규칙:
-- 반드시 감탄 멘트 한 줄만 출력. 이닝 태그·스코어·팀명은 앞에 자동으로 붙음 — 다시 쓰지 마
-- 15~30자 이내 (짧을수록 좋음)
-- 이모지 0~2개만${avoid}`;
+- 감탄 멘트 한 줄만 출력. 이닝 태그·스코어·팀명은 앞에 자동으로 붙음 — 다시 쓰지 마
+- 15~35자 이내
+${emojiRule}${avoid}`;
 }
 
 function buildUserPrompt(input: GenerateScorePushInput): string {
@@ -426,6 +492,8 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
 - 15~35자 이내, 반드시 존댓말, 따옴표·설명·이닝·스코어 재출력 금지
 - ㅋㅋ·ㄷㄷ·ㅠ 같은 초성은 단독 사용 금지, 문장에 자연스럽게 녹여서만 허용
 - "먹히다/먹힌다" 절대 금지
+- 우리 타자가 삼진/아웃 당했을 때 상대 투수 칭찬 절대 금지 ("위험한 구질", "좋은 공" 등) → 우리 타자의 실패·답답함에만 집중
+- 우리 타자가 삼진/아웃 당했을 때 상대 투수 칭찬 절대 금지 ("위험한 구질", "좋은 공" 등) → 우리 타자의 실패/답답함에 집중할 것
 
 ---
 ⚾ 야구 용어 절대 해석 규칙 (환각 방지 사전):

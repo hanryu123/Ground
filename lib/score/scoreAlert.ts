@@ -165,6 +165,8 @@ export async function dispatchScoreAlertsForGame(input: {
           fallbackTitle: fallback.title,
           fallbackBody: fallback.body,
           recentBodies: recentBodies.get(favoriteTeam) ?? [],
+          prevMyScore,
+          prevOppScore,
         });
       }
       copyCache.set(cacheKey, copyPromise);
