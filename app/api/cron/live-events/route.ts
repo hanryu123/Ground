@@ -231,7 +231,11 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const eventKinds: Array<LiveEventKind> = [];
           if (/투수\s*교체|투수교체|구원등판/.test(fullText)) eventKinds.push("pitcherChange");
           if (/삼진|탈삼진/.test(fullText)) eventKinds.push("strikeout");
-          if (/홈런/.test(fullText)) eventKinds.push("homeRun");
+          // "홈런성 타구", "홈런 위협", "홈런 예감" 등 미확정 언급은 제외
+          const isHomeRun =
+            /(?:솔로|투런|쓰리런|만루)홈런|홈런[!！]|홈런입니다|홈런[을를이가]/.test(fullText) &&
+            !/홈런성|홈런\s*(?:위협|같은|나오면|나온|예감|일보)/.test(fullText);
+          if (isHomeRun) eventKinds.push("homeRun");
           if (eventKinds.length === 0) continue;
 
           const seqNo = entry.seqNo ?? entry.no;
