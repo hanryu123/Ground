@@ -420,6 +420,8 @@ export async function GET(req: Request) {
   const debugRelays: Array<{ gameId: string; relayCount: number; eventKeys: string[]; debugStatuses: string[] }> = [];
   // Claude 호출 캐시: 같은 (gameId:kind:seqNo:isPitching) 조합은 1회만 호출
   const llmCache = new Map<string, Promise<string>>();
+  // 이번 크론 실행에서 이미 발송한 (gameId:teamId:kind) — 같은 이벤트가 복수 릴레이 엔트리에 걸쳐 중복 감지되는 것 방지
+  const sentThisRun = new Set<string>();
 
   for (const game of liveGames) {
     // 워터마크: 이 게임의 마지막 처리 seqNo 조회 (테이블 미생성 시 graceful fallback)
@@ -454,6 +456,10 @@ export async function GET(req: Request) {
     for (const relay of relays) {
       for (const kind of relay.eventKinds) {
         for (const teamId of [game.homeId, game.awayId]) {
+          // 이번 크론 실행 내 동일 이벤트 중복 방지
+          const runKey = `${game.id}:${teamId}:${kind}`;
+          if (sentThisRun.has(runKey)) { skipped += 1; continue; }
+
           const lock = await markDispatchOnce({
             alertKind: "live-event",
             teamScope: teamId,
@@ -511,6 +517,7 @@ export async function GET(req: Request) {
           // Claude가 이미 헤더 포함해서 뱉은 경우 중복 방지
           const finalBody = llmBody.startsWith("[") ? llmBody : `${scoreHeader}${llmBody}`;
 
+          sentThisRun.add(runKey);
           const result = await sendTeamTopicNotification({
             teamId,
             topicKey: kind === "pitcherChange" ? "livePitcherChange" : kind === "homeRun" ? "liveHomeRun" : "liveStrikeout",
