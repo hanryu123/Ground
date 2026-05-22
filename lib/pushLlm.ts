@@ -328,6 +328,18 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
 - "됐네", "가는군", "가는구나" 같은 방관자 어투 금지
 - 득점 상황인데 "아쉽다", "힘내자" 같은 실점 어투 금지
 - 실점 상황인데 "좋아!", "신난다" 같은 득점 어투 금지
+- "N회 남았으니까" 절대 금지 — [N회초/말]은 현재 N회 진행 중이라는 뜻, 남은 이닝 수가 아님
+- "먹히다/먹힌다" 절대 금지 — 야구에서 의미가 불분명함. 실점이면 "털린다/내줬다/점수 줬다", 득점이면 "뚫었다/뽑아냈다/쳐냈다"로 대체
+
+⚾ 야구 용어 절대 해석 규칙 (환각 방지 사전):
+아래 용어를 일상어·한자 직역으로 절대 해석하지 말 것.
+- 탈삼진: 투수가 타자를 삼진 아웃시킴 (주어=투수, 타자 아웃). "위기탈출"·"출루"가 아님
+- 병살타: 타구 하나로 주자 2명 동시 아웃 = 공격팀 최악의 실패. "병에 걸림"·"사망" 아님
+- 희생플라이/희생번트: 타자는 아웃되지만 주자를 진루/득점시키는 전략 플레이. 실제 희생·부상 아님
+- 사구(死球): 투수가 던진 공에 타자 몸이 맞아 1루 출루. "죽음"·"위험한 플레이" 아님
+- 볼넷(四球): 볼 4개로 타자 출루. 투수 실책에 가까움
+- 도루: 주자가 다음 베이스로 달려 안착. 범죄·절도 아님
+- 폭투: 투수가 너무 엉뚱하게 던져 포수가 못 잡음 → 주자 진루. "폭력"·"패스트볼"과 무관
 
 ${phaseGuide}
 ${gapGuide}
@@ -385,6 +397,8 @@ type GenerateLiveEventInput = {
   myCurrentScore?: number;
   /** 현재 상대 팀 점수 */
   oppCurrentScore?: number;
+  /** 릴레이 텍스트에서 파싱한 선수 이름 (투수 또는 타자) */
+  playerName?: string;
   recentBodies?: string[];
   fallbackBody: string;
 };
@@ -406,10 +420,16 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
 ---
 아래는 실제 좋은 문구 예시다. 이 스타일과 수준으로 써라.
 
-⚾ 야구 용어 필수 지식:
-- 탈삼진 = 투수가 상대 타자를 스트라이크 3개로 잡아냄 → 투수/수비팀에게 완전 유리한 이벤트
-- 삼진 아웃 = 타자 입장에서 삼진 당함 → 공격팀 실패
-- 절대 혼동 금지: 탈삼진은 볼넷(출루)과 정반대. 탈삼진 시 타자는 아웃되며 출루하지 못함.
+⚾ 야구 용어 절대 해석 규칙 (환각 방지 사전):
+아래 용어를 일상어·한자 직역으로 절대 해석하지 말 것.
+- 탈삼진: 투수가 타자를 삼진 아웃시킴 (주어=투수, 타자 아웃). "위기탈출"·"출루"·"좋은 볼 고름" 절대 아님
+- 병살타: 타구 하나로 주자 2명 동시 아웃 = 공격팀 최악의 실패. "병에 걸림"·"사망" 아님
+- 희생플라이/희생번트: 타자 아웃 대신 주자 진루/득점. 실제 희생·부상 아님
+- 사구(死球): 공에 맞아 1루 출루. "죽음"·"위험" 아님
+- 볼넷(四球): 볼 4개로 출루. 투수 실책
+- 도루: 주자가 베이스 안착. 범죄 아님
+- 폭투: 포수가 못 잡아 주자 진루. "폭력"·"패스트볼" 아님
+- [N회초/말]은 현재 N회 진행 중이라는 의미 — "N회 남았다"로 절대 해석 금지
 
 [탈삼진 — 수비 중 (우리 투수가 상대 타자 삼진 아웃 = 호투!)]
 헛스윙 삼진 ㅋㅋㅋ 방망이 허공 가릅니다 👊
@@ -450,25 +470,41 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
     ? `${input.myTeamShort} ${input.myCurrentScore}:${input.oppCurrentScore} ${input.oppTeamShort}`
     : `${input.myTeamShort} vs ${input.oppTeamShort}`;
 
+  const name = input.playerName ?? null;
+
   let eventDesc: string;
   if (input.kind === "strikeout") {
     if (input.isPitching === true) {
-      eventDesc = `탈삼진 — 우리 팀 투수가 상대 타자를 삼진 아웃시킴 (투수 호투, 수비팀에게 유리!)`;
+      eventDesc = name
+        ? `탈삼진 — 우리 팀 투수 ${name}이(가) 상대 타자를 삼진 아웃시킴 (호투!)`
+        : `탈삼진 — 우리 팀 투수가 상대 타자를 삼진 아웃시킴 (호투!)`;
     } else if (input.isPitching === false) {
-      eventDesc = `삼진 아웃 — 우리 팀 타자가 삼진 당함 (공격 실패, 아쉬운 상황)`;
+      eventDesc = name
+        ? `삼진 아웃 — 우리 팀 타자 ${name}이(가) 삼진 당함 (공격 실패, 아쉬운 상황)`
+        : `삼진 아웃 — 우리 팀 타자가 삼진 당함 (공격 실패, 아쉬운 상황)`;
     } else {
-      eventDesc = `삼진 발생`;
+      eventDesc = name ? `삼진 발생 (선수: ${name})` : `삼진 발생`;
     }
   } else if (input.kind === "homeRun") {
-    eventDesc = input.isPitching === false
-      ? `홈런 — 우리 팀 타자가 홈런 침 (대박!)`
-      : `홈런 허용 — 상대 팀 타자에게 홈런 맞음 (위기)`;
+    if (input.isPitching === false) {
+      eventDesc = name ? `홈런 — 우리 팀 타자 ${name}이(가) 홈런 침 (대박!)` : `홈런 — 우리 팀 타자가 홈런 침 (대박!)`;
+    } else {
+      eventDesc = name ? `홈런 허용 — 상대 타자 ${name}에게 홈런 맞음 (위기)` : `홈런 허용 — 상대 팀 타자에게 홈런 맞음 (위기)`;
+    }
   } else {
-    eventDesc = input.isPitching === true ? `투수 교체 — 우리 팀 투수 강판` : `투수 교체 — 상대 팀 투수 교체`;
+    if (input.isPitching === true) {
+      eventDesc = name ? `투수 교체 — 우리 팀 투수 ${name} 강판` : `투수 교체 — 우리 팀 투수 강판`;
+    } else {
+      eventDesc = name ? `투수 교체 — 상대 팀 투수 ${name} 강판` : `투수 교체 — 상대 팀 투수 교체`;
+    }
   }
 
+  const nameHint = name
+    ? `\n선수 이름: ${name} — 문구에 이름을 자연스럽게 넣어줘 (예: "${name} 오늘 폼 미쳤네")`
+    : "";
+
   return `이닝: ${inning} | 스코어: ${scoreStr}
-이벤트: ${eventDesc}
+이벤트: ${eventDesc}${nameHint}
 
 위 예시들처럼 단톡방 스타일로 | 뒤 멘트만 출력해줘.`;
 }
