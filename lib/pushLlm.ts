@@ -108,19 +108,27 @@ function ensureInningScorePrefix(
   oppScore: number,
   oppTeamShort: string,
 ): string {
-  const compact = compactText(text);
-  // 이미 [N회] 태그가 있으면 그대로 반환 (fallback 빌더 등이 이미 스코어 포함한 경우)
-  if (/^\[[^\]]+\]/.test(compact)) return compact;
-  if (compact.includes("[경기종료]")) return compact;
-  if (inningTag === "경기중" || !inningTag) return compact;
+  let compact = compactText(text);
 
-  // Claude가 이미 "팀 X:Y 팀 |" 형태로 스코어를 포함했으면 이닝 태그만 앞에 추가
-  const scoreHeaderPattern = /^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+\s*\|/;
-  if (scoreHeaderPattern.test(compact)) {
-    return `[${inningTag}] ${compact}`;
+  if (compact.includes("[경기종료]")) return compact;
+
+  // Claude가 이닝 태그를 직접 붙였을 경우 제거 (스코어 헤더를 항상 정확하게 붙이기 위해)
+  compact = compact.replace(/^\[[^\]]+\]\s*/, "");
+
+  // fallback 빌더(buildCreativeFallback 등)가 이미 "팀 X:Y 팀" 형태 스코어를 포함한 경우
+  // → 이닝 태그만 앞에 추가하고 끝냄
+  const alreadyHasScore = /^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+/.test(compact);
+  if (alreadyHasScore) {
+    return inningTag && inningTag !== "경기중"
+      ? `[${inningTag}] ${compact}`
+      : compact;
   }
 
-  // 스코어 헤더 추가
+  // 이닝 정보 없으면 팀명+스코어만
+  if (!inningTag || inningTag === "경기중") {
+    return `${myTeamShort} ${myScore}:${oppScore} ${oppTeamShort} | ${compact}`;
+  }
+
   return `[${inningTag}] ${myTeamShort} ${myScore}:${oppScore} ${oppTeamShort} | ${compact}`;
 }
 
