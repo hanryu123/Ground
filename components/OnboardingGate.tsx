@@ -61,6 +61,19 @@ export default function OnboardingGate({
     };
   }, []);
 
+  // 네이티브 앱: 온보딩 완료 후 FCM 토큰 등록
+  // ※ 조건부 return 이전에 위치해야 React hooks 규칙을 준수함
+  useEffect(() => {
+    const unlocked = Boolean(teamId) && isOnboardingDone;
+    if (!unlocked || !teamId) return;
+    try {
+      const userId = localStorage.getItem("ground-user-id") ?? "anonymous";
+      void registerNativePush({ userId, favoriteTeam: teamId });
+    } catch {
+      // 웹 환경에서는 무시
+    }
+  }, [isOnboardingDone, teamId]);
+
   if (isAdminRoute) {
     return <>{children}</>;
   }
@@ -70,17 +83,6 @@ export default function OnboardingGate({
   }
 
   const unlocked = Boolean(teamId) && isOnboardingDone;
-
-  // 네이티브 앱: 온보딩 완료 후 FCM 토큰 등록
-  useEffect(() => {
-    if (!unlocked || !teamId) return;
-    try {
-      const userId = localStorage.getItem("ground-user-id") ?? "anonymous";
-      void registerNativePush({ userId, favoriteTeam: teamId });
-    } catch {
-      // 웹 환경에서는 무시
-    }
-  }, [unlocked, teamId]);
 
   return (
     <AnimatePresence mode="wait" initial={false}>
