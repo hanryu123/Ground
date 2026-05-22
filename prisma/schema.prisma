@@ -222,6 +222,19 @@ model MarketingPush {
   @@index([targetTeamId, sentAt(sort: Desc)])
 }
 
+/**
+ * 라이브 이벤트 크론이 게임별로 마지막으로 처리한 릴레이 seqNo 워터마크.
+ * 이 seqNo 이하의 엔트리는 재처리하지 않아 중복 알림을 원천 차단.
+ */
+model LiveEventWatermark {
+  id             String   @id @default(cuid())
+  gameExternalId String   @unique
+  lastSeqNo      Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
 model PregamePreview {
   id         String               @id @default(cuid())
   date       String

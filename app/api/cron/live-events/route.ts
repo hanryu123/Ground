@@ -5,6 +5,7 @@ import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
 import { generateLiveEventCopy } from "@/lib/pushLlm";
 import { isKboGameHour } from "@/lib/cronGuard";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -140,7 +141,7 @@ function extractRelayEntries(json: Record<string, unknown>): RelayEntry[] {
   return [];
 }
 
-async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; debugStatuses: string[] }> {
+async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ relays: RelayInfo[]; maxSeqNo: number; debugStatuses: string[] }> {
   const endpoints = [
     `${NAVER_BASE}/schedule/games/${gameId}/relay`,
     `${NAVER_BASE}/schedule/games/${gameId}/relay?fields=relayTexts`,
@@ -150,6 +151,7 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
     `${NAVER_BASE}/schedule/games/${gameId}/relay?size=50`,
   ];
   const debugStatuses: string[] = [];
+  debugStatuses.push(`watermark:${lastSeqNo}`);
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(endpoint, {
@@ -198,11 +200,23 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           plays: (e.textOptions ?? []).map(o => o.playText).filter(Boolean).slice(0, 3),
         })));
       if (entries.length > 0) {
-        // 최근 5개 엔트리 검사 — 1분 크론 주기 사이에 밀린 이벤트 커버
-        const recentEntries = entries.slice(-5);
+        // 워터마크 이후 새 엔트리만 처리 — 절대 중복 없음
+        const newEntries = entries.filter((e) => {
+          const seq = e.seqNo ?? e.no;
+          return seq != null && Number(seq) > lastSeqNo;
+        });
+        // seqNo 없는 엔트리는 안전하게 제외 (중복 위험)
+        const maxSeqNo = entries.reduce((max, e) => {
+          const seq = Number(e.seqNo ?? e.no ?? 0);
+          return seq > max ? seq : max;
+        }, lastSeqNo);
+        debugStatuses.push(`total:${entries.length} new:${newEntries.length} maxSeq:${maxSeqNo}`);
+        if (newEntries.length === 0) {
+          return { relays: [], maxSeqNo, debugStatuses };
+        }
         const results: RelayInfo[] = [];
 
-        for (const entry of recentEntries) {
+        for (const entry of newEntries) {
           // title 우선, text fallback
           const mainText = (entry.title ?? entry.text ?? "");
           // textOptions 내 모든 문자열 값을 재귀적으로 추출 (중첩 필드 커버)
@@ -248,9 +262,9 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           results.push({ eventKinds, battingSide, inning, inningLabel, eventKey, playerName, strikeoutDetail });
         }
 
-        if (results.length > 0) return { relays: results, debugStatuses };
-        debugStatuses.push("no_event_in_entries");
-        return { relays: [], debugStatuses };
+        if (results.length > 0) return { relays: results, maxSeqNo, debugStatuses };
+        debugStatuses.push("no_event_in_new_entries");
+        return { relays: [], maxSeqNo, debugStatuses };
       }
 
       debugStatuses.push("entries_empty");
@@ -259,7 +273,7 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
       debugStatuses.push(`err:${String(e).slice(0, 40)}`);
     }
   }
-  return { relays: [], debugStatuses };
+  return { relays: [], maxSeqNo: lastSeqNo, debugStatuses };
 }
 
 /**
@@ -405,8 +419,23 @@ export async function GET(req: Request) {
   const llmCache = new Map<string, Promise<string>>();
 
   for (const game of liveGames) {
-    const { relays, debugStatuses } = await fetchRelayInfo(game.id);
+    // 워터마크: 이 게임의 마지막 처리 seqNo 조회
+    const watermark = await prisma.liveEventWatermark.findUnique({
+      where: { gameExternalId: game.id },
+    });
+    const lastSeqNo = watermark?.lastSeqNo ?? 0;
+
+    const { relays, maxSeqNo, debugStatuses } = await fetchRelayInfo(game.id, lastSeqNo);
     debugRelays.push({ gameId: game.id, relayCount: relays.length, eventKeys: relays.map(r => r.eventKey), debugStatuses });
+
+    // 새 엔트리가 있었으면 워터마크를 무조건 업데이트 (이벤트 없어도)
+    if (maxSeqNo > lastSeqNo) {
+      await prisma.liveEventWatermark.upsert({
+        where: { gameExternalId: game.id },
+        create: { gameExternalId: game.id, lastSeqNo: maxSeqNo },
+        update: { lastSeqNo: maxSeqNo },
+      });
+    }
     if (relays.length === 0) continue;
 
     for (const relay of relays) {
