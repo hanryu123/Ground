@@ -65,6 +65,20 @@ function extractStrikeoutDetail(fullText: string): StrikeoutDetail {
 }
 
 /**
+ * 객체 내 모든 문자열 값을 재귀적으로 추출.
+ * textOptions 안에 currentGameState 등 중첩 필드에 숨어있는 텍스트도 커버.
+ */
+function extractAllStrings(obj: unknown, depth = 0): string[] {
+  if (depth > 4) return [];
+  if (typeof obj === "string") return obj ? [obj] : [];
+  if (Array.isArray(obj)) return obj.flatMap((v) => extractAllStrings(v, depth + 1));
+  if (obj && typeof obj === "object") {
+    return Object.values(obj as Record<string, unknown>).flatMap((v) => extractAllStrings(v, depth + 1));
+  }
+  return [];
+}
+
+/**
  * 릴레이 텍스트에서 한국 선수 이름 추출.
  * 네이버 중계 텍스트는 보통 "이름 구종/결과" 순서로 시작.
  * e.g. "황동하 직구 헛스윙 삼진" → "황동하"
@@ -184,15 +198,16 @@ async function fetchRelayInfo(gameId: string): Promise<{ relays: RelayInfo[]; de
           plays: (e.textOptions ?? []).map(o => o.playText).filter(Boolean).slice(0, 3),
         })));
       if (entries.length > 0) {
-        // 최근 5개 엔트리 검사 — 1분 크론 주기 사이에 밀린 이벤트 커버
-        const recentEntries = entries.slice(-5);
+        // 최근 12개 엔트리 검사 — 1분 크론 주기 + 빠른 릴레이 업데이트 커버
+        const recentEntries = entries.slice(-12);
         const results: RelayInfo[] = [];
 
         for (const entry of recentEntries) {
-          // title 우선, text fallback, textOptions 안 텍스트도 합산
+          // title 우선, text fallback
           const mainText = (entry.title ?? entry.text ?? "");
+          // textOptions 내 모든 문자열 값을 재귀적으로 추출 (중첩 필드 커버)
           const optionTexts = (entry.textOptions ?? [])
-            .map((o) => [o.playText, o.title, o.text].filter(Boolean).join(" "))
+            .map((o) => extractAllStrings(o).join(" "))
             .join(" ");
           const fullText = `${mainText} ${optionTexts}`;
 
