@@ -37,7 +37,7 @@ function hasHangul(s: string): boolean {
 
 /** 팀명 공통 메트릭 — globals.css 의 Black Han Sans(한글 포함 전체 서브셋) */
 const TEAM_SHORT_STYLE = {
-  fontSize: "clamp(28px, 7.2vw, 46px)",
+  fontSize: "clamp(34px, 8.64vw, 55px)",
   lineHeight: 0.92,
   letterSpacing: "-0.05em",
 } as const;
@@ -614,8 +614,8 @@ export default function HeroCard({ team }: Props) {
                 color: isLgSeoulSlogan ? accentColor : themedText(0.92),
                 fontWeight: hasHangul(sloganOneLine) ? 700 : 600,
                 fontSize: hasHangul(sloganOneLine)
-                  ? "clamp(18px, 5.07vw, 26px)"
-                  : "clamp(21px, 5.98vw, 34px)",
+                  ? "clamp(22px, 6.08vw, 31px)"
+                  : "clamp(25px, 7.18vw, 41px)",
                 lineHeight: 1.35,
                 textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
                 filter: isRainy ? "blur(0.2px)" : undefined,
@@ -631,7 +631,7 @@ export default function HeroCard({ team }: Props) {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, ease, delay: 0.2 }}
-                className="mt-4 px-2 text-[14px] font-semibold leading-relaxed"
+                className="mt-4 px-2 text-[17px] font-semibold leading-relaxed"
                 style={{ color: themedText(0.86) }}
               >
                 {feedMessage}
@@ -676,8 +676,8 @@ export default function HeroCard({ team }: Props) {
                 color: isLgSeoulSlogan ? accentColor : themedText(0.84),
                 fontWeight: hasHangul(sloganOneLine) ? 600 : 550,
                 fontSize: hasHangul(sloganOneLine)
-                  ? "clamp(16px, 4.16vw, 20px)"
-                  : "clamp(16px, 4.29vw, 21px)",
+                  ? "clamp(19px, 4.99vw, 24px)"
+                  : "clamp(19px, 5.15vw, 25px)",
                 lineHeight: 1.45,
                 textTransform: hasHangul(sloganOneLine) ? "none" : "uppercase",
                 textShadow: isLgSeoulSlogan
@@ -699,7 +699,7 @@ export default function HeroCard({ team }: Props) {
                 <div className="flex flex-col items-end justify-end gap-0 leading-none">
                   {leftHeroEpithet ? (
                     <p
-                      className="mb-1.5 w-full text-left text-[clamp(11px,2.6vw,17px)] leading-none tracking-[0.02em] text-white/58"
+                      className="mb-1.5 w-full text-left text-[clamp(13px,3.12vw,20px)] leading-none tracking-[0.02em] text-white/58"
                       style={{ fontWeight: 200, color: themedText(0.58) }}
                     >
                       {leftHeroEpithet}
@@ -726,7 +726,7 @@ export default function HeroCard({ team }: Props) {
                     style={{
                       color: themedText(0.95),
                       fontWeight: 600,
-                      fontSize: "clamp(20px, 5.2vw, 30px)",
+                      fontSize: "clamp(24px, 6.24vw, 36px)",
                       letterSpacing: "0.04em",
                       lineHeight: 1,
                     }}
@@ -745,7 +745,7 @@ export default function HeroCard({ team }: Props) {
                     style={{
                       color: themedText(0.95),
                       fontWeight: 600,
-                      fontSize: "clamp(20px, 5.2vw, 30px)",
+                      fontSize: "clamp(24px, 6.24vw, 36px)",
                       letterSpacing: "0.04em",
                       lineHeight: 1,
                     }}
@@ -764,7 +764,7 @@ export default function HeroCard({ team }: Props) {
                     style={{
                       color: themedText(0.36),
                       fontWeight: 500,
-                      fontSize: "9px",
+                      fontSize: "11px",
                       letterSpacing: "0.38em",
                       lineHeight: 1,
                     }}
@@ -790,7 +790,7 @@ export default function HeroCard({ team }: Props) {
 
               <div className="flex min-h-[1.35rem] items-start justify-end justify-self-end">
                 <span
-                  className="text-right text-[11px] font-semibold leading-snug tracking-wide text-white/72"
+                  className="text-right text-[13px] font-semibold leading-snug tracking-wide text-white/72"
                   style={{ color: themedText(0.72) }}
                 >
                   {starterLabel(heroMatch.leftPitcher)}
@@ -799,7 +799,7 @@ export default function HeroCard({ team }: Props) {
               <div aria-hidden className="min-h-[1.35rem]" />
               <div className="flex min-h-[1.35rem] items-start justify-start justify-self-start">
                 <span
-                  className="text-left text-[11px] font-semibold leading-snug tracking-wide text-white/68"
+                  className="text-left text-[13px] font-semibold leading-snug tracking-wide text-white/68"
                   style={{ color: themedText(0.68) }}
                 >
                   {starterLabel(heroMatch.rightPitcher)}
@@ -813,7 +813,7 @@ export default function HeroCard({ team }: Props) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.55, ease, delay: 0.32 }}
-              className="mt-6 text-[11px] font-medium tabular-nums tracking-[0.32em] text-white/52"
+              className="mt-6 text-[13px] font-medium tabular-nums tracking-[0.32em] text-white/52"
               style={{ color: themedText(0.52) }}
               aria-label="경기 시작까지 남은 시간"
             >
@@ -827,7 +827,7 @@ export default function HeroCard({ team }: Props) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.45, ease, delay: 0.36 }}
-              className="mt-3 text-[11px] font-semibold tracking-[0.14em]"
+              className="mt-3 text-[13px] font-semibold tracking-[0.14em]"
               style={{ color: themedText(0.48) }}
             >
               📍 {venueUnderDate.primary}
@@ -841,7 +841,7 @@ export default function HeroCard({ team }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, ease, delay: 0.35 }}
               onClick={() => setIsLineupOpen(true)}
-              className={`mt-4 inline-flex items-center rounded-full px-4 py-2 text-[11px] font-semibold tracking-[0.08em] text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${
+              className={`mt-4 inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[0.08em] text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${
                 liveView?.game.result ? "" : "animate-pulse"
               }`}
               style={{
@@ -857,7 +857,7 @@ export default function HeroCard({ team }: Props) {
             className={`mx-auto w-full max-w-md text-center ${countdownHms ? "mt-8" : "mt-10"}`}
           >
             <p
-              className="text-[11px] font-normal uppercase tracking-[0.22em] text-white/58 tabular-nums"
+              className="text-[13px] font-normal uppercase tracking-[0.22em] text-white/58 tabular-nums"
               style={{ fontWeight: 400, color: themedText(0.58) }}
             >
               {dateLabel ? (
@@ -894,7 +894,7 @@ export default function HeroCard({ team }: Props) {
             </p>
             {feedStatus === "RAIN_CANCELLED" && feedMessage ? (
               <p
-                className="mt-3 px-2 text-[13px] font-semibold leading-relaxed"
+                className="mt-3 px-2 text-[16px] font-semibold leading-relaxed"
                 style={{ color: themedText(0.8) }}
               >
                 {feedMessage}
@@ -910,7 +910,7 @@ export default function HeroCard({ team }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, ease, delay: 0.38 }}
               onClick={() => setIsHighlightPlayerOpen(true)}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[11px] font-semibold tracking-[0.06em] text-white shadow-[0_6px_20px_rgba(0,0,0,0.35)] transition active:scale-95"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold tracking-[0.06em] text-white shadow-[0_6px_20px_rgba(0,0,0,0.35)] transition active:scale-95"
               style={{ backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.18)" }}
             >
               <Play size={11} fill="white" className="shrink-0" />
@@ -919,7 +919,7 @@ export default function HeroCard({ team }: Props) {
           )}
 
           <div
-            className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/38"
+            className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12px] font-medium uppercase tracking-[0.2em] text-white/38"
             style={{ color: themedText(0.38) }}
           >
             {weatherLabel && (
@@ -995,7 +995,7 @@ export default function HeroCard({ team }: Props) {
             >
               {/* 닫기 버튼 */}
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-[12px] font-semibold tracking-wide text-white/70">
+                <p className="text-[14px] font-semibold tracking-wide text-white/70">
                   🎬 하이라이트
                 </p>
                 <button
