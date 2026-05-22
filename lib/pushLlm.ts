@@ -29,8 +29,8 @@ function compactText(text: string): string {
 
 function clipForPush(text: string): string {
   const compact = compactText(text);
-  if (compact.length <= 52) return compact;
-  return `${compact.slice(0, 50)}..`;
+  if (compact.length <= 65) return compact;
+  return `${compact.slice(0, 63)}..`;
 }
 
 function resolveScoreGap(input: GenerateScorePushInput): number {
@@ -46,7 +46,9 @@ function resolveScoreGapTier(input: GenerateScorePushInput): "close" | "danger" 
 
 function normalizeForSimilarity(text: string): string {
   return compactText(text)
-    .replace(/^\[[^\]]+\]\s*/, "")
+    .replace(/^\[[^\]]+\]\s*/, "")                                  // [N회초] 제거
+    .replace(/^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+\s*\|\s*/, "") // 팀 X:Y 팀 | 제거
+    .replace(/^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+[.\s]/, "")   // 팀 X:Y 팀. 제거 (buildCreativeFallback 형식)
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .toLowerCase()
@@ -98,13 +100,28 @@ function isWalkOffSituation(input: GenerateScorePushInput): boolean {
   return half === "말" && inning >= 9 && input.myScore > input.oppScore;
 }
 
-function ensureInningPrefix(text: string, inningTag: string): string {
+function ensureInningScorePrefix(
+  text: string,
+  inningTag: string,
+  myTeamShort: string,
+  myScore: number,
+  oppScore: number,
+  oppTeamShort: string,
+): string {
   const compact = compactText(text);
+  // 이미 [N회] 태그가 있으면 그대로 반환 (fallback 빌더 등이 이미 스코어 포함한 경우)
   if (/^\[[^\]]+\]/.test(compact)) return compact;
   if (compact.includes("[경기종료]")) return compact;
-  // 이닝 정보 없으면 태그 생략
   if (inningTag === "경기중" || !inningTag) return compact;
-  return `[${inningTag}] ${compact}`;
+
+  // Claude가 이미 "팀 X:Y 팀 |" 형태로 스코어를 포함했으면 이닝 태그만 앞에 추가
+  const scoreHeaderPattern = /^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+\s*\|/;
+  if (scoreHeaderPattern.test(compact)) {
+    return `[${inningTag}] ${compact}`;
+  }
+
+  // 스코어 헤더 추가
+  return `[${inningTag}] ${myTeamShort} ${myScore}:${oppScore} ${oppTeamShort} | ${compact}`;
 }
 
 function enforceBaseballConsistency(text: string, input: GenerateScorePushInput): string {
@@ -289,6 +306,7 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
   • 쐐기점: "사실상 확인사살 ㅋㅋㅋ 마무리만 잘 하면 끝" 류
   • 실점 위기: "숨 막힌다 ㄷㄷ 여기서 막느냐 못 막느냐 갈림길" 류`;
 
+  const resolvedTone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
   const gapGuide = trailing
     ? tier === "garbage"
       ? `\n⚠️ 6점 이상 지고 있음 → 해탈/허탈/냉소 톤. "아직 안 끝났다" 절대 금지. 짧게.`
@@ -297,18 +315,26 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
       : `\n⚠️ 1~2점 지고 있음 → 간절함/초조함/피 말린다 톤.`
     : leading
     ? `\n✅ 우리 팀이 앞서고 있음 → 자신감/흥분/굳혀라 톤.`
-    : `\n➡️ 동점 상황 → 긴장감/역전각/승부 갈린다 톤.`;
+    : resolvedTone === "for"
+    ? `\n➡️ 동점 상황 (우리가 따라잡음) → "야!! 동점!!", "기어코 따라잡았다 ㅋㅋ" 류의 흥분/환호 톤.`
+    : `\n➡️ 동점 상황 (상대가 따라잡음) → "아 동점이라니", "여기서 잡았어야 했는데 ㅠ" 류의 불안/답답한 톤.`;
 
   return `너는 KBO를 10년 넘게 챙겨온 30대 ${favoriteTeam} 찐팬이야.
 친한 친구들과 야구 단톡방에서 떠드는 것처럼 짧고, 타격감 있고, 위트 있게 써줘.
-ㅋㅋㅋ, ㄷㄷ 같은 초성도 자연스럽게 섞어도 돼. 스포츠 기사처럼 딱딱하게 쓰지 마.
+ㅋㅋㅋ, ㄷㄷ 같은 초성도 자연스럽게 섞어도 돼.
+
+🚫 절대 금지:
+- 중립 해설자·기자 시점 금지. 반드시 ${favoriteTeam} 팬 1인칭 시점으로 써
+- "됐네", "가는군", "가는구나" 같은 방관자 어투 금지
+- 득점 상황인데 "아쉽다", "힘내자" 같은 실점 어투 금지
+- 실점 상황인데 "좋아!", "신난다" 같은 득점 어투 금지
 
 ${phaseGuide}
 ${gapGuide}
 
 📐 출력 규칙:
-- 반드시 푸시 본문 한 줄만 출력 (설명·따옴표·이닝 태그 다시 쓰지 마 — 앞에 이미 붙음)
-- 20~45자 이내
+- 반드시 감탄 멘트 한 줄만 출력. 이닝 태그·스코어·팀명은 앞에 자동으로 붙음 — 다시 쓰지 마
+- 15~30자 이내 (짧을수록 좋음)
 - 이모지 0~2개만${avoid}`;
 }
 
@@ -380,13 +406,18 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
 ---
 아래는 실제 좋은 문구 예시다. 이 스타일과 수준으로 써라.
 
-[삼진 — 수비 중 (투수 호투)]
+⚾ 야구 용어 필수 지식:
+- 탈삼진 = 투수가 상대 타자를 스트라이크 3개로 잡아냄 → 투수/수비팀에게 완전 유리한 이벤트
+- 삼진 아웃 = 타자 입장에서 삼진 당함 → 공격팀 실패
+- 절대 혼동 금지: 탈삼진은 볼넷(출루)과 정반대. 탈삼진 시 타자는 아웃되며 출루하지 못함.
+
+[탈삼진 — 수비 중 (우리 투수가 상대 타자 삼진 아웃 = 호투!)]
 헛스윙 삼진 ㅋㅋㅋ 방망이 허공 가릅니다 👊
 루킹 삼진 ㄷㄷ 저걸 그냥 쳐다보네 얼음! 🥶
 꽉 찬 직구에 삼진! 투수 오늘 제구 미쳤네요
 KKK! 이 위기를 헛스윙 삼진으로 넘깁니다 ㄷㄷ
 
-[삼진 — 공격 중 (타자 아웃)]
+[삼진 아웃 — 공격 중 (우리 타자가 삼진 당함 = 실패)]
 아 여기서 삼진이야 ㅠㅠ 다음 타자 제발 살려줘
 헛스윙 3구 삼진... 오늘 직구 타이밍 영 안 맞네
 루킹 삼진 ㅠ 그거 치면 됐잖아 진짜
@@ -414,15 +445,30 @@ KKK! 이 위기를 헛스윙 삼진으로 넘깁니다 ㄷㄷ
 }
 
 function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
-  const kindKo = input.kind === "strikeout" ? "탈삼진" : input.kind === "homeRun" ? "홈런" : "투수 교체";
   const inning = input.inningLabel ?? "경기 중";
   const scoreStr = input.myCurrentScore != null && input.oppCurrentScore != null
     ? `${input.myTeamShort} ${input.myCurrentScore}:${input.oppCurrentScore} ${input.oppTeamShort}`
     : `${input.myTeamShort} vs ${input.oppTeamShort}`;
-  const sideLabel = input.isPitching === true ? "내 팀 수비 중" : input.isPitching === false ? "내 팀 공격 중" : "공수 불명";
+
+  let eventDesc: string;
+  if (input.kind === "strikeout") {
+    if (input.isPitching === true) {
+      eventDesc = `탈삼진 — 우리 팀 투수가 상대 타자를 삼진 아웃시킴 (투수 호투, 수비팀에게 유리!)`;
+    } else if (input.isPitching === false) {
+      eventDesc = `삼진 아웃 — 우리 팀 타자가 삼진 당함 (공격 실패, 아쉬운 상황)`;
+    } else {
+      eventDesc = `삼진 발생`;
+    }
+  } else if (input.kind === "homeRun") {
+    eventDesc = input.isPitching === false
+      ? `홈런 — 우리 팀 타자가 홈런 침 (대박!)`
+      : `홈런 허용 — 상대 팀 타자에게 홈런 맞음 (위기)`;
+  } else {
+    eventDesc = input.isPitching === true ? `투수 교체 — 우리 팀 투수 강판` : `투수 교체 — 상대 팀 투수 교체`;
+  }
+
   return `이닝: ${inning} | 스코어: ${scoreStr}
-이벤트: ${kindKo}
-공수: ${sideLabel}
+이벤트: ${eventDesc}
 
 위 예시들처럼 단톡방 스타일로 | 뒤 멘트만 출력해줘.`;
 }
@@ -490,12 +536,14 @@ export async function generateScorePushCopyWithOptions(
 ): Promise<{ title: string; body: string }> {
   const apiKey = options.apiKeyOverride?.trim() || process.env.ANTHROPIC_API_KEY;
   const inningTag = extractInningTag(input.latestPlayText);
+  const myTeamShort = findTeam(input.favoriteTeam).short;
+  const oppTeamShort = findTeam(input.opponentTeam).short;
   const normalizeAndFinalize = (rawBody: string): string => {
     const variety = ensureCopyVariety(rawBody, input);
     const gapAware = enforceScoreGapTone(variety, input);
     const consistent = enforceBaseballConsistency(gapAware, input);
-    const inningPrefixed = ensureInningPrefix(consistent, inningTag);
-    return clipForPush(ensureNovelBody(input, inningPrefixed));
+    const withHeader = ensureInningScorePrefix(consistent, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
+    return clipForPush(ensureNovelBody(input, withHeader));
   };
   if (!apiKey) {
     return {
