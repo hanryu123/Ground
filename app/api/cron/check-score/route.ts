@@ -82,19 +82,34 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
 
     const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
     const title = (last["title"] as string | undefined) ?? "";
-    const inn = last["inn"] as number | undefined;
+    const rawInn = last["inn"] ?? last["inning"];
+    const inn: number | null = typeof rawInn === "number" ? rawInn
+      : typeof rawInn === "string" ? (parseInt(rawInn) || null) : null;
     const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
 
-    // homeOrAway 는 게임마다 기준이 달라 사용 금지
-    // 1순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
-    const playTexts = (textOptions ?? []).map((o) => (o["playText"] as string | undefined) ?? "").join(" ");
-    const allText = `${title} ${playTexts}`;
-    const textInningMatch = allText.match(/\d{1,2}회\s*(초|말)/);
-    // 2순위: entry.inningSub (1=초, 2=말) — homeOrAway 보다 일관됨
-    const inningSub = last["inningSub"];
-    const halfFromSub = inningSub === 1 || inningSub === "1" ? "초"
-      : inningSub === 2 || inningSub === "2" ? "말" : null;
-    const half = textInningMatch ? textInningMatch[1] : (halfFromSub ?? "");
+    // 초/말: 1순위=상위JSON inningSub, 2순위=텍스트, 3순위=entry inningSub
+    // inningSub 1=초(원정공격), 2=말(홈공격)
+    const result2 = json["result"] as Record<string, unknown> | undefined;
+    const relayObj = (json["relay"] ?? result2?.["relay"]) as Record<string, unknown> | undefined;
+    const subCandidates = [
+      json["inningSub"], result2?.["inningSub"], relayObj?.["inningSub"],
+      json["currentInningSub"], result2?.["currentInningSub"],
+    ];
+    let half = "";
+    for (const s of subCandidates) {
+      if (s === 1 || s === "1") { half = "초"; break; }
+      if (s === 2 || s === "2") { half = "말"; break; }
+    }
+    if (!half) {
+      const playTexts = (textOptions ?? []).map((o) => (o["playText"] as string | undefined) ?? "").join(" ");
+      const m = `${title} ${playTexts}`.match(/\d{1,2}회\s*(초|말)/);
+      if (m) half = m[1];
+    }
+    if (!half) {
+      const s = last["inningSub"];
+      if (s === 1 || s === "1") half = "초";
+      else if (s === 2 || s === "2") half = "말";
+    }
     const inningLabel: string | null = inn != null ? `${inn}회${half}` : null;
 
     const plays = (textOptions ?? [])

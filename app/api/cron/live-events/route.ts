@@ -272,29 +272,23 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             : typeof rawInn === "string" ? (parseInt(rawInn) || null)
             : null;
 
-          // 초/말 결정 — 4단계 우선순위
-          // 1순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
-          const textInningMatch = fullText.match(/\d{1,2}회\s*(초|말)/);
-          let battingSide: "home" | "away" | null = textInningMatch
-            ? (textInningMatch[1] === "초" ? "away" : "home")
-            : null;
+          // 초/말 결정 — 홈팀=말, 원정팀=초 (기본 야구 규칙)
+          // 1순위: 상위 JSON의 inningSub (게임 전체 상태 — 가장 신뢰도 높음)
+          //   inningSub 1=초(원정공격), 2=말(홈공격)
+          let battingSide: "home" | "away" | null = resolveInningSide(json);
 
-          // 2순위: entry.inningSub (1=초/away, 2=말/home)
+          // 2순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
+          if (battingSide == null) {
+            const textInningMatch = fullText.match(/\d{1,2}회\s*(초|말)/);
+            if (textInningMatch) battingSide = textInningMatch[1] === "초" ? "away" : "home";
+          }
+
+          // 3순위: entry.inningSub
           if (battingSide == null) {
             const sub = entry.inningSub;
             if (sub === 1 || sub === "1") battingSide = "away";
             else if (sub === 2 || sub === "2") battingSide = "home";
           }
-
-          // 3순위: entry.homeOrAway (원래 Naver 표준: 0=초/top, 1=말/bottom)
-          if (battingSide == null) {
-            const ha = entry.homeOrAway;
-            if (ha === 0 || ha === "0") battingSide = "away";
-            else if (ha === 1 || ha === "1") battingSide = "home";
-          }
-
-          // 4순위: 상위 JSON inningSub 등
-          if (battingSide == null) battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
           const inningLabel = inning != null && halfLabel ? `${inning}회${halfLabel}` : null;
