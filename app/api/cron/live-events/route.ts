@@ -253,19 +253,24 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const seqId = seqNo != null ? String(seqNo) : mainText.slice(0, 60);
           const eventKey = `seq:${seqId}`;
 
-          const inning = typeof entry.inn === "number" ? entry.inn
-            : typeof entry.inning === "number" ? entry.inning : null;
+          // 1순위: title 텍스트에서 "N회초"/"N회말" 직접 파싱 (가장 신뢰도 높음)
+          const textInningMatch = fullText.match(/(\d{1,2})회\s*(초|말)/);
+          let inning: number | null = textInningMatch ? parseInt(textInningMatch[1]) : null;
+          let battingSide: "home" | "away" | null = textInningMatch
+            ? (textInningMatch[2] === "초" ? "away" : "home")
+            : null;
 
-          // Naver relay API: homeOrAway=0 = 홈팀(말/bottom), homeOrAway=1 = 원정팀(초/top)
-          // inningSub(fallback): "1"=초(top/away), "2"=말(bottom/home) — 별도 필드, 값 체계 다름
-          const ha = entry.homeOrAway;
-          let battingSide: "home" | "away" | null = null;
-          if (ha === "0" || ha === 0) battingSide = "home";
-          else if (ha === "1" || ha === 1) battingSide = "away";
-          else battingSide = resolveInningSide(json); // inningSub 등 fallback (1=away/초, 2=home/말)
+          // 2순위: entry.inn 숫자 필드
+          if (inning == null) {
+            inning = typeof entry.inn === "number" ? entry.inn
+              : typeof entry.inning === "number" ? entry.inning : null;
+          }
+
+          // 3순위: inningSub 기반 resolveInningSide (homeOrAway 필드는 게임마다 기준 불일치로 사용 안 함)
+          if (battingSide == null) battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
-          const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
+          const inningLabel = inning != null && halfLabel ? `${inning}회${halfLabel}` : null;
 
           // 릴레이 텍스트(title 우선)에서 선수 이름 추출
           const playerName = extractPlayerName(mainText) ??

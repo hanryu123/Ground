@@ -83,12 +83,22 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
     const title = (last["title"] as string | undefined) ?? "";
     const inn = last["inn"] as number | undefined;
-    const homeOrAway = last["homeOrAway"];
     const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
 
-    // Naver relay API: homeOrAway=0 = 홈팀(말/bottom), homeOrAway=1 = 원정팀(초/top)
-    const halfLabel = homeOrAway === 0 || homeOrAway === "0" ? "말" : homeOrAway === 1 || homeOrAway === "1" ? "초" : "";
-    const inningLabel = inn != null ? `${inn}회${halfLabel}` : null;
+    // 1순위: title 텍스트에서 "N회초"/"N회말" 직접 파싱 (homeOrAway 필드는 게임마다 기준 불일치)
+    const playTexts = (textOptions ?? []).map((o) => (o["playText"] as string | undefined) ?? "").join(" ");
+    const allText = `${title} ${playTexts}`;
+    const textInningMatch = allText.match(/(\d{1,2})회\s*(초|말)/);
+    let inningLabel: string | null = null;
+    if (textInningMatch) {
+      inningLabel = `${textInningMatch[1]}회${textInningMatch[2]}`;
+    } else if (inn != null) {
+      // 2순위: inn 숫자 + inningSub 기반 fallback
+      const inningSub = last["inningSub"];
+      const halfLabel = inningSub === 1 || inningSub === "1" ? "초"
+        : inningSub === 2 || inningSub === "2" ? "말" : "";
+      inningLabel = `${inn}회${halfLabel}`;
+    }
 
     const plays = (textOptions ?? [])
       .map((o) => (o["playText"] as string | undefined) ?? "")
