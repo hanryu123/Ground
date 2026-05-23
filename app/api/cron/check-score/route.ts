@@ -85,20 +85,17 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     const inn = last["inn"] as number | undefined;
     const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
 
-    // 1순위: title 텍스트에서 "N회초"/"N회말" 직접 파싱 (homeOrAway 필드는 게임마다 기준 불일치)
+    // homeOrAway 는 게임마다 기준이 달라 사용 금지
+    // 1순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
     const playTexts = (textOptions ?? []).map((o) => (o["playText"] as string | undefined) ?? "").join(" ");
     const allText = `${title} ${playTexts}`;
-    const textInningMatch = allText.match(/(\d{1,2})회\s*(초|말)/);
-    let inningLabel: string | null = null;
-    if (textInningMatch) {
-      inningLabel = `${textInningMatch[1]}회${textInningMatch[2]}`;
-    } else if (inn != null) {
-      // 2순위: inn 숫자 + inningSub 기반 fallback
-      const inningSub = last["inningSub"];
-      const halfLabel = inningSub === 1 || inningSub === "1" ? "초"
-        : inningSub === 2 || inningSub === "2" ? "말" : "";
-      inningLabel = `${inn}회${halfLabel}`;
-    }
+    const textInningMatch = allText.match(/\d{1,2}회\s*(초|말)/);
+    // 2순위: entry.inningSub (1=초, 2=말) — homeOrAway 보다 일관됨
+    const inningSub = last["inningSub"];
+    const halfFromSub = inningSub === 1 || inningSub === "1" ? "초"
+      : inningSub === 2 || inningSub === "2" ? "말" : null;
+    const half = textInningMatch ? textInningMatch[1] : (halfFromSub ?? "");
+    const inningLabel: string | null = inn != null ? `${inn}회${half}` : null;
 
     const plays = (textOptions ?? [])
       .map((o) => (o["playText"] as string | undefined) ?? "")

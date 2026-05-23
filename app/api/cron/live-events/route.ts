@@ -253,20 +253,26 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const seqId = seqNo != null ? String(seqNo) : mainText.slice(0, 60);
           const eventKey = `seq:${seqId}`;
 
-          // 1순위: title 텍스트에서 "N회초"/"N회말" 직접 파싱 (가장 신뢰도 높음)
-          const textInningMatch = fullText.match(/(\d{1,2})회\s*(초|말)/);
-          let inning: number | null = textInningMatch ? parseInt(textInningMatch[1]) : null;
+          // 이닝 번호: entry.inn 우선
+          const inning: number | null =
+            typeof entry.inn === "number" ? entry.inn
+            : typeof entry.inning === "number" ? entry.inning : null;
+
+          // 초/말 결정 — homeOrAway 는 게임마다 기준이 달라 사용 금지
+          // 1순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
+          const textInningMatch = fullText.match(/\d{1,2}회\s*(초|말)/);
           let battingSide: "home" | "away" | null = textInningMatch
-            ? (textInningMatch[2] === "초" ? "away" : "home")
+            ? (textInningMatch[1] === "초" ? "away" : "home")
             : null;
 
-          // 2순위: entry.inn 숫자 필드
-          if (inning == null) {
-            inning = typeof entry.inn === "number" ? entry.inn
-              : typeof entry.inning === "number" ? entry.inning : null;
+          // 2순위: entry.inningSub (1=초/away, 2=말/home)
+          if (battingSide == null) {
+            const sub = entry.inningSub;
+            if (sub === 1 || sub === "1") battingSide = "away";
+            else if (sub === 2 || sub === "2") battingSide = "home";
           }
 
-          // 3순위: inningSub 기반 resolveInningSide (homeOrAway 필드는 게임마다 기준 불일치로 사용 안 함)
+          // 3순위: 상위 JSON의 inningSub 등 (resolveInningSide)
           if (battingSide == null) battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
