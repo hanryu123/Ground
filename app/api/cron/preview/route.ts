@@ -72,10 +72,12 @@ export async function GET(req: Request) {
 
   for (const game of todays) {
     const inTimeWindow = (() => {
-      if (force) return true;
       const dt = toKstDateTime(date, game.time);
       if (!dt) return false;
       const mins = minutesUntil(dt);
+      // force 모드: 경기 2시간 전~시작 후 10분 내 (오늘 경기만, 먼 미래 경기는 제외)
+      if (force) return mins >= -10 && mins <= 120;
+      // 일반: 경기 45~75분 전 윈도우
       return mins >= 45 && mins <= 75;
     })();
     if (!inTimeWindow) continue;
@@ -190,7 +192,8 @@ export async function GET(req: Request) {
       return;
     }
 
-    const lock = force || await markDispatchOnce({
+    // force 여부와 무관하게 항상 중복 락 기록 — 재발송 방지
+    const lock = await markDispatchOnce({
       alertKind: "preview",
       teamScope: teamId,
       eventKey: `${date}:${game.id}:preview`,
