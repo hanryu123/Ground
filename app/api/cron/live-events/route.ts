@@ -225,6 +225,19 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
         }
         const results: RelayInfo[] = [];
 
+        // 첫 번째 처리 대상 엔트리의 raw 필드 로그 (이닝 파싱 디버그용)
+        if (allToProcess.length > 0) {
+          const sample = allToProcess[allToProcess.length - 1];
+          console.log(`[live-events][inning-debug] gameId=${gameId}`, JSON.stringify({
+            inn: sample.inn,
+            inning: sample.inning,
+            inningSub: sample.inningSub,
+            homeOrAway: sample.homeOrAway,
+            title: sample.title?.slice(0, 30),
+            seqNo: sample.seqNo,
+          }));
+        }
+
         for (const entry of allToProcess) {
           // title 우선, text fallback — 이벤트 감지는 얕은 필드만 사용 (오탐 방지)
           const mainText = (entry.title ?? entry.text ?? "");
