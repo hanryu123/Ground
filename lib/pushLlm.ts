@@ -1,6 +1,54 @@
 import { findTeam } from "@/lib/teams";
 
 /**
+ * Claude 반말 어미 → 존댓말 강제 변환 후처리
+ * 프롬프트로 막히지 않는 케이스를 코드 레벨에서 차단
+ */
+export function enforcePolite(text: string): string {
+  let s = text;
+
+  // 문장 단위로 쪼개어 각 어미 변환 후 재조합
+  // 느낌표/마침표/물음표 기준 split
+  const sentences = s.split(/(?<=[!！?？.。])\s*/);
+  const fixed = sentences.map((seg) => {
+    const trimmed = seg.trimEnd();
+    if (!trimmed) return seg;
+
+    // 이미 존댓말 어미면 패스
+    if (/(?:습니다|습니까|네요|군요|죠|합니다|세요|어요|아요|겠어요|겠습니다|고요)[!！?？.。]?\s*$/.test(trimmed)) return seg;
+
+    // 반말 어미 → 존댓말 변환
+    const tail = seg.replace(
+      // 어미 패턴 — 문장 끝(선택적 구두점 앞)
+      /(됩니까|되겠어|되겠지|돼버렸어|됐잖아|됐어|됐다|돼야지|돼야|돼!|돼$|안 돼|안돼)([!！?！]*)(\s*)$/,
+      (_, _m, punc, sp) => `됩니다${punc || "!"}${sp}`
+    ).replace(
+      /([가-힣]+)(었어|았어|했어|겠어|갔어|났어|됐어)([!！?！]*)(\s*)$/,
+      (_, stem, _e, punc, sp) => `${stem}었습니다${punc || "!"}${sp}`
+    ).replace(
+      /([가-힣]+)(어야 해|아야 해|어야해|아야해)([!！?！]*)(\s*)$/,
+      (_, stem, _e, punc, sp) => `${stem}어야 합니다${punc || "!"}${sp}`
+    ).replace(
+      /([가-힣]+)(잖아|잖아요)([!！?！]*)(\s*)$/,
+      (_, stem, _e, punc, sp) => `${stem}잖습니까${punc || "!"}${sp}`
+    ).replace(
+      /(이겨야 돼|이겨야해)([!！?！]*)(\s*)$/,
+      (_, _m, punc, sp) => `이겨야 합니다${punc || "!"}${sp}`
+    ).replace(
+      /([가-힣a-zA-Z]+)(했다|됐다|났다|갔다|왔다|쳤다|잡았다|쐈다|뽑았다|터졌다|올랐다|꽂았다|잡혔다|막혔다|흔들렸다)([!！?！]*)(\s*)$/,
+      (_, stem, verb, punc, sp) => `${stem}${verb.replace(/다$/, "습니다")}${punc || "!"}${sp}`
+    ).replace(
+      /([가-힣]+)(았어|었어)([!！?！]*)(\s*)$/,
+      (_, stem, _e, punc, sp) => `${stem}았습니다${punc || "!"}${sp}`
+    );
+
+    return tail;
+  });
+
+  return fixed.join("");
+}
+
+/**
  * Claude가 생성한 push body에서 헤더(이닝·스코어·팀명) 부분을 제거한다.
  * 다양한 변형을 처리:
  *   "[2회초] 한화 0:1 두산 | ..." → "..."
@@ -736,7 +784,7 @@ export async function generateLiveEventCopy(
     const json = await res.json();
     const text = extractAnthropicText(json);
     console.log("[LiveEventLLM] kind:", input.kind, "raw:", text?.slice(0, 80) ?? "null");
-    return text ? compactText(text).slice(0, 60) : input.fallbackBody;
+    return text ? enforcePolite(compactText(text).slice(0, 60)) : input.fallbackBody;
   } catch (e) {
     const errStr = String(e);
     console.error("[LiveEventLLM] exception:", errStr.slice(0, 200));
@@ -767,7 +815,8 @@ export async function generateScorePushCopyWithOptions(
     const variety = ensureCopyVariety(rawBody, input);
     const gapAware = enforceScoreGapTone(variety, input);
     const consistent = enforceBaseballConsistency(gapAware, input);
-    const withHeader = ensureInningScorePrefix(consistent, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
+    const polite = enforcePolite(consistent);
+    const withHeader = ensureInningScorePrefix(polite, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
     return clipForPush(ensureNovelBody(input, withHeader));
   };
   if (!apiKey) {
