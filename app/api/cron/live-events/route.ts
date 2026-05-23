@@ -213,13 +213,19 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const seq = Number(e.seqNo ?? e.no ?? 0);
           return seq > max ? seq : max;
         }, lastSeqNo);
-        debugStatuses.push(`total:${entries.length} new:${newEntries.length} maxSeq:${maxSeqNo}`);
-        if (newEntries.length === 0) {
+        // 마지막 2개는 항상 재검사 (at-bat 진행 중 → 완료 시 새 textOption 추가되므로)
+        const tailEntries = entries.slice(-2);
+        const seqSet = new Map(newEntries.map(e => [String(e.seqNo ?? e.no), e]));
+        for (const e of tailEntries) seqSet.set(String(e.seqNo ?? e.no), e);
+        const allToProcess = [...seqSet.values()];
+
+        debugStatuses.push(`total:${entries.length} new:${newEntries.length} tail:${tailEntries.length} toProcess:${allToProcess.length} maxSeq:${maxSeqNo}`);
+        if (allToProcess.length === 0) {
           return { relays: [], maxSeqNo, debugStatuses };
         }
         const results: RelayInfo[] = [];
 
-        for (const entry of newEntries) {
+        for (const entry of allToProcess) {
           // title 우선, text fallback — 이벤트 감지는 얕은 필드만 사용 (오탐 방지)
           const mainText = (entry.title ?? entry.text ?? "");
           // textOptions: 각 항목의 직접 string 값 전부 검사 (1단계, 재귀 금지)
