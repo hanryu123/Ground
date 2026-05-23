@@ -263,7 +263,6 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           if (ha === "0" || ha === 0) battingSide = "home";
           else if (ha === "1" || ha === 1) battingSide = "away";
           else battingSide = resolveInningSide(json); // inningSub 등 fallback (1=away/초, 2=home/말)
-          else battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
           const inningLabel = inning != null && halfLabel ? `${inning}회 ${halfLabel}` : null;
