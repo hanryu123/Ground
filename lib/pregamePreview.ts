@@ -203,6 +203,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 - 유치한 반복 표현 금지
 - "먹히다/먹힌다" 절대 금지
 - 스코어·경기 결과 추론 금지 (경기 전이므로)
+- 특정 날짜·특정 스코어(예: "14:0", "지난 화요일") 직접 언급 금지 — 최근 흐름(폼) 맥락으로만 활용
 
 ⚾ 야구 용어 절대 해석 규칙:
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
@@ -214,8 +215,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 상대:${opp}
 경기:${input.date} ${input.game.time} ${input.game.stadium}
 우리 선발:${starter}
-최근 5경기 흐름:${recent.form}
-최근 스코어:${recent.scores.join(" / ") || "없음"}
+최근 5경기 흐름(W=승/L=패/D=무):${recent.form}
 프리뷰/뉴스 컨텍스트:${newsBlock}`;
 
   const callLlm = async (timeoutMs: number) => {
