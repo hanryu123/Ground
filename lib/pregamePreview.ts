@@ -153,12 +153,12 @@ function buildFallback(input: PregamePreviewInput): PregamePreviewOutput {
   const opp = findTeam(input.opponentTeamId).short;
   const recent = buildRecentFormSummary(input.recentGames, input.teamId);
   return {
-    title: "🔥 오늘의 매운맛 관전 포인트",
+    title: "🎙️ 오늘의 캐스터 관전 포인트",
     lines: [
-      `${team} 최근 5경기 흐름 ${recent.form}. 초반 이닝부터 승부 걸어야 산다.`,
-      `오늘 선발 ${input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher}, 최소 6이닝 먹어줘야 한다.`,
-      `${opp} 상대로 ${input.game.time} ${input.game.stadium || "원정"}에서 시작. 초반에 점수 못 내면 답답해진다.`,
-      `한 줄 결론: 오늘은 불펜 가기 전에 타선이 먼저 터뜨려야 한다.`,
+      `${team} 최근 5경기 흐름 ${recent.form}입니다. 초반 이닝부터 기선 제압이 필요합니다.`,
+      `오늘 선발 ${input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher} 투수, 최소 6이닝은 책임져줘야 합니다.`,
+      `${opp} 상대로 ${input.game.time} 시작입니다. 초반에 점수를 내지 못하면 경기가 굉장히 답답해집니다.`,
+      `오늘은 타선이 먼저 터뜨려야 합니다. ${team}, 충분히 할 수 있습니다!`,
     ].map((line) => clip(line)),
     context: {
       recentForm: recent.form,
@@ -191,14 +191,24 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
   const newsBlock = input.newsContext.slice(0, 5).join(" | ") || "없음";
   const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
 
-  const system = `너는 ${team} 극성팬이자 냉철한 전력 분석관이다.
-최근 흐름과 결장/이슈 컨텍스트를 짚고 오늘 이기려면 뭘 해야 하는지 매운맛으로 요약한다.
+  const system = `너는 KBO 베테랑 야구 캐스터야. 중계석에 앉아 있지만 속마음은 ${team} 극성팬이야.
+해설은 반드시 존댓말(-습니다, -네요, -죠, -합니다)로 하되, ${team} 편파적으로 써줘.
+우리 팀 강점은 자신감 넘치게 포장하고, 상대 약점은 날카롭게 찔러라.
 반드시 JSON만 출력:
-{"title":"🔥 오늘의 매운맛 관전 포인트","lines":["문장1","문장2","문장3","문장4"]}
+{"title":"🎙️ 오늘의 캐스터 관전 포인트","lines":["문장1","문장2","문장3","문장4"]}
+
 규칙:
-- lines는 3~4개
-- 각 line 24~82자
-- 유치한 반복 표현 금지`;
+- lines는 3~4개, 각 line 24~82자
+- 반드시 존댓말 문체 (-습니다/-네요/-죠/-합니다)
+- 유치한 반복 표현 금지
+- "먹히다/먹힌다" 절대 금지
+- 스코어·경기 결과 추론 금지 (경기 전이므로)
+
+⚾ 야구 용어 절대 해석 규칙:
+- 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
+- 볼넷: 볼 4개로 출루 (투수 실책)
+- 병살타: 타구 하나로 2명 아웃 (공격팀 최악의 실패)
+- [N회초/말]은 진행 중 이닝 — "N회 남았다"로 해석 금지`;
 
   const user = `팀:${team}
 상대:${opp}
