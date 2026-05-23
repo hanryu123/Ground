@@ -253,12 +253,13 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const seqId = seqNo != null ? String(seqNo) : mainText.slice(0, 60);
           const eventKey = `seq:${seqId}`;
 
-          // 이닝 번호: entry.inn 우선
-          const inning: number | null =
-            typeof entry.inn === "number" ? entry.inn
-            : typeof entry.inning === "number" ? entry.inning : null;
+          // 이닝 번호: number or string 모두 처리
+          const rawInn = entry.inn ?? entry.inning;
+          const inning: number | null = typeof rawInn === "number" ? rawInn
+            : typeof rawInn === "string" ? (parseInt(rawInn) || null)
+            : null;
 
-          // 초/말 결정 — homeOrAway 는 게임마다 기준이 달라 사용 금지
+          // 초/말 결정 — 4단계 우선순위
           // 1순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
           const textInningMatch = fullText.match(/\d{1,2}회\s*(초|말)/);
           let battingSide: "home" | "away" | null = textInningMatch
@@ -272,7 +273,14 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             else if (sub === 2 || sub === "2") battingSide = "home";
           }
 
-          // 3순위: 상위 JSON의 inningSub 등 (resolveInningSide)
+          // 3순위: entry.homeOrAway (원래 Naver 표준: 0=초/top, 1=말/bottom)
+          if (battingSide == null) {
+            const ha = entry.homeOrAway;
+            if (ha === 0 || ha === "0") battingSide = "away";
+            else if (ha === 1 || ha === "1") battingSide = "home";
+          }
+
+          // 4순위: 상위 JSON inningSub 등
           if (battingSide == null) battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
@@ -535,11 +543,11 @@ export async function GET(req: Request) {
           }
           const llmBody = await llmPromise;
 
-          // header: [N회] 내팀 S:O 상대팀 |
-          const inning = relay.inningLabel ?? "";
+          // header: [N회초] 내팀 S:O 상대팀 |
+          const inningPart = relay.inningLabel ? `[${relay.inningLabel}] ` : "";
           const scoreHeader = myCurrentScore != null && oppCurrentScore != null
-            ? `[${inning}] ${myTeamShort} ${myCurrentScore}:${oppCurrentScore} ${oppTeamShort} | `
-            : inning ? `[${inning}] ` : "";
+            ? `${inningPart}${myTeamShort} ${myCurrentScore}:${oppCurrentScore} ${oppTeamShort} | `
+            : inningPart;
 
           // Claude가 헤더를 직접 붙인 경우 모든 변형 제거 (이모지·볼드·공백 허용)
           const cleanBody = stripLlmHeaderPrefix(llmBody);

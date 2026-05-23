@@ -652,7 +652,13 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
         ? `삼진 아웃 — 우리 팀 타자 ${name}이(가) 삼진 당함 (공격 실패, 아쉬운 상황)`
         : `삼진 아웃 — 우리 팀 타자가 삼진 당함 (공격 실패, 아쉬운 상황)`;
     } else {
-      eventDesc = name ? `삼진 발생 (선수: ${name})` : `삼진 발생`;
+      // isPitching 불명확 — 스코어로 방향 추론
+      const myScore = input.myCurrentScore ?? 0;
+      const oppScore = input.oppCurrentScore ?? 0;
+      const winning = myScore > oppScore;
+      eventDesc = name
+        ? `삼진 발생 (선수: ${name}) — ${winning ? "우리가 이기고 있는 상황, 기세 유지 관점" : "우리가 지거나 동점인 상황, 절박한 관점"}으로 써줘`
+        : `삼진 발생 — ${winning ? "우리가 이기고 있는 상황, 기세 유지 관점" : "우리가 지거나 동점인 상황, 절박한 관점"}으로 써줘`;
     }
   } else if (input.kind === "homeRun") {
     if (input.isPitching === false) {
