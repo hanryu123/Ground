@@ -3,7 +3,7 @@ import { fetchKboSchedule, todayKstDate } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
-import { generateLiveEventCopy } from "@/lib/pushLlm";
+import { generateLiveEventCopy, stripLlmHeaderPrefix } from "@/lib/pushLlm";
 import { isKboGameHour } from "@/lib/cronGuard";
 import { prisma } from "@/lib/prisma";
 
@@ -530,11 +530,8 @@ export async function GET(req: Request) {
             ? `[${inning}] ${myTeamShort} ${myCurrentScore}:${oppCurrentScore} ${oppTeamShort} | `
             : inning ? `[${inning}] ` : "";
 
-          // Claude가 헤더를 직접 붙인 경우 제거 (대괄호 유무 모두)
-          let cleanBody = llmBody;
-          cleanBody = cleanBody.replace(/^\[[^\]]+\]\s*/, "");
-          cleanBody = cleanBody.replace(/^\d{1,2}회[초말]?\s*\|\s*/, "");
-          cleanBody = cleanBody.replace(/^[가-힣A-Za-z]{1,6}\s+\d{1,2}:\d{1,2}\s+[가-힣A-Za-z]{1,6}\s*\|\s*/, "");
+          // Claude가 헤더를 직접 붙인 경우 모든 변형 제거 (이모지·볼드·공백 허용)
+          const cleanBody = stripLlmHeaderPrefix(llmBody);
           const finalBody = `${scoreHeader}${cleanBody}`;
 
           sentThisRun.add(runKey);
