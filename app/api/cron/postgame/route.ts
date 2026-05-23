@@ -281,11 +281,19 @@ export async function GET(req: Request) {
     });
     generated += 1;
 
+    // 타이틀 고정 포맷: [경기 종료] 우리팀 N vs 상대팀 M 승/패/무
+    const myTeamShort  = findTeam(job.teamId).short;
+    const oppTeamShort = findTeam(job.opponentTeamId).short;
+    const resultLabel  = job.myScore > job.oppScore ? "승" : job.myScore < job.oppScore ? "패" : "무";
+    const fixedTitle   = `[경기 종료] ${myTeamShort} ${job.myScore} vs ${oppTeamShort} ${job.oppScore} ${resultLabel}`;
+    // 본문: LLM 한줄평 (headline + content 합산)
+    const pushBody     = report.content;
+
     const push = await sendTeamTopicNotification({
       teamId: job.teamId,
       topicKey: "postGame",
-      title: report.headline,
-      body: report.content,
+      title: fixedTitle,
+      body: pushBody,
       url: "/today",
       payload: {
         kind: "postgame",
