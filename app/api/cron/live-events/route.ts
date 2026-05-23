@@ -256,12 +256,13 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           const inning = typeof entry.inn === "number" ? entry.inn
             : typeof entry.inning === "number" ? entry.inning : null;
 
-          // homeOrAway: "0"=초(top)=away batting, "1"=말(bottom)=home batting
-          const ha = entry.homeOrAway ?? entry.inningSub;
+          // Naver relay API: homeOrAway=0 = 홈팀(말/bottom), homeOrAway=1 = 원정팀(초/top)
+          // inningSub(fallback): "1"=초(top/away), "2"=말(bottom/home) — 별도 필드, 값 체계 다름
+          const ha = entry.homeOrAway;
           let battingSide: "home" | "away" | null = null;
-          if (ha === "0" || ha === 0) battingSide = "away";
-          else if (ha === "1" || ha === 1) battingSide = "home";
-          else if (ha === "2" || ha === 2) battingSide = "home";
+          if (ha === "0" || ha === 0) battingSide = "home";
+          else if (ha === "1" || ha === 1) battingSide = "away";
+          else battingSide = resolveInningSide(json); // inningSub 등 fallback (1=away/초, 2=home/말)
           else battingSide = resolveInningSide(json);
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;

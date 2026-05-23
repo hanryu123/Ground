@@ -86,7 +86,8 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     const homeOrAway = last["homeOrAway"];
     const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
 
-    const halfLabel = homeOrAway === 0 || homeOrAway === "0" ? "초" : homeOrAway === 1 || homeOrAway === "1" ? "말" : "";
+    // Naver relay API: homeOrAway=0 = 홈팀(말/bottom), homeOrAway=1 = 원정팀(초/top)
+    const halfLabel = homeOrAway === 0 || homeOrAway === "0" ? "말" : homeOrAway === 1 || homeOrAway === "1" ? "초" : "";
     const inningLabel = inn != null ? `${inn}회${halfLabel}` : null;
 
     const plays = (textOptions ?? [])
