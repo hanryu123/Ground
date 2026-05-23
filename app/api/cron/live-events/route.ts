@@ -529,8 +529,13 @@ export async function GET(req: Request) {
           const scoreHeader = myCurrentScore != null && oppCurrentScore != null
             ? `[${inning}] ${myTeamShort} ${myCurrentScore}:${oppCurrentScore} ${oppTeamShort} | `
             : inning ? `[${inning}] ` : "";
-          // Claude가 이미 헤더 포함해서 뱉은 경우 중복 방지
-          const finalBody = llmBody.startsWith("[") ? llmBody : `${scoreHeader}${llmBody}`;
+
+          // Claude가 헤더를 직접 붙인 경우 제거 (대괄호 유무 모두)
+          let cleanBody = llmBody;
+          cleanBody = cleanBody.replace(/^\[[^\]]+\]\s*/, "");
+          cleanBody = cleanBody.replace(/^\d{1,2}회[초말]?\s*\|\s*/, "");
+          cleanBody = cleanBody.replace(/^[가-힣A-Za-z]{1,6}\s+\d{1,2}:\d{1,2}\s+[가-힣A-Za-z]{1,6}\s*\|\s*/, "");
+          const finalBody = `${scoreHeader}${cleanBody}`;
 
           sentThisRun.add(runKey);
           const result = await sendTeamTopicNotification({
