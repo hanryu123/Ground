@@ -272,10 +272,15 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             : typeof rawInn === "string" ? (parseInt(rawInn) || null)
             : null;
 
-          // 초/말 결정 — 홈팀=말, 원정팀=초 (기본 야구 규칙)
-          // 1순위: 상위 JSON의 inningSub (게임 전체 상태 — 가장 신뢰도 높음)
-          //   inningSub 1=초(원정공격), 2=말(홈공격)
-          let battingSide: "home" | "away" | null = resolveInningSide(json);
+          // ⚾ 초/말 결정 — 홈팀=말(Bottom), 원정팀=초(Top)
+          // 1순위: entry.inningSub — 해당 엔트리 고유값 (inningSub 1=초=원정공격, 2=말=홈공격)
+          //   전체 JSON 스캔은 1회초 엔트리의 값을 게임 내내 반환하는 버그가 있으므로 절대 사용 금지.
+          let battingSide: "home" | "away" | null = null;
+          {
+            const sub = entry.inningSub;
+            if (sub === 1 || sub === "1") battingSide = "away";   // 초: 원정팀 공격
+            else if (sub === 2 || sub === "2") battingSide = "home";  // 말: 홈팀 공격
+          }
 
           // 2순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
           if (battingSide == null) {
@@ -283,11 +288,9 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             if (textInningMatch) battingSide = textInningMatch[1] === "초" ? "away" : "home";
           }
 
-          // 3순위: entry.inningSub
+          // 3순위: 상위 JSON 최상위 필드 (relay 배열 내 값은 이미 entry.inningSub로 처리)
           if (battingSide == null) {
-            const sub = entry.inningSub;
-            if (sub === 1 || sub === "1") battingSide = "away";
-            else if (sub === 2 || sub === "2") battingSide = "home";
+            battingSide = resolveInningSide(json);
           }
 
           const halfLabel = battingSide === "away" ? "초" : battingSide === "home" ? "말" : null;
@@ -356,18 +359,8 @@ function resolveInningSide(json: Record<string, unknown>): "home" | "away" | nul
     if (v === "BOTTOM" || v === "말") return "home";
   }
 
-  // 마지막 수단: JSON 문자열에서 패턴 추출
-  const text = JSON.stringify(json);
-  // "inningSub":"1" 또는 "currentInningSub":1 등
-  const m1 = text.match(/"(?:inningSub|currentInningSub|halfInning)"\s*:\s*"?([12])"?/);
-  if (m1) return m1[1] === "1" ? "away" : "home";
-  // "half":"TOP"/"BOTTOM"
-  const m2 = text.match(/"(?:half|currentHalf|inningHalf|halfText)"\s*:\s*"(TOP|BOTTOM|초|말)"/i);
-  if (m2) {
-    const v = m2[1].toUpperCase();
-    if (v === "TOP"    || v === "초") return "away";
-    if (v === "BOTTOM" || v === "말") return "home";
-  }
+  // JSON 문자열 전체 스캔은 금지: relay 배열 전체를 훑으면 1회초 엔트리의 inningSub=1을
+  // 항상 먼저 매칭해 게임 내내 "초"를 반환하는 치명적 버그가 발생함.
   return null;
 }
 

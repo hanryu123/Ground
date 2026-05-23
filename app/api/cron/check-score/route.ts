@@ -71,6 +71,8 @@ const SCORE_NAVER_UA =
 type RelayParseResult = {
   text: string;
   inningLabel: string | null;
+  /** 이닝 번호만 분리해서 노출 — 호출부에서 초/말을 덮어쓸 수 있도록 */
+  inn: number | null;
 };
 
 function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResult | null {
@@ -127,7 +129,7 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     // 스코어는 buildUserPrompt에서 팬 관점으로 별도 전달 — 여기선 제외해야 Claude가 혼동하지 않음
     const parts = [inningLabel, title, playDesc].filter(Boolean);
     const text = parts.join(" ");
-    return text.length > 5 ? { text, inningLabel } : null;
+    return text.length > 5 ? { text, inningLabel, inn } : null;
   } catch {
     return null;
   }
@@ -368,10 +370,32 @@ export async function GET(req: Request) {
         if (dedupe.count === 0) continue;
 
         const relayResult = fastMode ? null : await fetchLatestPlayText(game.externalId);
-        // relay 실패 시에도 이닝 레이블을 최대한 보존 — Claude 프롬프트에서 [N회] 태그 생성에 필수
-        const inningPrefix = relayResult?.inningLabel ? `${relayResult.inningLabel} ` : "";
-        const latestPlayText = relayResult?.text ??
-          `${inningPrefix}스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
+
+        // ⚾ 이닝 초/말: 득점한 팀으로 결정 — 가장 신뢰도 높은 방법
+        //   홈팀 득점 → 홈팀이 공격 중 → 말(Bottom)
+        //   원정팀 득점 → 원정팀이 공격 중 → 초(Top)
+        const scoringHalf: "초" | "말" | null =
+          homeDelta > 0 ? "말" :
+          awayDelta > 0 ? "초" :
+          null;
+        const inningNum = relayResult?.inn ?? null;
+        // 득점 정보로 초/말을 확정하고, 이닝 번호는 relay에서 가져옴
+        const correctedLabel: string | null =
+          inningNum != null && scoringHalf
+            ? `${inningNum}회${scoringHalf}`
+            : relayResult?.inningLabel ?? null;
+
+        // latestPlayText 앞의 이닝 레이블을 교정된 값으로 교체
+        let latestPlayText: string;
+        if (relayResult?.text) {
+          const origLabel = relayResult.inningLabel;
+          latestPlayText = origLabel && correctedLabel && relayResult.text.startsWith(origLabel)
+            ? correctedLabel + relayResult.text.slice(origLabel.length)
+            : relayResult.text;
+        } else {
+          const inningPrefix = correctedLabel ? `${correctedLabel} ` : "";
+          latestPlayText = `${inningPrefix}스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
+        }
 
         const result = await dispatchScoreAlertsForGame({
           game,
