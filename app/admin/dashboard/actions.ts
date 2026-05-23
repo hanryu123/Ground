@@ -108,14 +108,19 @@ export async function cleanInactiveUsers(includeStale: boolean): Promise<{ ok: b
   }
 }
 
-export async function forceCron(path: "preview" | "postgame" | "game-start" | "check-score" | "live-events" | "check-highlight"): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+export async function forceCron(
+  path: "preview" | "postgame" | "game-start" | "check-score" | "live-events" | "check-highlight",
+  teamId?: string,
+): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const cronSecret = process.env.CRON_SECRET;
   const headersList = await headers();
   const host = headersList.get("host") ?? "ground-alpha.vercel.app";
   const proto = host.includes("localhost") ? "http" : "https";
   const origin = `${proto}://${host}`;
 
-  const url = `${origin}/api/cron/${path}?force=1`;
+  const qs = new URLSearchParams({ force: "1" });
+  if (teamId) qs.set("teamId", teamId);
+  const url = `${origin}/api/cron/${path}?${qs.toString()}`;
   const res = await fetch(url, {
     headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {},
     cache: "no-store",

@@ -47,17 +47,26 @@ export async function GET(req: Request) {
   if (shouldSkipCronInAlpha(url)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
 
   const now = new Date();
+  const force = url.searchParams.get("force") === "1";
+  const teamId = url.searchParams.get("teamId") ?? undefined;
   const minEndedAt = new Date(now.getTime() - 30 * 60 * 1000);
   const highlightPollThreshold = new Date(now.getTime() - 5 * 60 * 1000);
+
+  const teamFilter = teamId
+    ? { OR: [{ homeTeam: teamId }, { awayTeam: teamId }] }
+    : {};
+
   const candidates = await prisma.game.findMany({
     where: {
       status: "RESULT",
       endedAt: { lte: minEndedAt },
-      highlightNotifiedAt: null,
+      // force+teamId: 이미 보낸 게임도 재발송 허용 (특정 팀 재전송용)
+      ...(force && teamId ? {} : { highlightNotifiedAt: null }),
       OR: [
         { lastHighlightCheckedAt: null },
         { lastHighlightCheckedAt: { lte: highlightPollThreshold } },
       ],
+      ...teamFilter,
     },
     orderBy: [{ endedAt: "desc" }],
     take: 16,
@@ -81,10 +90,15 @@ export async function GET(req: Request) {
     if (!hit) continue;
     matched += 1;
 
-    for (const teamId of [game.homeTeam, game.awayTeam]) {
+    // teamId가 지정된 경우 해당 팀에만 발송
+    const teamsToNotify = teamId
+      ? [game.homeTeam, game.awayTeam].filter((t) => t === teamId)
+      : [game.homeTeam, game.awayTeam];
+
+    for (const notifyTeamId of teamsToNotify) {
       const lock = await markDispatchOnce({
         alertKind: "highlight",
-        teamScope: teamId,
+        teamScope: notifyTeamId,
         eventKey: `${game.externalId}:${hit.videoId}`,
         gameExternalId: game.externalId,
       });
@@ -94,10 +108,10 @@ export async function GET(req: Request) {
         awayTeam: game.awayTeam,
         homeScore: game.homeScore,
         awayScore: game.awayScore,
-        fanTeamId: teamId,
+        fanTeamId: notifyTeamId,
       });
       const result = await sendTeamTopicNotification({
-        teamId,
+        teamId: notifyTeamId,
         topicKey: "highlight",
         title: copy.title,
         body: copy.body,
