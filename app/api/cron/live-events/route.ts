@@ -222,9 +222,14 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
         for (const entry of newEntries) {
           // title 우선, text fallback — 이벤트 감지는 얕은 필드만 사용 (오탐 방지)
           const mainText = (entry.title ?? entry.text ?? "");
-          // textOptions는 playText / text / title 1단계만 (재귀 금지 — 이전 플레이 기록 오탐 방지)
+          // textOptions: 각 항목의 직접 string 값 전부 검사 (1단계, 재귀 금지)
+          // playText/text/title 외에 result, description 등 다른 필드도 커버
           const optionTexts = (entry.textOptions ?? [])
-            .map((o) => [o.playText, o.text, o.title].filter(Boolean).join(" "))
+            .map((o) =>
+              Object.values(o)
+                .filter((v): v is string => typeof v === "string")
+                .join(" ")
+            )
             .join(" ");
           const fullText = `${mainText} ${optionTexts}`;
 
