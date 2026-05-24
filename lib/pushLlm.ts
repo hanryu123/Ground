@@ -718,9 +718,15 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
     }
   } else if (input.kind === "homeRun") {
     if (input.isPitching === false) {
-      eventDesc = name ? `홈런 — 우리 팀 타자 ${name}이(가) 홈런 침 (대박!)` : `홈런 — 우리 팀 타자가 홈런 침 (대박!)`;
+      // 우리 팀 타자 홈런: 선수 이름을 반드시 첫 단어로 시작
+      eventDesc = name
+        ? `홈런 — 우리 팀 타자 ${name}이(가) 홈런을 쳤음. ⚠️ 반드시 "${name}" 이름으로 시작해서 흥분된 어조로 작성. 예: "${name}!! 담장을 넘었습니다!"`
+        : `홈런 — 우리 팀 타자가 홈런을 침 (대박! 흥분 최고조)`;
     } else {
-      eventDesc = name ? `홈런 허용 — 상대 타자 ${name}에게 홈런 맞음 (위기)` : `홈런 허용 — 상대 팀 타자에게 홈런 맞음 (위기)`;
+      // 상대 타자 홈런 허용
+      eventDesc = name
+        ? `홈런 허용 — 상대 타자 ${name}에게 홈런 맞음 (위기). ⚠️ 반드시 "${name}" 이름을 언급하며 아쉬움·위기감 표현.`
+        : `홈런 허용 — 상대 팀 타자에게 홈런 맞음 (위기, 아쉬운 상황)`;
     }
   } else {
     if (input.isPitching === true) {
@@ -731,7 +737,9 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
   }
 
   const nameHint = name
-    ? `\n선수 이름: ${name} — 문구에 이름을 자연스럽게 넣어줘`
+    ? input.kind === "homeRun"
+      ? `\n선수 이름: ${name} — 홈런 알림이므로 이름을 반드시 포함시켜줘 (예: "${name}의 홈런!" 또는 "${name}이(가) 담장을...")`
+      : `\n선수 이름: ${name} — 문구에 이름을 자연스럽게 넣어줘`
     : "";
 
   // 탈삼진(수비 중) 상황이면 세부 가이드 주입

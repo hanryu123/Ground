@@ -374,26 +374,33 @@ function buildLiveEventCopy(
   oppTeamShort: string,
   isPitching: boolean | null,
   inningLabel: string | null,
+  playerName?: string | null,
 ): { title: string; body: string } {
   const inning = inningLabel ? `[${inningLabel}] ` : "";
+  const name = playerName ?? null;
 
   if (kind === "homeRun") {
     if (isPitching === false) {
-      return {
-        title: "💥 홈런!",
-        body: `${inning}${myTeamShort} 홈런 작렬!! 점수 추가됐다!`,
-      };
+      // 우리 팀 타자가 홈런
+      const title = name ? `💥 ${name} 홈런!` : `💥 홈런!`;
+      const body = name
+        ? `${inning}${name}!! ${myTeamShort} 홈런 작렬! 점수 추가됐습니다!`
+        : `${inning}${myTeamShort} 홈런 작렬!! 점수 추가됐습니다!`;
+      return { title, body };
     }
     if (isPitching === true) {
-      return {
-        title: "💥 홈런 허용",
-        body: `${inning}${myTeamShort} 홈런 맞았다... 빨리 따라잡자.`,
-      };
+      // 상대 타자가 홈런 (우리 투수가 맞음)
+      const title = name ? `💥 ${name} 홈런 허용` : `💥 홈런 허용`;
+      const body = name
+        ? `${inning}${oppTeamShort} ${name}에게 홈런 맞았습니다... 빨리 따라잡아야 합니다!`
+        : `${inning}${myTeamShort} 홈런 맞았습니다... 빨리 따라잡아야 합니다!`;
+      return { title, body };
     }
-    return {
-      title: "💥 홈런 발생",
-      body: `${inning}${myTeamShort}-${oppTeamShort}전 홈런 발생.`,
-    };
+    const title = name ? `💥 ${name} 홈런` : `💥 홈런 발생`;
+    const body = name
+      ? `${inning}${name} 홈런! ${myTeamShort}-${oppTeamShort}전 경기 흐름이 바뀝니다!`
+      : `${inning}${myTeamShort}-${oppTeamShort}전 홈런 발생.`;
+    return { title, body };
   }
 
   if (kind === "strikeout") {
@@ -515,7 +522,7 @@ export async function GET(req: Request) {
 
           const myTeamShort  = findTeam(teamId).short;
           const oppTeamShort = findTeam(opponentTeamId).short;
-          const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel);
+          const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName);
 
           const myCurrentScore = teamSide === "home"
             ? game.liveScore?.homeScore
