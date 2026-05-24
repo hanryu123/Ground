@@ -125,6 +125,7 @@ function normalizeForSimilarity(text: string): string {
     .replace(/^\[[^\]]+\]\s*/, "")                                  // [N회초] 제거
     .replace(/^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+\s*\|\s*/, "") // 팀 X:Y 팀 | 제거
     .replace(/^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+[.\s]/, "")   // 팀 X:Y 팀. 제거 (buildCreativeFallback 형식)
+    .replace(/\d+/g, "N")                                          // 숫자 통일 ("3점","4점" → 같은 토큰)
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .toLowerCase()
@@ -151,7 +152,7 @@ function isNearDuplicate(candidate: string, recentBodies: string[]): boolean {
     if (!normalizedBody) return false;
     if (normalizedBody === normalizedCandidate) return true;
     const overlap = calcTokenOverlapRatio(normalizedCandidate, normalizedBody);
-    return overlap >= 0.80;
+    return overlap >= 0.60;  // 0.80 → 0.60: 숫자 통일 후 구조적 유사성도 잡음
   });
 }
 
@@ -455,11 +456,21 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
   const emotionState = resolveEmotionState(input, phase);
   const emotionGuide = buildEmotionGuide(emotionState, input, favoriteTeam);
 
+  // 헤더([N회초] 팀 X:Y 팀 |) 제거 후 본문만 Claude에 전달 — 구조적 반복 방지에 집중
+  const strippedRecent = recentBodies
+    .slice(0, 6)
+    .map((line) =>
+      line
+        .replace(/^\[[^\]]+\]\s*/, "")
+        .replace(/^[가-힣A-Za-z]+\s+\d+:\d+\s+[가-힣A-Za-z]+\s*\|\s*/, "")
+        .trim()
+        .slice(0, 40)
+    )
+    .filter(Boolean);
   const avoid =
-    recentBodies.length > 0
-      ? `\n\n⛔ 아래 표현과 비슷한 문구는 절대 재사용 금지:\n${recentBodies
-          .slice(0, 5)
-          .map((line) => `"${clipForPush(line)}"`)
+    strippedRecent.length > 0
+      ? `\n\n⛔ 아래 문구와 비슷한 시작·구조·표현 절대 금지 (완전히 다른 방식으로):\n${strippedRecent
+          .map((line) => `"${line}"`)
           .join("\n")}`
       : "";
 
