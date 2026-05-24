@@ -37,6 +37,11 @@ type RelayInfo = {
   eventKinds: Array<LiveEventKind>;
   /** 현재 공격 중인 팀 측 ("home" | "away" | null) */
   battingSide: "home" | "away" | null;
+  /**
+   * 텍스트 기반 삼진 방향 ("pitching"=투수팀 성공, "batting"=타자팀 실패, null=불명)
+   * battingSide 판별 실패 시 최후 수단으로 isPitching 결정에 사용
+   */
+  strikeoutDirection: "pitching" | "batting" | null;
   /** 현재 이닝 번호 (null=불명) */
   inning: number | null;
   /** 이닝 초/말 레이블 (예: "7회 초") */
@@ -47,6 +52,20 @@ type RelayInfo = {
   /** 삼진 세부 상황 (strikeout 이벤트일 때만 의미 있음) */
   strikeoutDetail: StrikeoutDetail | null;
 };
+
+/**
+ * 릴레이 텍스트에서 삼진이 '투수 성공'인지 '타자 실패'인지 판별.
+ * - "탈삼진", "삼진 아웃시", "삼진으로 처리", "K!" 등 → 투수 관점 (pitching)
+ * - "삼진 아웃", "삼진을 당", "헛스윙 삼진", "루킹 삼진" 단독 → 타자 관점 (batting)
+ * - 판별 불가 → null
+ */
+function detectStrikeoutDirection(fullText: string): "pitching" | "batting" | null {
+  // 투수 성공 시그널 (우선순위 높음)
+  if (/탈삼진|삼진\s*아웃시키|삼진으로\s*처리|삼진\s*잡|K!|삼진\s*획득/.test(fullText)) return "pitching";
+  // 타자 실패 시그널
+  if (/삼진\s*아웃|삼진을?\s*당|헛스윙\s*삼진|루킹\s*삼진|낫\s*아웃/.test(fullText)) return "batting";
+  return null;
+}
 
 /** 릴레이 텍스트에서 삼진 세부 상황 파싱 */
 function extractStrikeoutDetail(fullText: string): StrikeoutDetail {
@@ -301,7 +320,12 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             ? extractStrikeoutDetail(fullText)
             : null;
 
-          results.push({ eventKinds, battingSide, inning, inningLabel, eventKey, playerName, strikeoutDetail });
+          // 삼진 방향: 텍스트에서 직접 투수성공/타자실패 판별
+          const strikeoutDirection = eventKinds.includes("strikeout")
+            ? detectStrikeoutDirection(fullText)
+            : null;
+
+          results.push({ eventKinds, battingSide, strikeoutDirection, inning, inningLabel, eventKey, playerName, strikeoutDetail });
         }
 
         if (results.length > 0) return { relays: results, maxSeqNo, debugStatuses };
@@ -519,7 +543,21 @@ export async function GET(req: Request) {
 
           let isPitching: boolean | null = null;
           if (relay.battingSide !== null) {
+            // 1순위: battingSide(이닝 초/말 기반) — 가장 정확
             isPitching = relay.battingSide !== teamSide;
+          } else if (kind === "strikeout" && relay.strikeoutDirection !== null) {
+            // 2순위: 텍스트 직접 판별 — "탈삼진"이면 투수팀 성공, "삼진 아웃"이면 타자팀 실패
+            // strikeoutDirection="pitching"이면 투수팀이 성공 → 반반 홈/원정 모름이므로
+            // 이 경기의 두 팀 모두에 대해 각각 독립 판단 불가.
+            // 대신: 현재 팀이 어느 팀인지는 알 수 없지만, 스코어로 투수팀 추론
+            // (이기고 있으면 투수가 잘 하는 중 → pitching=true, 지면 pitching=false)
+            const myS = myCurrentScore ?? 0;
+            const oppS = oppCurrentScore ?? 0;
+            if (relay.strikeoutDirection === "pitching") {
+              isPitching = myS >= oppS; // 이기거나 동점 → 우리가 투수팀일 가능성
+            } else {
+              isPitching = myS < oppS;  // 지고 있으면 → 우리 타자가 삼진 당한 것
+            }
           }
 
           const myTeamShort  = findTeam(teamId).short;
