@@ -155,10 +155,10 @@ function buildFallback(input: PregamePreviewInput): PregamePreviewOutput {
   return {
     title: "🎙️ 오늘의 캐스터 관전 포인트",
     lines: [
-      `${team} 최근 5경기 흐름 ${recent.form}입니다. 초반 이닝부터 기선 제압이 필요합니다.`,
-      `오늘 선발 ${input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher} 투수, 최소 6이닝은 책임져줘야 합니다.`,
-      `${opp} 상대로 ${input.game.time} 시작입니다. 초반에 점수를 내지 못하면 경기가 굉장히 답답해집니다.`,
-      `오늘은 타선이 먼저 터뜨려야 합니다. ${team}, 충분히 할 수 있습니다!`,
+      `${team} 최근 5경기 흐름 ${recent.form}! 오늘도 이 기세 이어갑니다!`,
+      `오늘 선발 ${input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher} 투수, 오늘 기대가 큽니다!`,
+      `${opp} 상대로 ${input.game.time} 시작, ${team} 팬 여러분 오늘도 함께 응원합시다!`,
+      `타선도 불방망이 예열 완료! ${team}, 오늘 꼭 잡겠습니다!`,
     ].map((line) => clip(line)),
     context: {
       recentForm: recent.form,
@@ -202,6 +202,8 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 - 반드시 존댓말 문체 (-습니다/-네요/-죠/-합니다)
 - 유치한 반복 표현 금지
 - "먹히다/먹힌다" 절대 금지
+- 비관적·부정적 조건문 절대 금지: "~하지 못하면", "~못 할 경우", "~힘들어집니다", "~걱정됩니다", "~불안합니다" 류 표현 사용 금지
+- 불안감·걱정·압박감 조성 문구 금지: 오직 기대·흥분·자신감만
 - 스코어·경기 결과 추론 금지 (경기 전이므로)
 - 특정 날짜·특정 스코어(예: "14:0", "지난 화요일") 직접 언급 금지 — 최근 흐름(폼) 맥락으로만 활용
 
