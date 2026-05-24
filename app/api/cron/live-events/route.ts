@@ -370,21 +370,27 @@ function buildLiveEventCopy(
   isPitching: boolean | null,
   inningLabel: string | null,
   playerName?: string | null,
+  myScore?: number | null,
+  oppScore?: number | null,
 ): { title: string; body: string } {
   const inning = inningLabel ? `[${inningLabel}] ` : "";
   const name = playerName ?? null;
+  // isPitching 불명확 시 스코어로 방향 추론 (이기면 수비 성공 관점, 지면 공격 실패 관점)
+  const resolvedPitching: boolean | null =
+    isPitching !== null ? isPitching :
+    (myScore != null && oppScore != null)
+      ? myScore >= oppScore  // 이기거나 동점 → 수비 잘 하는 중 → 삼진은 호투로 해석
+      : null;
 
   if (kind === "homeRun") {
-    if (isPitching === false) {
-      // 우리 팀 타자가 홈런
+    if (resolvedPitching === false) {
       const title = name ? `💥 ${name} 홈런!` : `💥 홈런!`;
       const body = name
         ? `${inning}${name}!! ${myTeamShort} 홈런 작렬! 점수 추가됐습니다!`
         : `${inning}${myTeamShort} 홈런 작렬!! 점수 추가됐습니다!`;
       return { title, body };
     }
-    if (isPitching === true) {
-      // 상대 타자가 홈런 (우리 투수가 맞음)
+    if (resolvedPitching === true) {
       const title = name ? `💥 ${name} 홈런 허용` : `💥 홈런 허용`;
       const body = name
         ? `${inning}${oppTeamShort} ${name}에게 홈런 맞았습니다... 빨리 따라잡아야 합니다!`
@@ -399,35 +405,35 @@ function buildLiveEventCopy(
   }
 
   if (kind === "strikeout") {
-    if (isPitching === true) {
+    if (resolvedPitching === true) {
       return {
         title: "⚡ 탈삼진!",
-        body: `${inning}${myTeamShort} 투수 방금 삼진 잡았다! 이 기세 그대로 가자.`,
+        body: `${inning}${myTeamShort} 투수 삼진 잡았습니다! 이 기세 그대로 가야죠!`,
       };
     }
-    if (isPitching === false) {
+    if (resolvedPitching === false) {
       return {
         title: "⚡ 삼진 아웃",
-        body: `${inning}${myTeamShort} 타자 삼진 아웃... 다음 타자가 살려줘.`,
+        body: `${inning}${myTeamShort} 타자 삼진 아웃... 다음 타자가 살려줘야 합니다.`,
       };
     }
     return {
       title: "⚡ 라이브 경기 상황",
-      body: `${inning}${myTeamShort}-${oppTeamShort}전 탈삼진 발생.`,
+      body: `${inning}${myTeamShort}-${oppTeamShort}전 삼진 발생.`,
     };
   }
 
   // pitcherChange
-  if (isPitching === true) {
+  if (resolvedPitching === true) {
     return {
       title: "🎯 투수 교체",
-      body: `${inning}${myTeamShort} 투수 교체. 이 위기 막아야 한다.`,
+      body: `${inning}${myTeamShort} 투수 교체. 이 위기 막아야 합니다!`,
     };
   }
-  if (isPitching === false) {
+  if (resolvedPitching === false) {
     return {
       title: "🎯 상대 투수 교체",
-      body: `${inning}상대가 투수 교체했다. ${myTeamShort}, 지금이 찬스다!`,
+      body: `${inning}상대가 투수 교체했습니다. ${myTeamShort}, 지금이 찬스입니다!`,
     };
   }
   return {
@@ -518,7 +524,6 @@ export async function GET(req: Request) {
 
           const myTeamShort  = findTeam(teamId).short;
           const oppTeamShort = findTeam(opponentTeamId).short;
-          const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName);
 
           const myCurrentScore = teamSide === "home"
             ? game.liveScore?.homeScore
@@ -527,7 +532,11 @@ export async function GET(req: Request) {
             ? game.liveScore?.awayScore
             : game.liveScore?.homeScore;
 
-          const llmCacheKey = `${game.id}:${kind}:${relay.eventKey}:${String(isPitching)}`;
+          const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName, myCurrentScore, oppCurrentScore);
+
+          // teamId 포함 필수: isPitching이 null이면 두 팀이 같은 키를 공유해
+          // 한 팀용 응원 문구가 반대 팀에게도 그대로 전달되는 버그 방지
+          const llmCacheKey = `${game.id}:${kind}:${relay.eventKey}:${teamId}:${String(isPitching)}`;
           let llmPromise = llmCache.get(llmCacheKey);
           if (!llmPromise) {
             llmPromise = generateLiveEventCopy({
