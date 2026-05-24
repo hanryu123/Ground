@@ -200,23 +200,25 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           plays: (e.textOptions ?? []).map(o => o.playText).filter(Boolean).slice(0, 3),
         })));
       if (entries.length > 0) {
-        // 워터마크 이후 새 엔트리만 처리 — 절대 중복 없음
+        // 워터마크 이후 새 엔트리 필터
         // lastSeqNo=-1: 마이그레이션 미적용 fallback → slice(-5)로 안전 처리
         const newEntries = lastSeqNo < 0
           ? entries.slice(-5)
           : entries.filter((e) => {
               const seq = e.seqNo ?? e.no;
-              return seq != null && Number(seq) > lastSeqNo;
+              // seqNo가 없는 엔트리: text-based eventKey로 markDispatchOnce가 중복을 막으므로 포함시킴
+              // seqNo가 있는 엔트리: 워터마크 기준으로 필터
+              if (seq == null) return true;
+              return Number(seq) > lastSeqNo;
             });
-        // seqNo 없는 엔트리는 안전하게 제외 (중복 위험)
         const maxSeqNo = entries.reduce((max, e) => {
           const seq = Number(e.seqNo ?? e.no ?? 0);
-          return seq > max ? seq : max;
+          return Number.isFinite(seq) && seq > max ? seq : max;
         }, lastSeqNo);
         // 마지막 2개는 항상 재검사 (at-bat 진행 중 → 완료 시 새 textOption 추가되므로)
         const tailEntries = entries.slice(-2);
-        const seqSet = new Map(newEntries.map(e => [String(e.seqNo ?? e.no), e]));
-        for (const e of tailEntries) seqSet.set(String(e.seqNo ?? e.no), e);
+        const seqSet = new Map(newEntries.map(e => [String(e.seqNo ?? e.no ?? e.title ?? e.text), e]));
+        for (const e of tailEntries) seqSet.set(String(e.seqNo ?? e.no ?? e.title ?? e.text), e);
         const allToProcess = [...seqSet.values()];
 
         debugStatuses.push(`total:${entries.length} new:${newEntries.length} tail:${tailEntries.length} toProcess:${allToProcess.length} maxSeq:${maxSeqNo}`);
@@ -239,18 +241,11 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
         }
 
         for (const entry of allToProcess) {
-          // title 우선, text fallback — 이벤트 감지는 얕은 필드만 사용 (오탐 방지)
+          // title 우선, text fallback
           const mainText = (entry.title ?? entry.text ?? "");
-          // textOptions: 각 항목의 직접 string 값 전부 검사 (1단계, 재귀 금지)
-          // playText/text/title 외에 result, description 등 다른 필드도 커버
-          const optionTexts = (entry.textOptions ?? [])
-            .map((o) =>
-              Object.values(o)
-                .filter((v): v is string => typeof v === "string")
-                .join(" ")
-            )
-            .join(" ");
-          const fullText = `${mainText} ${optionTexts}`;
+          // extractAllStrings: 엔트리 전체를 재귀 탐색해 모든 문자열 수집
+          // → textOptions 내 중첩 객체에 숨어있는 삼진/홈런 텍스트도 잡음
+          const fullText = extractAllStrings(entry).join(" ");
 
           const eventKinds: Array<LiveEventKind> = [];
           if (/투수\s*교체|투수교체|구원등판/.test(fullText)) eventKinds.push("pitcherChange");
@@ -497,8 +492,9 @@ export async function GET(req: Request) {
     for (const relay of relays) {
       for (const kind of relay.eventKinds) {
         for (const teamId of [game.homeId, game.awayId]) {
-          // 이번 크론 실행 내 동일 이벤트 중복 방지
-          const runKey = `${game.id}:${teamId}:${kind}`;
+          // 이번 크론 실행 내 완전히 동일한 이벤트(같은 seqNo) 중복 방지
+          // eventKey 포함: 같은 경기라도 seqNo 다른 삼진 2개는 각각 통과 가능
+          const runKey = `${game.id}:${teamId}:${kind}:${relay.eventKey}`;
           if (sentThisRun.has(runKey)) { skipped += 1; continue; }
 
           const lock = await markDispatchOnce({
