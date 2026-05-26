@@ -9,7 +9,7 @@ export type MockScoreGame = {
   awayTeam: string;
   homeScore: number;
   awayScore: number;
-  status: "BEFORE" | "LIVE" | "RESULT" | "CANCEL";
+  status: "BEFORE" | "LIVE" | "SUSPENDED" | "RESULT" | "CANCEL";
   gameDate: Date;
 };
 

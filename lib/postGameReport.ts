@@ -35,6 +35,8 @@ export type PostGameFacts = {
   homeRun?: string | null;
   error?: string | null;
   notable?: string[];
+  /** 경기 도중 우천 중단이 있었던 경우 true */
+  wasRainSuspended?: boolean;
 };
 
 function compact(text: string): string {
@@ -465,12 +467,13 @@ export async function generatePostGameReport(input: {
 - 볼넷: 볼 4개로 출루 (투수 실책)
 - 병살타: 타구 하나로 2명 아웃 (공격팀 최악)
 - 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님`;
+  const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘.\n" : "";
   const prompt = `팀:${input.facts.myTeam}
 상대:${input.facts.oppTeam}
 ${locationLine}
 결과:${input.tone}
 스코어:${input.facts.myScore}:${input.facts.oppScore}
-안타:${input.facts.myHits ?? "unknown"}:${input.facts.oppHits ?? "unknown"}
+${rainLine}안타:${input.facts.myHits ?? "unknown"}:${input.facts.oppHits ?? "unknown"}
 실책:${input.facts.myErrors ?? "unknown"}:${input.facts.oppErrors ?? "unknown"}
 홈런:${input.facts.myHomeRuns ?? "unknown"}:${input.facts.oppHomeRuns ?? "unknown"}
 승리투수:${input.facts.winningPitcher ?? "정보없음"}

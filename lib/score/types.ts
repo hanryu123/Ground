@@ -2,7 +2,7 @@
  * `check-score` cron 파이프라인에서 공유하는 타입 정의.
  */
 
-export type LiveScoreStatus = "BEFORE" | "LIVE" | "RESULT" | "CANCEL";
+export type LiveScoreStatus = "BEFORE" | "LIVE" | "SUSPENDED" | "RESULT" | "CANCEL";
 export type CancelReason = "RAIN" | "OTHER";
 
 export type LiveScoreGame = {

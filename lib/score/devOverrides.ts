@@ -5,7 +5,7 @@ import type { CancelReason, LiveScoreGame, LiveScoreStatus } from "@/lib/score/t
 /**
  * alpha 환경 전용 디버그 훅.
  *   - `tick=N` : `lib/scoreMock` 의 스냅샷 사용 (실 네이버 API 우회)
- *   - `mockStatus=BEFORE|LIVE|RESULT|CANCEL` : 상태 강제
+ *   - `mockStatus=BEFORE|LIVE|SUSPENDED|RESULT|CANCEL` : 상태 강제
  *   - `mockCancelReason=RAIN|OTHER` : 취소 사유 강제
  *   - `mockGameId=...` : `markDispatchOnce` 충돌 회피용 외부 id 덮어쓰기
  *   - `bypassLock=1` : advisory lock 우회 (검증 전용)
@@ -33,6 +33,7 @@ function parseStatus(raw: string): LiveScoreStatus | null {
   switch (raw) {
     case "BEFORE":
     case "LIVE":
+    case "SUSPENDED":
     case "RESULT":
     case "CANCEL":
       return raw;

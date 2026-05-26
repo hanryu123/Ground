@@ -51,6 +51,13 @@ function normalizeStatus(code: string | undefined): LiveScoreStatus {
     case "FINISH":
     case "ENDED":
       return "RESULT";
+    case "DELAY":
+    case "DELAYED":
+    case "SUSPEND":
+    case "SUSPENDED":
+    case "INTERRUPTED":
+    case "RAIN_DELAY":
+      return "SUSPENDED";
     case "CANCEL":
     case "POSTPONED":
     case "CANCELLED":
@@ -93,6 +100,9 @@ function resolveStatus(raw: NaverScheduleGameRaw): LiveScoreStatus {
   if (raw.cancel === true) return "CANCEL";
   const info = (raw.statusInfo ?? "").toLowerCase();
   if (info.includes("취소") || info.includes("cancel") || info.includes("postponed")) return "CANCEL";
+  // 우천중단·강우중단·경기중단 — 취소 체크 이후에 감지 (취소 키워드가 없는 경우만)
+  if (base === "SUSPENDED") return "SUSPENDED";
+  if (info.includes("중단") || info.includes("delay") || info.includes("suspend")) return "SUSPENDED";
   return base;
 }
 

@@ -7,6 +7,7 @@ import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
 import { releaseCheckScoreLock, tryAcquireCheckScoreLock } from "@/lib/score/lock";
 import { loadMockSnapshotWithOverrides, readScoreCronDevOverrides } from "@/lib/score/devOverrides";
 import { sendCancelAlerts } from "@/lib/score/cancelAlert";
+import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
 import { authorizeCron } from "@/services/notificationService";
 import { isKboGameHour } from "@/lib/cronGuard";
@@ -37,6 +38,7 @@ type RouteSummary = {
   changed: number;
   llmCalls: number;
   cancelSent: number;
+  rainDelaySent: number;
   pushSent: number;
   disabled: number;
   inboxCreated: number;
@@ -196,6 +198,7 @@ export async function GET(req: Request) {
     changed: 0,
     llmCalls: 0,
     cancelSent: 0,
+    rainDelaySent: 0,
     pushSent: 0,
     disabled: 0,
     inboxCreated: 0,
@@ -306,6 +309,9 @@ export async function GET(req: Request) {
         const scoreChanged = homeDelta > 0 || awayDelta > 0;
         const justEnded = previous.status !== "RESULT" && game.status === "RESULT";
         const justCancelled = previous.status !== "CANCEL" && game.status === "CANCEL";
+        const justSuspended = previous.status !== "SUSPENDED" && game.status === "SUSPENDED";
+        // 경기 중 중단(SUSPENDED) 상태에서 취소로 전환된 경우
+        const wasMidGame = previous.status === "SUSPENDED" && justCancelled;
 
         if (justEnded) {
           await prisma.game.update({
@@ -339,8 +345,15 @@ export async function GET(req: Request) {
           }
         }
 
+        if (justSuspended) {
+          const rainDelaySummary = await sendRainDelayAlerts({ game, targetDate, origin: url.origin });
+          summary.rainDelaySent += rainDelaySummary.sent;
+          summary.disabled += rainDelaySummary.disabled;
+          summary.inboxCreated += rainDelaySummary.inboxCreated;
+        }
+
         if (justCancelled) {
-          const cancelSummary = await sendCancelAlerts({ game, targetDate, origin: url.origin });
+          const cancelSummary = await sendCancelAlerts({ game, targetDate, origin: url.origin, wasMidGame });
           summary.cancelSent += cancelSummary.sent;
           summary.disabled += cancelSummary.disabled;
           summary.inboxCreated += cancelSummary.inboxCreated;

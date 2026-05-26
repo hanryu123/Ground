@@ -238,7 +238,7 @@ export async function GET(req: Request) {
       skipped += 1;
       return;
     }
-    const facts =
+    const baseFacts =
       job.facts ??
       (await fetchPostGameFacts({
         externalId: job.externalId,
@@ -248,6 +248,12 @@ export async function GET(req: Request) {
         oppScore: job.oppScore,
         mySide: job.mySide,
       }));
+    // 경기 중 우천 중단이 있었는지 확인 (rain-delay 알림 발송 여부로 판단)
+    const rainDelayRecord = await prisma.notificationDispatchState.findFirst({
+      where: { alertKind: "rain-delay", gameExternalId: job.externalId },
+      select: { id: true },
+    });
+    const facts = rainDelayRecord ? { ...baseFacts, wasRainSuspended: true } : baseFacts;
     const report = await generatePostGameReport({
       teamId: job.teamId,
       opponentTeamId: job.opponentTeamId,
