@@ -541,34 +541,30 @@ export async function GET(req: Request) {
           const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
           const teamSide: "home" | "away" = teamId === game.homeId ? "home" : "away";
 
-          let isPitching: boolean | null = null;
-          if (relay.battingSide !== null) {
-            // 1순위: battingSide(이닝 초/말 기반) — 가장 정확
-            isPitching = relay.battingSide !== teamSide;
-          } else if (kind === "strikeout" && relay.strikeoutDirection !== null) {
-            // 2순위: 텍스트 직접 판별 — "탈삼진"이면 투수팀 성공, "삼진 아웃"이면 타자팀 실패
-            // strikeoutDirection="pitching"이면 투수팀이 성공 → 반반 홈/원정 모름이므로
-            // 이 경기의 두 팀 모두에 대해 각각 독립 판단 불가.
-            // 대신: 현재 팀이 어느 팀인지는 알 수 없지만, 스코어로 투수팀 추론
-            // (이기고 있으면 투수가 잘 하는 중 → pitching=true, 지면 pitching=false)
-            const myS = myCurrentScore ?? 0;
-            const oppS = oppCurrentScore ?? 0;
-            if (relay.strikeoutDirection === "pitching") {
-              isPitching = myS >= oppS; // 이기거나 동점 → 우리가 투수팀일 가능성
-            } else {
-              isPitching = myS < oppS;  // 지고 있으면 → 우리 타자가 삼진 당한 것
-            }
-          }
-
-          const myTeamShort  = findTeam(teamId).short;
-          const oppTeamShort = findTeam(opponentTeamId).short;
-
           const myCurrentScore = teamSide === "home"
             ? game.liveScore?.homeScore
             : game.liveScore?.awayScore;
           const oppCurrentScore = teamSide === "home"
             ? game.liveScore?.awayScore
             : game.liveScore?.homeScore;
+
+          const myTeamShort  = findTeam(teamId).short;
+          const oppTeamShort = findTeam(opponentTeamId).short;
+
+          let isPitching: boolean | null = null;
+          if (relay.battingSide !== null) {
+            // 1순위: battingSide(이닝 초/말 기반) — 가장 정확
+            isPitching = relay.battingSide !== teamSide;
+          } else if (kind === "strikeout" && relay.strikeoutDirection !== null) {
+            // 스코어로 투수팀 추론 (이기거나 동점 → 우리가 투수팀일 가능성)
+            const myS = myCurrentScore ?? 0;
+            const oppS = oppCurrentScore ?? 0;
+            if (relay.strikeoutDirection === "pitching") {
+              isPitching = myS >= oppS;
+            } else {
+              isPitching = myS < oppS;
+            }
+          }
 
           const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName, myCurrentScore, oppCurrentScore);
 
