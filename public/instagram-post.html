@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1080">
+  <title>GROUND · Instagram Post</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" as="style" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      background: #000;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ──────────────────────────────
+       CANVAS
+    ────────────────────────────── */
+    .canvas {
+      position: relative;
+      width: 1080px;
+      height: 1080px;
+      background: #050505;
+      overflow: hidden;
+    }
+
+    /* Background photo — 좌측 50% 영역 */
+    .bg-photo {
+      position: absolute;
+      left: 0; top: 0;
+      width: 560px;
+      height: 100%;
+      background: url('/images/refs/ready/manifesto-lg.jpg') center 20% / cover no-repeat;
+    }
+
+    /* Photo 위 그라디언트: 오른쪽으로 fade-out */
+    .bg-photo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to right,
+        rgba(0,0,0,0.1)  0%,
+        rgba(0,0,0,0.5)  50%,
+        rgba(5,5,5,1)    88%
+      );
+    }
+
+    /* 전체 하단 그라디언트 (공통) */
+    .bg-bottom-grad {
+      position: absolute;
+      left: 0; right: 0;
+      bottom: 0;
+      height: 260px;
+      background: linear-gradient(to top, #050505 0%, transparent 100%);
+      pointer-events: none;
+    }
+
+    /* 좌측 세로 포인트 바 */
+    .side-bar {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+      background: linear-gradient(to bottom, #c30452 0%, #8a0036 100%);
+    }
+
+    /* 미세 스캔라인 텍스처 */
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(255,255,255,0.013) 3px,
+        rgba(255,255,255,0.013) 4px
+      );
+      pointer-events: none;
+    }
+
+    /* ──────────────────────────────
+       CONTENT LAYOUT
+    ────────────────────────────── */
+    .content {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto auto;
+      padding: 68px 72px 64px 80px;
+    }
+
+    /* ── 상단 헤더 ── */
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .brand-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .brand {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .brand-rule {
+      width: 52px;
+      height: 2.5px;
+      background: #c30452;
+      border-radius: 2px;
+    }
+
+    .header-meta {
+      text-align: right;
+    }
+
+    .meta-tag {
+      font-family: 'Pretendard Variable', -apple-system, sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: #555;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+
+    .meta-tag strong {
+      color: #888;
+    }
+
+    /* ── 메인 헤드라인 ── */
+    .headline-block {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-top: 32px;
+    }
+
+    .hl-sub {
+      font-family: 'Pretendard Variable', -apple-system, sans-serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: #aaa;
+      letter-spacing: -0.02em;
+      margin-bottom: 18px;
+    }
+
+    .hl-main {
+      font-family: 'Pretendard Variable', -apple-system, sans-serif;
+      font-size: 104px;
+      font-weight: 900;
+      line-height: 0.96;
+      letter-spacing: -0.055em;
+      color: #fff;
+    }
+
+    .hl-main .em {
+      color: #c30452;
+      display: block;
+    }
+
+    .hl-main .dim {
+      color: #fff;
+    }
+
+    .hl-eng {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 18px;
+      font-weight: 400;
+      font-style: italic;
+      color: #444;
+      letter-spacing: 0.04em;
+      margin-top: 22px;
+    }
+
+    /* ── 알림 카드 ── */
+    .notif-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 44px;
+    }
+
+    .notif-card {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 18px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 카드 왼쪽 컬러 인디케이터 */
+    .notif-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+    }
+
+    .notif-card.score::before  { background: #c30452; }
+    .notif-card.rain::before   { background: #4a9eff; }
+    .notif-card.result::before { background: #f5a623; }
+
+    .notif-icon {
+      font-size: 22px;
+      flex-shrink: 0;
+      line-height: 1;
+      margin-top: 1px;
+    }
+
+    .notif-body-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .notif-title {
+      font-family: 'Pretendard Variable', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.025em;
+      margin-bottom: 4px;
+    }
+
+    .notif-body {
+      font-family: 'Pretendard Variable', sans-serif;
+      font-size: 13.5px;
+      font-weight: 400;
+      color: #888;
+      letter-spacing: -0.015em;
+      line-height: 1.45;
+    }
+
+    .notif-time {
+      font-family: 'Pretendard Variable', sans-serif;
+      font-size: 11px;
+      color: #444;
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+
+    /* ── 하단 푸터 ── */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .feat-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      font-family: 'Pretendard Variable', sans-serif;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #c30452;
+      background: rgba(195,4,82,0.14);
+      border: 1px solid rgba(195,4,82,0.22);
+      padding: 5px 12px;
+      border-radius: 100px;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+
+    .footer-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .footer-logo {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.35em;
+      color: #fff;
+      text-transform: uppercase;
+    }
+
+    .footer-url {
+      font-family: 'Pretendard Variable', sans-serif;
+      font-size: 11px;
+      color: #444;
+      letter-spacing: 0.03em;
+    }
+
+    /* ──────────────────────────────
+       우측 장식 — 큰 숫자 스코어
+    ────────────────────────────── */
+    .deco-score {
+      position: absolute;
+      right: 68px;
+      top: 50%;
+      transform: translateY(-50%);
+      text-align: right;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .deco-score-nums {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 280px;
+      font-weight: 300;
+      line-height: 0.85;
+      color: transparent;
+      -webkit-text-stroke: 1px rgba(255,255,255,0.04);
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+  </style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- 배경 사진 + 그라디언트 -->
+  <div class="bg-photo"></div>
+  <div class="bg-bottom-grad"></div>
+  <div class="scanlines"></div>
+  <div class="side-bar"></div>
+
+  <!-- 장식 스코어 숫자 (배경) -->
+  <div class="deco-score" aria-hidden="true">
+    <div class="deco-score-nums">3<br>5</div>
+  </div>
+
+  <!-- 콘텐츠 -->
+  <div class="content">
+
+    <!-- 헤더 -->
+    <header class="header">
+      <div class="brand-wrap">
+        <div class="brand">Ground</div>
+        <div class="brand-rule"></div>
+      </div>
+      <div class="header-meta">
+        <div class="meta-tag"><strong>KBO 10구단</strong></div>
+        <div class="meta-tag">실시간 편파 문자 중계</div>
+      </div>
+    </header>
+
+    <!-- 헤드라인 -->
+    <div class="headline-block">
+      <p class="hl-sub">우리팀을 함께 응원하는</p>
+      <h1 class="hl-main">
+        <span class="dim">완벽한</span>
+        <span class="em">편파</span>
+        <span class="dim">문자 중계</span>
+      </h1>
+      <p class="hl-eng">The most biased relay. Always on your side.</p>
+    </div>
+
+    <!-- 알림 카드 3종 -->
+    <div class="notif-stack">
+
+      <div class="notif-card score">
+        <div class="notif-icon">⚾</div>
+        <div class="notif-body-wrap">
+          <div class="notif-title">LG 역전 득점!</div>
+          <div class="notif-body">5회말 만루 적시타! LG 4:3 두산. 드디어 터졌습니다!</div>
+        </div>
+        <div class="notif-time">방금</div>
+      </div>
+
+      <div class="notif-card rain">
+        <div class="notif-icon">🌧️</div>
+        <div class="notif-body-wrap">
+          <div class="notif-title">LG 경기 우천 중단</div>
+          <div class="notif-body">7회 현재 LG 2:4 KIA. 지고 있는데 비가 내리네요. 하늘이 우리 편인가요? ☁️</div>
+        </div>
+        <div class="notif-time">1분 전</div>
+      </div>
+
+      <div class="notif-card result">
+        <div class="notif-icon">🎙️</div>
+        <div class="notif-body-wrap">
+          <div class="notif-title">오늘의 한줄평</div>
+          <div class="notif-body">KIA, 타선 폭발로 5연승. 역시 호랑이는 달랐습니다!</div>
+        </div>
+        <div class="notif-time">경기 종료</div>
+      </div>
+
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="footer">
+      <div class="feat-chips">
+        <span class="chip">⚡ 실시간 스코어</span>
+        <span class="chip">🎙️ AI 한줄평</span>
+        <span class="chip">🌧️ 우천 감지</span>
+        <span class="chip">🔔 편파 알림</span>
+      </div>
+      <div class="footer-brand">
+        <div class="footer-logo">Ground</div>
+        <div class="footer-url">ground.vercel.app</div>
+      </div>
+    </footer>
+
+  </div>
+</div>
+</body>
+</html>

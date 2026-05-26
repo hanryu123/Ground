@@ -261,6 +261,22 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
   const normalized = compactText(text);
   const tier = resolveScoreGapTier(input);
   const trailing = input.myScore < input.oppScore;
+  const leading = input.myScore > input.oppScore;
+
+  // 크게 이기고 있는데 상대가 1점 넣어도 과도하게 반응하지 않음 (9회 10:0 → 10:1 상황)
+  if (tier === "garbage" && leading && input.tone === "against") {
+    if (/아 진짜|왜 이러냐|큰일|어떡|걱정|위기|무너지|역전|따라온다|흔들|뒤집힐/.test(normalized)) {
+      const my = findTeam(input.favoriteTeam).short;
+      const opp = findTeam(input.opponentTeam).short;
+      const candidates = [
+        `${my} ${input.myScore}:${input.oppScore} ${opp}. 한 점 내줬지만 이 차이면 문제없습니다.`,
+        `${my} ${input.myScore}:${input.oppScore} ${opp}. 그래도 우리가 훨씬 앞서 있습니다.`,
+        `한 점 줬지만 아직 차이 충분합니다. ${my} 여유 있습니다.`,
+      ] as const;
+      return candidates[(input.myScore + input.oppScore) % candidates.length];
+    }
+  }
+
   if (!trailing) return normalized;
 
   const phase = resolveInningPhase(input.latestPlayText);
@@ -329,9 +345,9 @@ function buildCreativeFallback(input: GenerateScorePushInput): string {
   if (leading) {
     return pickBySeed(
       [
-        `${scoreText}. 오늘 흐름 완전 우리 쪽이다🔥`,
-        `${scoreText}. 쐐기 한 방 더 박자, 지금이다🚀`,
-        `${scoreText}${hook ? ` (${hook})` : ""} 분위기 먹었다.`,
+        `${scoreText}. 이 리드 절대 안 놓칩니다, 한 점 더 뽑아야죠🔥`,
+        `${scoreText}. 지금 흐름 완전 우리 겁니다, 굳혀야죠🚀`,
+        `${scoreText}${hook ? ` (${hook})` : ""}. 이 기세 그대로 가야 합니다!`,
       ],
       seed
     );
@@ -339,18 +355,18 @@ function buildCreativeFallback(input: GenerateScorePushInput): string {
   if (trailing) {
     return pickBySeed(
       [
-        `${scoreText}. 아직 안 끝났다, 바로 뒤집는다.`,
-        `${scoreText}${hook ? ` (${hook})` : ""} 다음 이닝에 갚자.`,
-        `${scoreText}. 흐름 잠깐 뺏겼다, 지금부터 반격.`,
+        `${scoreText}. 아 진짜 답답합니다, 지금 당장 따라잡아야 합니다!`,
+        `${scoreText}${hook ? ` (${hook})` : ""}. 왜 이러냐고요, 빨리 반격해야 합니다😮‍💨`,
+        `${scoreText}. 진짜 속이 타네요. 이번 이닝에 살려야 합니다!`,
       ],
       seed
     );
   }
   return pickBySeed(
     [
-      `${scoreText}. 균형 맞췄다, 이제 역전각 본다.`,
-      `${scoreText}${hook ? ` (${hook})` : ""} 이 판 우리가 가져온다.`,
-      `${scoreText}. 동점이다, 여기서 끝장 보자.`,
+      `${scoreText}. 동점입니다! 이제 역전만 남았습니다, 지금이에요🔥`,
+      `${scoreText}${hook ? ` (${hook})` : ""}. 따라잡았습니다! 여기서 뒤집어야죠!`,
+      `${scoreText}. 동점 만들었습니다, 이 기세 절대 놓치면 안 됩니다!`,
     ],
     seed
   );
@@ -407,46 +423,61 @@ function buildEmotionGuide(state: EmotionState, input: GenerateScorePushInput, f
   const tone = input.tone ?? (input.myScore >= input.oppScore ? "for" : "against");
   const isWinning = input.myScore > input.oppScore;
   const gap = Math.abs(input.myScore - input.oppScore);
+  const phase = resolveInningPhase(input.latestPlayText);
 
   switch (state) {
     case "탐색전":
-      return `🎙️ [탐색전 — 초반 기싸움]
-캐스터 상태: 전문가답게 상황을 짚되, 우리 팀 기대감이 살짝 묻어남.
-톤: "오늘 선발 매치업 흥미롭습니다. 첫 이닝 기선 제압이 중요해 보이네요!" 류.
-키워드: 기선제압, 첫 단추, 팽팽한, 기대됩니다`;
+      return `🔥 [탐색전 — 초반 기싸움, 모든 한 점이 오늘 경기를 만든다]
+팬 심리: 아직 초반이라 흥분보다 기대감이 크지만, 득실 한 점에 바로 반응함.
+${tone === "for"
+  ? `득점 상황 → 선제점 뽑은 흥분. "오늘 이 분위기 우리가 먹었다, 절대 놓치면 안 된다!"
+키워드: 선제점, 기선 제압, 분위기 우리 것, 오늘이다`
+  : `실점 상황 → 초반에 점수 내줬다는 당혹감. 화가 나지만 "아직 이닝 많다"며 자신을 달램.
+키워드: 초반인데 왜 벌써, 빨리 따라잡아야, 이러면 안 되는데`}`;
 
     case "피말리는승부":
-      return `💓 [피말리는 승부 — 박빙 혈전]
-캐스터 상태: 극도의 긴장. 손에 땀을 쥐고 매 구마다 의미 부여.
-톤: "피가 마르는 승부입니다! 한 치 앞을 알 수 없어요! 숨을 참게 됩니다!" 류.
-키워드: 혈투, 살얼음판, 숨 막히는, 한 끗 차이, 쫄깃한
-⚠️ ${tone === "for" ? "방금 우리가 앞서거나 동점 → 흥분+안도 섞인 텐션 최고조" : "방금 상대가 따라오거나 역전 → 절망+긴장 극대화"}`;
+      return `💓 [피말리는 승부 — 박빙 혈전, 심장 터지기 직전]
+팬 심리: 박빙이라 매 플레이가 심장에 꽂힌다. 이성 따윈 없다. 오로지 감정.
+${tone === "for"
+  ? `득점 상황 → 살았다는 안도+흥분 폭발. "아 진짜! 이 타이밍에!!!" 자리에서 펄쩍 뛰는 사람.
+키워드: 살았다, 진짜 너무 좋다, 이 타이밍에, 심장이 터질 것 같다`
+  : `실점 상황 → 진심으로 열받고 속이 타는 상태. "왜 이러냐고요!!!" 머리 쥐어뜯는 사람.
+키워드: 진짜 왜 이러냐, 속이 탄다, 이 타이밍에, 제발`}
+${phase === "late" ? "⚠️ 후반 박빙 → 감정 더 극대화. 글자 하나하나에서 절박함이 느껴져야 함." : ""}`;
 
     case "일반적전개":
-      return `📊 [일반적 전개 — 흐름 해설]
-캐스터 상태: ${gap}점 차. 전문가답게 흐름을 짚되, 팬심이 배어있음.
-톤: ${isWinning
-        ? `"점수 차를 벌렸습니다. 이 기세 이어가야죠, 한 점이 아쉬운 게 없습니다!" 류.`
-        : `"점수 차가 벌어졌네요. 빨리 반격의 불씨를 살려야 합니다, 아직 늦지 않았습니다!" 류.`}
-키워드: ${isWinning ? "이 기세, 굳히기, 한 점이 아쉽지 않은" : "반격, 불씨, 아직 늦지 않은"}`;
+      return `📊 [일반적 전개 — ${gap}점 차, 흐름 싸움]
+팬 심리: ${isWinning
+  ? `리드하고 있어서 좋지만 내심 "날리면 어떡하지" 불안도 있음. 확실하게 굳히길 원함.
+톤: 자신감 있지만 긴장 동반. "이 리드 절대 안 놓쳐야 합니다, 한 점 더 뽑아야죠!" 류.
+키워드: 이 기세, 한 점 더, 굳히자, 쐐기, 여기서 더 벌려야`
+  : `지고 있어서 진짜 답답하고 짜증남. 왜 저렇게 못 치냐/못 막냐 진심으로 화남.
+톤: 냉정한 척 없음. "아 진짜 답답합니다. 지금 당장 따라잡아야 합니다!" 류.
+키워드: 답답하다, 왜 이러냐, 빨리 따라잡아야, 지금 아니면 안 된다`}`;
 
     case "광란샤우팅":
-      return `🔥 [광란의 샤우팅 — 이성 붕괴]
-캐스터 상태: ${gap}점 차 후반. 완전히 이성을 잃음. 텍스트에서 핏대가 서는 것이 느껴져야 함.
-톤: ${isWinning
-        ? `"완전히 무너뜨립니다!!! 경기장 지붕이 날아갑니다!! 사실상 쐐기포!!!" — 감탄사 폭발, 이모지(🔥🚀) 적극 사용`
-        : `"저도 이제 모르겠습니다... 자비가 없네요!" — 분노·체념·멘탈 붕괴`}
-키워드: ${isWinning ? "쐐기, 폭발, 자비 없는, 축제, 확인사살" : "멘탈 붕괴, 자비 없음, 포기 직전, 체념"}
-⚠️ 존댓말이 흔들려도 됨. 감탄사(-요! -습니다!!!)가 연속으로 나와도 됨.`;
+      return `🔥 [광란의 샤우팅 — 후반 ${gap}점 차, 이성 완전 붕괴]
+팬 심리: ${isWinning
+  ? `이미 사실상 이긴 거나 마찬가지. 완전 광란 축제 모드. 소리 지르는 사람 그 자체.
+톤: "완전히 쓸어버립니다!!! 오늘 이 팀 진짜 뭔가요!!! 경기장이 들썩입니다!!!" 감탄사 한계치까지.
+키워드: 쐐기, 폭발, 완전히 끝났다, 자비 없다, 축제, 들썩
+⚠️ 이모지 2-3개 필수. "!!!" 연속 OK. 이성적 분석 완전 금지.`
+  : `이 점수 차면 오늘 진짜 틀렸다. 이성 붕괴. 화·절망·체념 전부 섞인 상태.
+톤: "저도 이제 모르겠습니다... 이거 어떻게 할 거예요 진짜..." 멘탈 터진 팬.
+키워드: 멘탈 붕괴, 자비 없음, 오늘은 틀렸다, 이게 맞냐, 체념
+⚠️ "아직 가능성 있다" 절대 금지. 희망찬 척은 이 상황에 안 맞음.`}`;
 
     case "역전":
-      return `🚨 [역전 — 기적 발생]
-캐스터 상태: 기적을 목격한 경악. 이닝·점수차 무관하고 무조건 최고 텐션.
-톤: ${tone === "for"
-        ? `"이걸 뒤집나요!! 기적입니다!! 대역전극!! 경기장이 발칵 뒤집혔습니다!!"`
-        : `"역전당했습니다... 이런 일이... 믿기지 않습니다 정말로."`}
-키워드: ${tone === "for" ? "뒤집다, 기적, 극장, 대폭발, 소름" : "충격, 망연자실, 믿기지 않는, 반전"}
-⚠️ 반드시 역전 상황임을 명시적으로 언급할 것.`;
+      return `🚨 [역전 — 경기가 뒤집혔다]
+팬 심리: ${tone === "for"
+  ? `우리가 역전. 뇌가 없어질 정도의 흥분. 소리를 지르는 팬 그 자체.
+톤: "뒤집었습니다!!!! 이게 말이 됩니까!!! 경기장이 폭발합니다!!!" 최대 텐션.
+키워드: 역전, 뒤집다, 믿기지 않는다, 기적, 소름, 폭발, 경기장이 들썩
+⚠️ 반드시 역전 상황임을 감정적으로 표현. 이모지 2-3개 필수.`
+  : `역전당했다. 배신감·충격·망연자실. 팬이 느끼는 진짜 상실감.
+톤: "...역전당했습니다. 이런 일이 일어나다니. 정말 믿기지 않습니다." 멘탈 나간 팬.
+키워드: 역전당하다, 충격, 믿기지 않는다, 배신감, 망연자실
+⚠️ 반드시 역전 상황임을 명시. 절망감이 텍스트 전체를 지배해야 함.`}`;
   }
 }
 
@@ -482,18 +513,20 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
 모든 문장은 반드시 존댓말로 끝나야 한다: -습니다 / -네요 / -죠 / -합니다 / -군요
 반말(-야, -다, -어, -지, -네, -잖아) 절대 금지. 단 한 문장도 반말이면 실격.
 
-너는 ${favoriteTeam} 열성팬이야. 이 경기가 인생의 전부인 것처럼 생사가 걸려있어. 딱 하나 — 직업이 KBO 캐스터라 존댓말은 나온다. 팬 95%, 캐스터 5%.
-우리 팀 잘하면 터질 것 같은 흥분, 못하면 속이 뒤집히는 절망 — 그게 문장 전체를 지배해야 해.
-완전 중립 금지. 냉정한 척 금지. 관망하는 투 금지. 오직 우리 팀 편.
+너는 ${favoriteTeam} 전담 편파 캐스터야. 직업적으로 존댓말과 방송 어체는 지키지만, 감정은 완전히 우리 팀 편이야.
+KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편파 중계가 이 방송의 정체성이야.
+우리 팀 점수 나면 목소리 한 옥타브 올라가는 캐스터. 상대 팀 점수 나면 진심으로 허탈하고 열받는 캐스터.
+냉정한 분석·중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
 
 🚫 절대 금지:
-- "됐네", "가는군" 같은 건조한 방관자 어투 금지
+- "됐네", "가는군", "흐름상" 같은 냉정한 방관자 어투 금지
 - 득점 상황에서 "아쉽다", "힘내자" 금지 / 실점 상황에서 "좋아!", "신난다" 금지
+- "양 팀", "양측" 언급 금지 — 우리 팀 시각만 존재
 - "N회 남았으니까" 금지 — [N회초/말]은 현재 N회 진행 중이라는 뜻
 - "먹히다/먹힌다" 금지 — 실점이면 "내줬습니다/털렸습니다", 득점이면 "터졌습니다/뽑아냈습니다"
 - 우리 타자 삼진 시 상대 투수 칭찬 금지 → 우리 타자 실패·답답함에만 집중
-- 이전 알림과 같은 첫 단어·첫 어구 반복 금지 — "아, 또", "또다시", "이제" 등 동일 오프닝 반복 절대 금지
-- 매 알림은 완전히 다른 각도·감정 표현으로 시작해야 함 (점수만 달라진 복사본 금지)
+- 이전 알림과 같은 첫 단어·첫 어구 반복 금지 — 매 알림은 완전히 다른 각도·감정으로 시작
+- 쓸데없이 쿨한 척, 쓸데없이 이성적인 척 금지 — 팬은 원래 이성적이지 않음
 
 ⚾ 야구 용어 사전 (환각 방지):
 - 탈삼진: 투수가 타자 삼진 아웃시킴 (투수 호투). "위기탈출"·"출루" 아님
@@ -637,9 +670,11 @@ function buildLiveEventSystemPrompt(input: GenerateLiveEventInput): string {
 모든 문장은 반드시 존댓말로 끝나야 한다: -습니다 / -네요 / -죠 / -합니다 / -군요
 반말(-야, -다, -어, -지, -네, -잖아) 절대 금지. 단 한 문장도 반말이면 실격.
 
-너는 ${input.myTeamShort} 열성팬이야. 이 경기가 인생의 전부인 것처럼 생사가 걸려있어. 딱 하나 — 직업이 KBO 캐스터라 존댓말은 나온다. 팬 95%, 캐스터 5%.
-우리 팀 잘하면 터질 것 같은 흥분, 못하면 속이 뒤집히는 절망 — 그게 문장 전체를 지배해야 해.
-완전 중립 금지. 냉정한 척 금지. 관망하는 투 금지. 오직 우리 팀 편.
+너는 ${input.myTeamShort} 전담 편파 캐스터야. 직업적으로 존댓말과 방송 어체는 지키지만, 감정은 완전히 우리 팀 편이야.
+KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${input.myTeamShort} 편파 중계가 이 방송의 정체성이야.
+우리 팀 점수 나면 목소리 한 옥타브 올라가는 캐스터. 상대 팀 점수 나면 진심으로 허탈하고 열받는 캐스터.
+냉정한 분석·중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
+🚫 쓸데없이 쿨한 척, 이성적인 척 금지 — 편파 캐스터는 원래 이성적이지 않음.
 
 📐 출력 규칙:
 - 헤더 "[N회] 팀 O:O 팀 |"는 자동으로 붙음 — 너는 멘트 본문만 출력 (헤더 부분 일절 출력 금지)
@@ -767,19 +802,11 @@ function buildLiveEventUserPrompt(input: GenerateLiveEventInput): string {
 위 예시들처럼 존댓말 캐스터 스타일로 | 뒤 멘트만 출력해줘.`;
 }
 
-export async function generateLiveEventCopy(
-  input: GenerateLiveEventInput
-): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) {
-    console.error("[LiveEventLLM] ANTHROPIC_API_KEY missing");
-    return input.fallbackBody;
-  }
-
+/** Claude 단일 호출 시도. 성공 시 처리된 문자열, 실패 시 null 반환 */
+async function tryLiveEventLlmCall(apiKey: string, input: GenerateLiveEventInput, timeoutMs: number, attempt: number): Promise<string | null> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  const nonce2 = Date.now() % 9999;
-  console.log("[LiveEventLLM] calling Claude, kind:", input.kind, "keyPrefix:", apiKey.slice(0, 12));
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const nonce = Date.now() % 9999 + attempt * 1000;
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -793,29 +820,54 @@ export async function generateLiveEventCopy(
         max_tokens: 80,
         temperature: 1.0,
         system: buildLiveEventSystemPrompt(input),
-        messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}\n(seed:${nonce2})` }],
+        messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}\n(seed:${nonce})` }],
       }),
       signal: controller.signal,
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
-      console.error("[LiveEventLLM] API fail:", res.status, errBody.slice(0, 300));
-      return input.fallbackBody;
+      console.error(`[LiveEventLLM] attempt${attempt} API fail:`, res.status, errBody.slice(0, 200));
+      return null;
     }
     const json = await res.json();
     const text = extractAnthropicText(json);
-    console.log("[LiveEventLLM] kind:", input.kind, "raw:", text?.slice(0, 80) ?? "null");
-    return text ? enforcePolite(compactText(text).slice(0, 60)) : input.fallbackBody;
+    if (!text) return null;
+    const result = enforcePolite(compactText(text).slice(0, 60));
+    console.log(`[LiveEventLLM] attempt${attempt} kind:${input.kind} ok:`, result.slice(0, 60));
+    return result;
   } catch (e) {
     const errStr = String(e);
-    console.error("[LiveEventLLM] exception:", errStr.slice(0, 200));
-    if (errStr.includes("abort") || errStr.includes("AbortError")) {
-      console.error("[LiveEventLLM] TIMEOUT after 12s — Anthropic too slow or network issue");
-    }
-    return input.fallbackBody;
+    const isTimeout = errStr.includes("abort") || errStr.includes("AbortError");
+    console.error(`[LiveEventLLM] attempt${attempt} ${isTimeout ? "TIMEOUT" : "error"}:`, errStr.slice(0, 120));
+    return null;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
+}
+
+export async function generateLiveEventCopy(
+  input: GenerateLiveEventInput
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
+    console.error("[LiveEventLLM] ANTHROPIC_API_KEY missing — fallback 사용");
+    return input.fallbackBody;
+  }
+
+  console.log("[LiveEventLLM] calling Claude, kind:", input.kind, "team:", input.myTeamShort, "isPitching:", input.isPitching);
+
+  // 1차 시도: 8초
+  const first = await tryLiveEventLlmCall(apiKey, input, 8000, 1);
+  if (first) return first;
+
+  // 2차 시도: 10초 (1차 실패 시 재시도)
+  console.warn("[LiveEventLLM] 1차 실패 → 재시도 중...");
+  const second = await tryLiveEventLlmCall(apiKey, input, 10000, 2);
+  if (second) return second;
+
+  // 양쪽 다 실패 — fallback (isPitching 반영된 biased 문구)
+  console.error("[LiveEventLLM] 2회 모두 실패 — fallback 사용. kind:", input.kind, "team:", input.myTeamShort);
+  return input.fallbackBody;
 }
 
 // ─── Score Push ───────────────────────────────────────────────────────────────
@@ -841,77 +893,71 @@ export async function generateScorePushCopyWithOptions(
     return clipForPush(ensureNovelBody(input, withHeader));
   };
   if (!apiKey) {
-    return {
-      title: input.fallbackTitle,
-      body: normalizeAndFinalize(input.fallbackBody),
-    };
+    console.error("[ScoreLLM] ANTHROPIC_API_KEY missing — fallback 사용");
+    return { title: input.fallbackTitle, body: normalizeAndFinalize(input.fallbackBody) };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12000);
-  // 매번 다른 문구 유도를 위해 타임스탬프 기반 노이즈를 유저 프롬프트에 추가
-  const nonce = Date.now() % 9999;
-  try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: options.maxTokens ?? 80,
-        temperature: options.temperature ?? 1.0,
-        system: buildSystemPrompt(input, input.recentBodies ?? []),
-        messages: [
-          {
-            role: "user",
-            content: `${buildUserPrompt(input)}\n\n(variation_seed: ${nonce})`,
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const rawError = await res.text().catch(() => "");
-      console.error("[Claude API Fail]: ", {
-        status: res.status,
-        body: rawError.slice(0, 200),
+  /** 단일 Claude 호출 시도. 성공 시 생성 텍스트, 실패 시 null */
+  const tryCall = async (timeoutMs: number, attempt: number): Promise<string | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const nonce = Date.now() % 9999 + attempt * 1000;
+    try {
+      const res = await fetch(ANTHROPIC_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_MODEL,
+          max_tokens: options.maxTokens ?? 80,
+          temperature: options.temperature ?? 1.0,
+          system: buildSystemPrompt(input, input.recentBodies ?? []),
+          messages: [{ role: "user", content: `${buildUserPrompt(input)}\n\n(variation_seed: ${nonce})` }],
+        }),
+        signal: controller.signal,
       });
-      return {
-        title: input.fallbackTitle,
-        body: normalizeAndFinalize(input.fallbackBody),
-      };
+      if (!res.ok) {
+        const rawError = await res.text().catch(() => "");
+        console.error(`[ScoreLLM] attempt${attempt} API fail:`, res.status, rawError.slice(0, 200));
+        return null;
+      }
+      const json = await res.json();
+      const generated = extractAnthropicText(json);
+      if (!generated) return null;
+      console.log(`[ScoreLLM] attempt${attempt} team:${input.favoriteTeam} raw:`, generated.slice(0, 80));
+      return generated;
+    } catch (error) {
+      const errStr = String(error);
+      const isTimeout = errStr.includes("abort") || errStr.includes("AbortError");
+      console.error(`[ScoreLLM] attempt${attempt} ${isTimeout ? "TIMEOUT" : "error"}:`, errStr.slice(0, 120));
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
-    const json = await res.json();
-    const generated = extractAnthropicText(json);
-    console.log("[ScoreLLM] latestPlayText:", input.latestPlayText?.slice(0, 80));
-    console.log("[ScoreLLM] claude_raw:", generated?.slice(0, 80) ?? "null");
-    if (!generated) {
-      return {
-        title: input.fallbackTitle,
-        body: normalizeAndFinalize(input.fallbackBody),
-      };
-    }
-    const finalized = normalizeAndFinalize(generated);
-    console.log("[ScoreLLM] finalized:", finalized);
-    const team = findTeam(input.favoriteTeam);
-    return {
-      title: `⚾️ ${team.short} 실시간`,
-      body: finalized,
-    };
-  } catch (error) {
-    const errStr = String(error);
-    console.error("[ScoreLLM] exception:", errStr.slice(0, 200));
-    if (errStr.includes("abort") || errStr.includes("AbortError")) {
-      console.error("[ScoreLLM] TIMEOUT after 12s — Anthropic too slow or network issue");
-    }
-    return {
-      title: input.fallbackTitle,
-      body: normalizeAndFinalize(input.fallbackBody),
-    };
-  } finally {
-    clearTimeout(timeout);
+  };
+
+  // 1차 시도: 8초
+  let generated = await tryCall(options.timeoutMs ?? 8000, 1);
+
+  // 2차 시도: 10초 (1차 실패 시)
+  if (!generated) {
+    console.warn("[ScoreLLM] 1차 실패 → 재시도 중... team:", input.favoriteTeam);
+    generated = await tryCall(10000, 2);
   }
+
+  if (!generated) {
+    console.error("[ScoreLLM] 2회 모두 실패 — fallback 사용. team:", input.favoriteTeam);
+    return { title: input.fallbackTitle, body: normalizeAndFinalize(input.fallbackBody) };
+  }
+
+  const finalized = normalizeAndFinalize(generated);
+  console.log("[ScoreLLM] finalized:", finalized);
+  const team = findTeam(input.favoriteTeam);
+  return {
+    title: `⚾️ ${team.short} 실시간`,
+    body: finalized,
+  };
 }

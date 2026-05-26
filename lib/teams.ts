@@ -163,5 +163,12 @@ export function heroLeftEpithetLabel(teamId: string): string | null {
   return HERO_LEFT_EPITHET[teamId.toLowerCase()] ?? null;
 }
 
-export const findTeam = (id: string) =>
-  TEAMS.find((t) => t.id === id) ?? TEAMS[0];
+export const findTeam = (id: string): Team => {
+  const team = TEAMS.find((t) => t.id === id);
+  if (!team) {
+    // ID 불일치 → 조용히 TEAMS[0]으로 숨기지 말고 콘솔에 명시 (진단용)
+    console.error(`[findTeam] UNKNOWN teamId: "${id}" — 10개 구단에 없는 ID. 알림 팀명이 잘못 나올 수 있습니다.`);
+    return TEAMS.find((t) => t.id === "lg")!; // LG는 항상 존재
+  }
+  return team;
+};
