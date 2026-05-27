@@ -126,6 +126,11 @@ export default function ShareButton({
         />
       </motion.button>
 
+      {/* Beta 딱지 */}
+      <span className="pointer-events-none absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded-full bg-white/15 px-1.5 py-px text-[9px] font-semibold leading-none tracking-wide text-white backdrop-blur-sm">
+        BETA
+      </span>
+
       <AnimatePresence>
         {copied && (
           <motion.span
