@@ -961,3 +961,163 @@ export async function generateScorePushCopyWithOptions(
     body: finalized,
   };
 }
+
+// ─── Clutch Push ─────────────────────────────────────────────────────────────
+
+type GenerateClutchPushInput = {
+  favoriteTeam: string;
+  opponentTeam: string;
+  myScore: number;
+  oppScore: number;
+  clutchKind: "late_clutch" | "bases_loaded_2out";
+  inningNum: number | null;
+  inningHalf: "초" | "말" | null;
+  outCount: number | null;
+  bases: { first: boolean; second: boolean; third: boolean };
+  batterName: string | null;
+  batterNarrative: "hot" | "cold" | null;
+  isAdvantage: boolean;
+};
+
+function buildClutchSituationDesc(input: GenerateClutchPushInput): string {
+  const { inningNum, inningHalf, outCount, bases, clutchKind } = input;
+  const inningStr = inningNum != null ? `${inningNum}회${inningHalf ?? ""}` : "경기 중";
+  const outsStr = outCount != null ? `${outCount}아웃` : "";
+  const baseStr =
+    bases.first && bases.second && bases.third ? "만루" :
+    [bases.first && "1루", bases.second && "2루", bases.third && "3루"]
+      .filter(Boolean).join("·");
+
+  if (clutchKind === "late_clutch") {
+    return `${inningStr} ${outsStr} ${baseStr} — 후반 박빙 승부처, 득점권 주자 있음`;
+  }
+  return `${inningStr} ${outsStr} 만루 — 한 방이면 뒤집히는 절체절명`;
+}
+
+function buildClutchSystemPrompt(input: GenerateClutchPushInput): string {
+  const { favoriteTeam, isAdvantage, batterName, batterNarrative } = input;
+  const situationDesc = buildClutchSituationDesc(input);
+  const narrativeLine = batterNarrative === "hot"
+    ? `\n🔥 타자 컨텍스트: ${batterName ?? "현재 타자"}는 오늘 타격감이 절정인 상태.`
+    : batterNarrative === "cold"
+    ? `\n😰 타자 컨텍스트: ${batterName ?? "현재 타자"}는 오늘 부진하지만 한 방이 절실한 상태.`
+    : "";
+
+  const emotionLine = isAdvantage
+    ? `지금 현장 중계석에서 극도로 흥분하고 있어. 이 타석에서 점수가 나면 경기가 끝나!`
+    : `지금 현장 중계석에서 극도로 긴장하고 있어. 이 타석을 막아내야 경기가 살아!`;
+
+  return `[언어 규칙 — 최우선]
+모든 문장은 반드시 존댓말로 끝나야 한다: -습니다 / -네요 / -죠 / -합니다 / -군요
+반말(-야, -다, -어, -지, -네, -잖아) 절대 금지. 단 한 문장도 반말이면 실격.
+
+너는 ${favoriteTeam} 전담 편파 캐스터야. 직업적으로 존댓말과 방송 어체는 지키지만, 감정은 완전히 우리 팀 편이야.
+KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편파 중계야.
+${emotionLine}
+중립 분석 금지. "양 팀 모두" 류 방관자 어투 완전 금지.
+
+━━━ 현재 클러치 상황 ━━━
+${situationDesc}${narrativeLine}
+━━━━━━━━━━━━━━━━━━━
+
+📐 출력 규칙:
+- 감탄 멘트 한 줄만 출력. 따옴표·설명 없이 멘트 본문만.
+- 이닝·타자 이름은 멘트에 자연스럽게 녹여도 됨 (단 "[N회초]" 헤더 형식 금지)
+- 20~50자 이내
+- 이모지 1~2개 사용 (${isAdvantage ? "🔥 🚀 등 흥분 계열" : "😰 🙏 등 긴장 계열"})`;
+}
+
+function buildClutchUserPrompt(input: GenerateClutchPushInput): string {
+  const { myScore, oppScore, batterName, favoriteTeam, opponentTeam, isAdvantage, batterNarrative } = input;
+  const scoreText = `${favoriteTeam} ${myScore}:${oppScore} ${opponentTeam}`;
+  const batterLine = batterName
+    ? `타석: ${batterName}${batterNarrative === "hot" ? " (오늘 타격감 절정 🔥)" : batterNarrative === "cold" ? " (오늘 2삼진 무안타, 절실)" : ""}`
+    : "타석: 현재 타자 정보 없음";
+  const situationLine = isAdvantage
+    ? `우리 팀 클러치 찬스 — 여기서 터지면 경기 결정!`
+    : `우리 팀 클러치 위기 — 이것만 막아내야 살아!`;
+
+  return `스코어: ${scoreText}
+${batterLine}
+${situationLine}
+
+현장 중계석에서 ${isAdvantage ? "극도로 흥분한" : "극도로 긴장한"} 편파 캐스터 스타일로 한 줄 멘트만 출력.`;
+}
+
+function buildClutchFallback(input: GenerateClutchPushInput): string {
+  const { favoriteTeam, opponentTeam, myScore, oppScore, inningNum, inningHalf, clutchKind, isAdvantage, batterName } = input;
+  const inningStr = inningNum != null ? `${inningNum}회${inningHalf ?? ""} ` : "";
+  const scoreText = `${favoriteTeam} ${myScore}:${oppScore} ${opponentTeam}`;
+  const batterStr = batterName ? ` 타석엔 ${batterName}!` : "";
+
+  if (clutchKind === "late_clutch") {
+    return isAdvantage
+      ? `${inningStr}${scoreText} 득점권 찬스!${batterStr} 여기서 터뜨려야 합니다! 🔥`
+      : `${inningStr}${scoreText} 득점권 위기!${batterStr} 제발 막아야 합니다! 😰`;
+  }
+  return isAdvantage
+    ? `${inningStr}2사 만루! ${scoreText}.${batterStr} 한 방이면 끝납니다! 🔥`
+    : `${inningStr}2사 만루 위기! ${scoreText}.${batterStr} 이것만 막아야 합니다! 😰`;
+}
+
+export async function generateClutchPushCopy(
+  input: GenerateClutchPushInput,
+): Promise<{ title: string; body: string }> {
+  const titleEmoji = input.isAdvantage ? "🔥" : "😰";
+  const titleLabel = input.clutchKind === "late_clutch" ? "후반 승부처" : "2사 만루";
+  const fallbackTitle = `${titleEmoji} ${input.favoriteTeam} ${titleLabel}`;
+  const fallbackBody = buildClutchFallback(input);
+
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
+    console.error("[ClutchLLM] ANTHROPIC_API_KEY missing — fallback 사용");
+    return { title: fallbackTitle, body: fallbackBody };
+  }
+
+  const tryCall = async (timeoutMs: number, attempt: number): Promise<string | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const nonce = Date.now() % 9999 + attempt * 1000;
+    try {
+      const res = await fetch(ANTHROPIC_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_MODEL,
+          max_tokens: 100,
+          temperature: 1.0,
+          system: buildClutchSystemPrompt(input),
+          messages: [{ role: "user", content: `${buildClutchUserPrompt(input)}\n(seed:${nonce})` }],
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const text = extractAnthropicText(json);
+      if (!text) return null;
+      const result = enforcePolite(compactText(text).slice(0, 80));
+      console.log(`[ClutchLLM] attempt${attempt} ok:`, result.slice(0, 60));
+      return result;
+    } catch (e) {
+      const errStr = String(e);
+      console.error(`[ClutchLLM] attempt${attempt} ${errStr.includes("abort") ? "TIMEOUT" : "error"}:`, errStr.slice(0, 80));
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const first = await tryCall(8000, 1);
+  if (first) return { title: fallbackTitle, body: first };
+
+  console.warn("[ClutchLLM] 1차 실패 → 재시도 중...");
+  const second = await tryCall(10000, 2);
+  if (second) return { title: fallbackTitle, body: second };
+
+  console.error("[ClutchLLM] 2회 실패 — fallback 사용");
+  return { title: fallbackTitle, body: fallbackBody };
+}

@@ -9,6 +9,11 @@ import { loadMockSnapshotWithOverrides, readScoreCronDevOverrides } from "@/lib/
 import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
+import {
+  fetchClutchData,
+  detectClutchSituation,
+  sendClutchAlerts,
+} from "@/lib/score/clutchAlert";
 import { authorizeCron } from "@/services/notificationService";
 import { isKboGameHour } from "@/lib/cronGuard";
 import type { LiveScoreGame } from "@/lib/score/types";
@@ -39,6 +44,7 @@ type RouteSummary = {
   llmCalls: number;
   cancelSent: number;
   rainDelaySent: number;
+  clutchSent: number;
   pushSent: number;
   disabled: number;
   inboxCreated: number;
@@ -199,6 +205,7 @@ export async function GET(req: Request) {
     llmCalls: 0,
     cancelSent: 0,
     rainDelaySent: 0,
+    clutchSent: 0,
     pushSent: 0,
     disabled: 0,
     inboxCreated: 0,
@@ -357,6 +364,35 @@ export async function GET(req: Request) {
           summary.cancelSent += cancelSummary.sent;
           summary.disabled += cancelSummary.disabled;
           summary.inboxCreated += cancelSummary.inboxCreated;
+        }
+
+        // ─── 클러치 상황 감지 (LIVE 경기, fast모드 제외) ────────────────
+        if (game.status === "LIVE" && !fastMode) {
+          try {
+            const clutchData = await fetchClutchData(game.externalId);
+            if (clutchData) {
+              const clutchKind = detectClutchSituation(
+                clutchData.state,
+                game.homeScore,
+                game.awayScore,
+              );
+              if (clutchKind) {
+                const clutchSummary = await sendClutchAlerts({
+                  game,
+                  state: clutchData.state,
+                  clutchKind,
+                  batterStats: clutchData.batterStats,
+                  targetDate,
+                  origin: url.origin,
+                });
+                summary.clutchSent += clutchSummary.sent;
+                summary.disabled += clutchSummary.disabled;
+                summary.inboxCreated += clutchSummary.inboxCreated;
+              }
+            }
+          } catch (e) {
+            console.error("[check-score] clutch detection failed", game.externalId, e);
+          }
         }
 
         if (!scoreChanged) continue;
