@@ -88,8 +88,8 @@ const ITEMS_DEFAULT: ToggleItem[] = [
   {
     id: "pitcher",
     topicKeys: ["pitcher"],
-    label: "선발 투수 업데이트",
-    hint: "라인업이 확정되면 바로 알려드릴게요.",
+    label: "경기 프리뷰",
+    hint: "오늘 경기 관전 포인트를 분석해서 알려드려요.",
     Icon: Crosshair,
   },
   {
@@ -233,6 +233,7 @@ export default function NotificationBell({
   const toggleOnColor = resolveToggleOnColor(accent);
   const isAlphaEnv = process.env.NEXT_PUBLIC_APP_ENV === "alpha";
   const items = isAlphaEnv ? ITEMS_ALPHA : ITEMS_DEFAULT;
+  const [isNativeApp, setIsNativeApp] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastLoggedEndpointRef = useRef<string | null>(null);
   const silentRepairInFlightRef = useRef(false);
@@ -250,6 +251,13 @@ export default function NotificationBell({
     useState<NotificationPermission>("default");
   const [installGuide, setInstallGuide] = useState<"none" | "ios" | "android">("none");
   const { isStandalone, os, canPromptInstall, promptInstall } = usePwaInstallGate();
+
+  // ── Capacitor 네이티브 앱 감지 ──
+  useEffect(() => {
+    import("@capacitor/core")
+      .then(({ Capacitor }) => setIsNativeApp(Capacitor.isNativePlatform()))
+      .catch(() => setIsNativeApp(false));
+  }, []);
 
   // ── 초기 로드: prefs + 현재 권한 상태 ──
   useEffect(() => {
@@ -560,11 +568,13 @@ export default function NotificationBell({
 
   async function onBellClick() {
     setErrorMsg(null);
-    if (isStandalone) {
+    // 네이티브 앱(Capacitor) 또는 PWA standalone 모드 → 패널 바로 열기
+    if (isNativeApp || isStandalone) {
       setOpen((o) => !o);
       return;
     }
 
+    // 웹 브라우저에서 standalone 미설치 상태 → 설치 안내
     setOpen(false);
     if (os === "android") {
       const result = await promptInstall();

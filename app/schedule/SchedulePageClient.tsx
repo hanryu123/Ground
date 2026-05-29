@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronUp, Play } from "lucide-react";
 import {
   PAST_GAMES,
@@ -12,25 +13,20 @@ import { findTeam } from "@/lib/teams";
 import { useKboSchedule } from "@/lib/useKboSchedule";
 import { starterLabel, type LiveGame, type ScheduleBundle } from "@/lib/kbo";
 import { venueDisplayLines } from "@/lib/venue";
+import type { ScoringEvent } from "@/app/api/kbo/scoring/[gameId]/route";
 
 const EMPTY_GAMES: Game[] = [];
 
 type Section = {
-  /** 정렬용 ISO 날짜 */
   date: string;
-  /** 화면 라벨 (예: "4월 18일 · 금") */
   dateLabel: string;
-  /** 상단 작은 뱃지 */
   badge: "PAST" | "TODAY" | "TOMORROW" | "UPCOMING";
-  /** 과거 일자 vs 오늘/미래 vs 오늘에 따라 톤 다르게 */
   tone: "past" | "today" | "future";
-  /** Game 또는 LiveGame (LiveGame 은 status 필드 추가) */
   games: (Game | LiveGame)[];
 };
 
 const KO_DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** ISO date (YYYY-MM-DD) → "4월 18일 · 금" */
 function formatDateLabel(iso: string): string {
   const d = new Date(iso + "T00:00:00Z");
   const month = d.getUTCMonth() + 1;
@@ -39,7 +35,6 @@ function formatDateLabel(iso: string): string {
   return `${month}월 ${day}일 · ${dow}`;
 }
 
-/** 같은 날짜끼리 묶어 ascending(오래된→최신) 으로 반환 */
 function groupByDate<T extends { date: string }>(
   games: T[]
 ): Array<{ date: string; games: T[] }> {
@@ -57,7 +52,6 @@ function groupByDate<T extends { date: string }>(
 export default function SchedulePageClient({
   initial,
 }: {
-  /** 서버에서 SSR 로 받아온 초기 번들 — 첫 paint 부터 라이브 데이터 노출. */
   initial: ScheduleBundle;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -66,11 +60,8 @@ export default function SchedulePageClient({
   const scrollLockedRef = useRef(false);
   const didLiveScrollRef = useRef(false);
 
-  // ── 라이브 KBO 데이터 (initial 로 즉시 채워진 뒤 5분 폴링으로 갱신) ──
   const live = useKboSchedule(initial);
 
-  // 라이브 데이터가 도착하면 그것을, 아니면 정적 mock 으로 빌드.
-  // SSR 덕에 initial 이 항상 채워져 있어 첫 렌더부터 sourceXxx 가 라이브 값.
   const sections = useMemo<Section[]>(() => {
     const sourcePast: (Game | LiveGame)[] = live?.past ?? PAST_GAMES;
     const sourceToday: (Game | LiveGame)[] = live?.today ?? TODAY_GAMES;
@@ -96,7 +87,6 @@ export default function SchedulePageClient({
         games,
       })
     );
-    // 월요일·휴식일 등 today 경기 0건이라도 anchor 잡을 수 있게 placeholder 1섹션.
     if (todaySections.length === 0 && live?.date) {
       todaySections = [
         {
@@ -168,14 +158,12 @@ export default function SchedulePageClient({
     [sections.length, scrollToSection, bumpHaptic]
   );
 
-  // 초기 mount 시 TODAY 섹션으로 점프.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     scrollToSection(todayIndex, "auto");
   }, [todayIndex, scrollToSection]);
 
-  // 폴링으로 새 데이터가 도착했을 때 첫 갱신 한정으로만 보정 스크롤.
   useEffect(() => {
     if (didLiveScrollRef.current) return;
     if (!live) return;
@@ -190,7 +178,6 @@ export default function SchedulePageClient({
     return () => cancelAnimationFrame(raf);
   }, [live, initial, todayIndex, scrollToSection]);
 
-  // 한 번 스크롤(휠/스와이프)할 때 날짜를 하나씩 넘기는 스냅 UX.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -198,7 +185,6 @@ export default function SchedulePageClient({
     let touchStartX = 0;
     let touchStartY = 0;
     let touchDeltaY = 0;
-    // 첫 N 픽셀로 가로/세로 의도 판별 — 가로면 PageShell drag 에 맡기고 본 핸들러 무시.
     let axis: "x" | "y" | null = null;
 
     const onWheel = (e: WheelEvent) => {
@@ -221,12 +207,8 @@ export default function SchedulePageClient({
       if (axis == null && Math.hypot(dx, dy) > 8) {
         axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
       }
-      if (axis === "x") {
-        // 가로 스와이프 — PageShell 이 라우팅 처리.
-        return;
-      }
+      if (axis === "x") return;
       touchDeltaY = touchStartY - t.clientY;
-      // 세로 스냅 보존을 위해 default scroll 막음.
       e.preventDefault();
     };
     const onTouchEnd = () => {
@@ -353,7 +335,40 @@ function GameRow({
   const home = findTeam(game.homeId);
   const away = findTeam(game.awayId);
   const result = game.result;
-  const liveStatus = (game as LiveGame).status;
+  const liveGame = game as LiveGame;
+  const liveStatus = liveGame.status;
+  const liveScore = liveGame.liveScore;
+
+  const [expanded, setExpanded] = useState(false);
+  const [scoring, setScoring] = useState<ScoringEvent[] | null>(null);
+  const [loadingScoring, setLoadingScoring] = useState(false);
+
+  const isResult = liveStatus === "RESULT";
+  const isLive = liveStatus === "LIVE";
+
+  const handleExpand = useCallback(async () => {
+    if (!isResult) return;
+    const next = !expanded;
+    setExpanded(next);
+    if (next && scoring === null && !loadingScoring) {
+      setLoadingScoring(true);
+      try {
+        const res = await fetch(
+          `/api/kbo/scoring/${game.id}?homeId=${game.homeId}&awayId=${game.awayId}`
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { events: ScoringEvent[] };
+          setScoring(data.events);
+        } else {
+          setScoring([]);
+        }
+      } catch {
+        setScoring([]);
+      } finally {
+        setLoadingScoring(false);
+      }
+    }
+  }, [isResult, expanded, scoring, loadingScoring, game.id, game.homeId, game.awayId]);
 
   const text = muted ? "text-white/55" : "text-white";
   const subtext = muted ? "text-white/30" : "text-white/55";
@@ -374,114 +389,290 @@ function GameRow({
 
   const venue = venueDisplayLines(game.stadium);
 
+  // Live score colors - pulsing amber when live
+  const liveAwayColor = liveScore
+    ? liveScore.awayScore > liveScore.homeScore
+      ? "text-white"
+      : liveScore.awayScore < liveScore.homeScore
+        ? "text-white/50"
+        : "text-white/75"
+    : "text-white/75";
+  const liveHomeColor = liveScore
+    ? liveScore.homeScore > liveScore.awayScore
+      ? "text-white"
+      : liveScore.homeScore < liveScore.awayScore
+        ? "text-white/50"
+        : "text-white/75"
+    : "text-white/75";
+
   return (
-    <li className="rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur-md backdrop-saturate-150 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
-      {/* ── 메인 행: 시간 | 원정팀 | 스코어/vs | 홈팀 | 뱃지 ── */}
-      <div className="flex items-baseline gap-2">
-        {/* 시간 */}
-        <span
-          className={`w-[52px] shrink-0 tabular-nums text-[17px] leading-none tracking-tight ${text}`}
-          style={{ fontWeight: 800 }}
-        >
-          {game.time}
-        </span>
-
-        {/* 원정팀 — flex-1 + text-right 로 남은 공간 절반 */}
-        <span
-          className={`min-w-0 flex-1 truncate text-right text-[17px] leading-none tracking-tight drop-shadow-md ${awayTeamColor}`}
-          style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
-        >
-          {away.short}
-        </span>
-
-        {/* 스코어 or vs */}
-        {result ? (
+    <li
+      className={[
+        "rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md backdrop-saturate-150 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
+        isResult ? "cursor-pointer select-none active:scale-[0.992] transition-transform duration-100" : "",
+      ].join(" ")}
+      onClick={isResult ? handleExpand : undefined}
+    >
+      <div className="p-4">
+        {/* ── 메인 행: 시간 | 원정팀 | 스코어/vs | 홈팀 | 뱃지 ── */}
+        <div className="flex items-baseline gap-2">
+          {/* 시간 */}
           <span
-            className="shrink-0 min-w-[56px] text-center tabular-nums text-[15px] leading-none tracking-tight"
+            className={`w-[52px] shrink-0 tabular-nums text-[17px] leading-none tracking-tight ${text}`}
             style={{ fontWeight: 800 }}
           >
-            <span className={awayWon ? "text-white" : "text-white/50"}>{result.awayScore}</span>
-            <span className="mx-1 text-white/40">{draw ? "D" : ":"}</span>
-            <span className={homeWon ? "text-white" : "text-white/50"}>{result.homeScore}</span>
+            {game.time}
           </span>
-        ) : (
+
+          {/* 원정팀 */}
           <span
-            className="shrink-0 min-w-[32px] text-center text-[10px] italic text-white/45"
+            className={`min-w-0 flex-1 truncate text-right text-[17px] leading-none tracking-tight drop-shadow-md ${awayTeamColor}`}
+            style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
+          >
+            {away.short}
+          </span>
+
+          {/* 스코어 / 라이브 스코어 / vs */}
+          {result ? (
+            <span
+              className="shrink-0 min-w-[56px] text-center tabular-nums text-[15px] leading-none tracking-tight"
+              style={{ fontWeight: 800 }}
+            >
+              <span className={awayWon ? "text-white" : "text-white/50"}>{result.awayScore}</span>
+              <span className="mx-1 text-white/40">{draw ? "D" : ":"}</span>
+              <span className={homeWon ? "text-white" : "text-white/50"}>{result.homeScore}</span>
+            </span>
+          ) : isLive && liveScore ? (
+            <span
+              className="shrink-0 min-w-[56px] text-center tabular-nums text-[16px] leading-none tracking-tight"
+              style={{ fontWeight: 800 }}
+            >
+              <span className={liveAwayColor}>{liveScore.awayScore}</span>
+              <span className="mx-1" style={{ color: "rgba(255,77,77,0.6)" }}>:</span>
+              <span className={liveHomeColor}>{liveScore.homeScore}</span>
+            </span>
+          ) : (
+            <span
+              className="shrink-0 min-w-[32px] text-center text-[10px] italic text-white/45"
+              style={{ fontWeight: 400 }}
+            >
+              vs
+            </span>
+          )}
+
+          {/* 홈팀 */}
+          <span
+            className={`min-w-0 flex-1 truncate text-left text-[17px] leading-none tracking-tight drop-shadow-md ${homeTeamColor}`}
+            style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
+          >
+            {home.short}
+          </span>
+
+          {/* 상태 뱃지 */}
+          <div className="shrink-0 flex flex-col items-end gap-1">
+            {result && (
+              <div className="flex items-center gap-1.5">
+                <ResultBadge winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"} />
+                {/* 확장 토글 인디케이터 */}
+                <span style={{ color: "rgba(255,255,255,0.3)", transition: "transform 0.2s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>
+                  <ChevronDown size={13} strokeWidth={2} />
+                </span>
+              </div>
+            )}
+            {liveStatus === "LIVE" && !result && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[8.5px] uppercase"
+                style={{ fontWeight: 800, letterSpacing: "0.2em", color: "#ff4d4d", background: "rgba(255,77,77,0.12)" }}
+              >
+                <span className="inline-block h-1 w-1 animate-pulse rounded-full" style={{ backgroundColor: "#ff4d4d" }} />
+                LIVE
+              </span>
+            )}
+            {liveStatus === "CANCEL" && !result && (
+              <span
+                className="rounded-full px-2 py-[2px] text-[8.5px] uppercase"
+                style={{ fontWeight: 800, letterSpacing: "0.2em", color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.06)" }}
+              >
+                CXL
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── 서브 행: 투수 정보 ── */}
+        {!(badge === "PAST" && result) && (
+          <p
+            className={`mt-2 truncate text-[11px] leading-tight tracking-wide ${subtext}`}
             style={{ fontWeight: 400 }}
           >
-            vs
-          </span>
+            {result ? (
+              draw ? (
+                <>무승부 · {starterLabel(game.awayPitcher)} vs {starterLabel(game.homePitcher)}</>
+              ) : (
+                <>{result.winningPitcher ?? "—"}<span className="mx-1.5 text-white/20">·</span>{result.losingPitcher ?? "—"}</>
+              )
+            ) : (
+              <>
+                {badge !== "TODAY" && <span className="text-white/40" style={{ fontWeight: 600 }}>선발 </span>}
+                {starterLabel(game.awayPitcher)}<span className="mx-1.5 text-white/20">vs</span>{starterLabel(game.homePitcher)}
+              </>
+            )}
+          </p>
         )}
 
-        {/* 홈팀 — flex-1 + text-left */}
-        <span
-          className={`min-w-0 flex-1 truncate text-left text-[17px] leading-none tracking-tight drop-shadow-md ${homeTeamColor}`}
-          style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
-        >
-          {home.short}
-        </span>
-
-        {/* 상태 뱃지 */}
-        <div className="shrink-0 flex flex-col items-end gap-1">
-          {result && (
-            <ResultBadge winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"} />
-          )}
-          {liveStatus === "LIVE" && !result && (
-            <span
-              className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[8.5px] uppercase"
-              style={{ fontWeight: 800, letterSpacing: "0.2em", color: "#ff4d4d", background: "rgba(255,77,77,0.12)" }}
-            >
-              <span className="inline-block h-1 w-1 animate-pulse rounded-full" style={{ backgroundColor: "#ff4d4d" }} />
-              LIVE
-            </span>
-          )}
-          {liveStatus === "CANCEL" && !result && (
-            <span
-              className="rounded-full px-2 py-[2px] text-[8.5px] uppercase"
-              style={{ fontWeight: 800, letterSpacing: "0.2em", color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.06)" }}
-            >
-              CXL
-            </span>
-          )}
+        {/* ── 구장 + HIGHLIGHT ── */}
+        <div className="mt-2 flex items-end justify-between gap-2">
+          {venue.primary ? (
+            <div className={`space-y-0.5 ${muted ? "text-white/38" : "text-white/52"}`}>
+              <p className="text-[11px] leading-snug tracking-[0.08em]" style={{ fontWeight: 600 }}>{venue.primary}</p>
+              {venue.secondary && (
+                <p className={`text-[10px] leading-snug tracking-wide ${muted ? "text-white/28" : "text-white/36"}`} style={{ fontWeight: 400 }}>{venue.secondary}</p>
+              )}
+            </div>
+          ) : <span />}
+          <HighlightLink url={game.highlightUrl} muted={muted} />
         </div>
       </div>
 
-      {/* ── 서브 행: 투수 정보 ── */}
-      {!(badge === "PAST" && result) && (
-        <p
-          className={`mt-2 truncate text-[11px] leading-tight tracking-wide ${subtext}`}
-          style={{ fontWeight: 400 }}
-        >
-          {result ? (
-            draw ? (
-              <>무승부 · {starterLabel(game.awayPitcher)} vs {starterLabel(game.homePitcher)}</>
-            ) : (
-              <>{result.winningPitcher ?? "—"}<span className="mx-1.5 text-white/20">·</span>{result.losingPitcher ?? "—"}</>
-            )
-          ) : (
-            <>
-              {badge !== "TODAY" && <span className="text-white/40" style={{ fontWeight: 600 }}>선발 </span>}
-              {starterLabel(game.awayPitcher)}<span className="mx-1.5 text-white/20">vs</span>{starterLabel(game.homePitcher)}
-            </>
-          )}
-        </p>
-      )}
-
-      {/* ── 구장 + HIGHLIGHT ── */}
-      <div className="mt-2 flex items-end justify-between gap-2">
-        {venue.primary ? (
-          <div className={`space-y-0.5 ${muted ? "text-white/38" : "text-white/52"}`}>
-            <p className="text-[11px] leading-snug tracking-[0.08em]" style={{ fontWeight: 600 }}>{venue.primary}</p>
-            {venue.secondary && (
-              <p className={`text-[10px] leading-snug tracking-wide ${muted ? "text-white/28" : "text-white/36"}`} style={{ fontWeight: 400 }}>{venue.secondary}</p>
-            )}
-          </div>
-        ) : <span />}
-        <HighlightLink url={game.highlightUrl} muted={muted} />
-      </div>
+      {/* ── 득점 경위 패널 (종료 경기만, 확장 시 노출) ── */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            key="scoring-panel"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <ScoringPanel
+              events={scoring}
+              loading={loadingScoring}
+              awayTeam={away.short}
+              homeTeam={home.short}
+              awayId={game.awayId}
+              homeId={game.homeId}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </li>
   );
 }
+
+// ─── 득점 경위 패널 ───────────────────────────────────────────────────────────
+
+function ScoringPanel({
+  events,
+  loading,
+  awayTeam,
+  homeTeam,
+  awayId,
+  homeId,
+}: {
+  events: ScoringEvent[] | null;
+  loading: boolean;
+  awayTeam: string;
+  homeTeam: string;
+  awayId: string;
+  homeId: string;
+}) {
+  return (
+    <div
+      className="mx-4 mb-4 rounded-xl overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+    >
+      {/* 헤더 */}
+      <div
+        className="px-3 py-2 text-[9px] uppercase tracking-[0.28em] text-white/35"
+        style={{ fontWeight: 700, borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        득점 경위
+      </div>
+
+      {/* 내용 */}
+      {loading ? (
+        <div className="px-3 py-5 text-center">
+          <span className="text-[10px] text-white/30 tracking-[0.2em] uppercase">Loading...</span>
+        </div>
+      ) : !events || events.length === 0 ? (
+        <div className="px-3 py-5 text-center">
+          <span className="text-[10px] text-white/25 tracking-[0.18em] uppercase">상세 기록 없음</span>
+        </div>
+      ) : (
+        <ul className="py-1">
+          {events.map((ev, i) => {
+            const isAway = ev.teamId === awayId;
+            const teamName = isAway ? awayTeam : homeTeam;
+            const inningLabel = `${ev.inning}회${ev.half === "top" ? "초" : "말"}`;
+            const scoreLabel = `${ev.awayScore}:${ev.homeScore}`;
+
+            return (
+              <li
+                key={i}
+                className="flex items-center gap-2 px-3 py-[7px]"
+                style={{
+                  borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                }}
+              >
+                {/* 이닝 */}
+                <span
+                  className="w-[38px] shrink-0 text-[10px] tabular-nums text-white/35"
+                  style={{ fontWeight: 600 }}
+                >
+                  {inningLabel}
+                </span>
+
+                {/* 팀 */}
+                <span
+                  className="w-[28px] shrink-0 text-[11px] text-white/60"
+                  style={{ fontWeight: 700 }}
+                >
+                  {teamName}
+                </span>
+
+                {/* 선수 + 설명 */}
+                <span className="flex-1 min-w-0 truncate text-[11px] text-white/80" style={{ fontWeight: 500 }}>
+                  {ev.player ? (
+                    <>
+                      <span className="text-white/90" style={{ fontWeight: 700 }}>{ev.player}</span>
+                      <span className="text-white/40 mx-1">·</span>
+                      {ev.description}
+                    </>
+                  ) : (
+                    ev.description
+                  )}
+                </span>
+
+                {/* 누적 스코어 */}
+                <span
+                  className="shrink-0 tabular-nums text-[11px] text-white/40"
+                  style={{ fontWeight: 700 }}
+                >
+                  {isAway ? (
+                    <>
+                      <span className="text-white/65">{ev.awayScore}</span>
+                      <span className="mx-0.5 text-white/25">:</span>
+                      {ev.homeScore}
+                    </>
+                  ) : (
+                    <>
+                      {ev.awayScore}
+                      <span className="mx-0.5 text-white/25">:</span>
+                      <span className="text-white/65">{ev.homeScore}</span>
+                    </>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── 기존 서브 컴포넌트들 ────────────────────────────────────────────────────
 
 function ResultBadge({
   winnerSide,
@@ -504,7 +695,6 @@ function ResultBadge({
   );
 }
 
-/** 유튜브 하이라이트 — 빨간 브랜드 없음, Play + HIGHLIGHT 만 */
 function HighlightLink({
   url,
   muted,
@@ -518,6 +708,7 @@ function HighlightLink({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
       className={[
         "inline-flex items-center gap-1.5 bg-transparent",
         "text-[8px] font-medium uppercase tracking-[0.28em]",

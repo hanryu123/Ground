@@ -7,6 +7,15 @@ import { useKboToday } from "@/lib/useKboToday";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+const MAIL_TO = (() => {
+  const to = "janghanr@gmail.com";
+  const subject = encodeURIComponent("[GROUND 피드백] 야구 찐팬의 한마디");
+  const body = encodeURIComponent(
+    "기기명 (예: iPhone 15 Pro): \n응원 구단: \n\n불편하셨던 점이나 GROUND 팀에게 바라는 점을 자유롭게 적어주세요! ⚾️",
+  );
+  return `mailto:${to}?subject=${subject}&body=${body}`;
+})();
+
 /**
  * /rank — KBO 정규시즌 순위표 단독 페이지.
  *
@@ -64,6 +73,25 @@ export default function RankPage() {
           rows={live?.standings}
           loading={!live}
         />
+      </motion.div>
+
+      {/* ── 개발자에게 연락하기 ── */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, ease, delay: 0.32 }}
+        className="flex flex-col items-center gap-2 px-7 pb-6 pt-10"
+      >
+        <a
+          href={MAIL_TO}
+          className="rounded-full border border-white/[0.14] px-5 py-2.5 text-[11.5px] tracking-wide text-white/38 transition-colors hover:border-white/25 hover:text-white/55 active:opacity-70"
+          style={{ fontWeight: 500 }}
+        >
+          GROUND 개선 의견 보내기
+        </a>
+        <p className="text-[10px] text-white/20" style={{ letterSpacing: "0.02em" }}>
+          찐팬의 목소리가 GROUND를 만들어요 ⚾️
+        </p>
       </motion.div>
     </section>
   );

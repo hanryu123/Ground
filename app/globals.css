@@ -15,8 +15,9 @@
 
   html,
   body {
-    background-color: #000000;
-    color: #ffffff;
+    /* CSS variable로 연결 — 팀 테마 변경 시 safe-area 포함 배경색도 함께 따라감 */
+    background-color: var(--app-bg, #000000);
+    color: var(--app-text, #ffffff);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     position: fixed;
