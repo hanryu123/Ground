@@ -367,6 +367,14 @@ export default function NotificationBell({
 
   async function pushSubscribe(nextPrefs: NotifPrefs) {
     setErrorMsg(null);
+    // 네이티브 앱: FCM이 이미 등록되어 있으므로 web push 불필요 — prefs만 저장
+    if (isNativeApp) {
+      setExplicitOptOut(false);
+      setSubscribed(true);
+      setPushHealth("subscribed");
+      setPushHealthMsg("FCM 활성");
+      return;
+    }
     if (!isStandalone) {
       setErrorMsg("알림은 홈 화면에 설치된 앱에서만 설정할 수 있어요.");
       return;
@@ -429,6 +437,14 @@ export default function NotificationBell({
   }
 
   async function refreshPushHealth(options?: { allowSilentResubscribe?: boolean }) {
+    // 네이티브 앱: FCM 기반이므로 web push 상태 체크 불필요
+    if (isNativeApp) {
+      const enabled = hasAnyTopicEnabled(prefs);
+      setSubscribed(enabled);
+      setPushHealth(enabled ? "subscribed" : "unsubscribed");
+      setPushHealthMsg(enabled ? "FCM 활성" : "비활성");
+      return;
+    }
     try {
       setPushHealth("checking");
       setPushHealthMsg("확인 중");
@@ -513,7 +529,8 @@ export default function NotificationBell({
   }
 
   async function toggleKeys(topicKeys: Array<keyof NotifPrefs>) {
-    if (!isStandalone) {
+    // 웹 PWA: standalone 미설치 상태면 차단
+    if (!isNativeApp && !isStandalone) {
       setErrorMsg("홈 화면에 설치한 앱에서만 알림 구독이 가능해요.");
       return;
     }
@@ -526,7 +543,13 @@ export default function NotificationBell({
     setPrefs(nextPrefs);
     setLoading(true);
     try {
-      if (turningOn) {
+      if (isNativeApp) {
+        // 네이티브 앱: prefs는 localStorage에 이미 저장됨, FCM 상태만 반영
+        setExplicitOptOut(!turningOn && !hasAnyTopicEnabled(nextPrefs));
+        setSubscribed(hasAnyTopicEnabled(nextPrefs));
+        setPushHealth(hasAnyTopicEnabled(nextPrefs) ? "subscribed" : "unsubscribed");
+        setPushHealthMsg(hasAnyTopicEnabled(nextPrefs) ? "FCM 활성" : "비활성");
+      } else if (turningOn) {
         setExplicitOptOut(false);
         await pushSubscribe(nextPrefs);
       } else if (!hasAnyTopicEnabled(nextPrefs) && subscribed) {
@@ -548,7 +571,7 @@ export default function NotificationBell({
       setPushHealthMsg("구독 처리 에러");
     } finally {
       setLoading(false);
-      void refreshPushHealth({ allowSilentResubscribe: true });
+      if (!isNativeApp) void refreshPushHealth({ allowSilentResubscribe: true });
     }
   }
 
@@ -655,27 +678,29 @@ export default function NotificationBell({
                   Notifications
                 </p>
                 <p className="mt-1 text-[12px] leading-snug text-white/60">
-                  {permission === "denied"
-                    ? "브라우저 알림이 차단돼 있어요. 설정에서 허용해주세요."
-                    : "받아볼 알림을 골라주세요. (웹 푸시 + 인앱)"}
+                  받아볼 알림을 골라주세요.
                 </p>
-                <div className="mt-2 flex items-center gap-2 text-[10px] text-white/70">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      pushHealth === "subscribed"
-                        ? "bg-emerald-400"
-                        : pushHealth === "checking"
-                          ? "bg-amber-300"
-                          : pushHealth === "error"
-                            ? "bg-rose-400"
-                            : "bg-white/40"
-                    }`}
-                  />
-                  <span className="tracking-wide">
-                    웹 푸시 상태: {pushHealthMsg || "확인 중"}
-                  </span>
-                </div>
-                {permission !== "granted" && (
+                {/* 웹 푸시 상태 — 네이티브 앱에서는 숨김 */}
+                {!isNativeApp && (
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-white/70">
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        pushHealth === "subscribed"
+                          ? "bg-emerald-400"
+                          : pushHealth === "checking"
+                            ? "bg-amber-300"
+                            : pushHealth === "error"
+                              ? "bg-rose-400"
+                              : "bg-white/40"
+                      }`}
+                    />
+                    <span className="tracking-wide">
+                      웹 푸시 상태: {pushHealthMsg || "확인 중"}
+                    </span>
+                  </div>
+                )}
+                {/* 웹 PWA 전용 설치 안내 — 네이티브 앱에서는 숨김 */}
+                {!isNativeApp && permission !== "granted" && (
                   <div className="mt-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-2 text-[10.5px] leading-relaxed text-white/58">
                     <p>1) 홈 화면 앱에서 벨 버튼 열기</p>
                     <p>2) 권한 팝업에서 허용 선택</p>
