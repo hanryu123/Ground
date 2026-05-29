@@ -2,7 +2,7 @@
  * GET /api/kbo/scoring/[gameId]?homeId=nc&awayId=hanwha
  *
  * Naver 릴레이 텍스트를 파싱해 득점 이벤트 목록을 반환.
- * 경기 종료 후 스케줄 탭의 "득점 경위" 패널에서 사용.
+ * 경기 종료 후 스케줄 탭의 "득점 정보" 패널에서 사용.
  */
 
 import { NextResponse } from "next/server";
@@ -101,6 +101,72 @@ function extractPlayer(title: string): string | null {
   return STOP.has(m[1]) ? null : m[1];
 }
 
+// ─── relay 배열 추출 (live-events 와 동일한 다중 fallback) ──────────────────
+
+function extractRelayEntries(json: Record<string, unknown>): Record<string, unknown>[] {
+  const result = json["result"] as Record<string, unknown> | undefined;
+  const trd = result?.["textRelayData"];
+
+  // 1순위: result.textRelayData.textRelays
+  if (trd && typeof trd === "object" && !Array.isArray(trd)) {
+    const textRelays = (trd as Record<string, unknown>)["textRelays"];
+    if (Array.isArray(textRelays) && textRelays.length > 0)
+      return textRelays as Record<string, unknown>[];
+    // textRelayData 안 다른 배열 키
+    for (const v of Object.values(trd as object)) {
+      if (Array.isArray(v) && v.length > 0)
+        return v as Record<string, unknown>[];
+    }
+  }
+  if (Array.isArray(trd) && trd.length > 0)
+    return trd as Record<string, unknown>[];
+
+  // 2순위: 여러 레거시 경로
+  const candidates: unknown[] = [
+    json["relayTexts"],
+    result?.["relayTexts"],
+    (json["relay"] as Record<string, unknown> | undefined)?.["relayTexts"],
+    result?.["relay"] && (result["relay"] as Record<string, unknown>)?.["relayTexts"],
+    json["texts"],
+    result?.["texts"],
+    result?.["relay"],
+    json["relay"],
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length > 0)
+      return c as Record<string, unknown>[];
+  }
+  return [];
+}
+
+// ─── currentGameState 에서 점수 읽기 (Naver 여러 필드명 시도) ─────────────────
+
+function readGameStateScores(
+  e: Record<string, unknown>
+): { home: number; away: number } | null {
+  // textOptions[0].currentGameState (primary)
+  const textOptions = Array.isArray(e["textOptions"])
+    ? (e["textOptions"] as Record<string, unknown>[])
+    : [];
+  const gs = (textOptions[0]?.["currentGameState"] as Record<string, unknown> | undefined) ?? {};
+
+  // 최상단에 직접 노출되는 경우도 시도
+  const directState = (e["currentGameState"] as Record<string, unknown> | undefined) ?? {};
+
+  for (const state of [gs, directState, e]) {
+    const home = readNum(
+      state,
+      "homeTeamScore", "homeScore", "hScore", "home", "homeRunsScored",
+    );
+    const away = readNum(
+      state,
+      "awayTeamScore", "awayScore", "aScore", "away", "awayRunsScored",
+    );
+    if (home !== null && away !== null) return { home, away };
+  }
+  return null;
+}
+
 // ─── 릴레이 파싱 ──────────────────────────────────────────────────────────────
 
 async function fetchScoringEvents(
@@ -108,112 +174,127 @@ async function fetchScoringEvents(
   homeId: string,
   awayId: string,
 ): Promise<ScoringEvent[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  // live-events 와 동일하게 여러 엔드포인트 순차 시도
+  const endpoints = [
+    `${NAVER_BASE}/schedule/games/${gameId}/relay`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relay?fields=relayTexts`,
+    `${NAVER_BASE}/schedule/games/${gameId}?fields=relay`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relayTexts`,
+    `${NAVER_BASE}/schedule/games/${gameId}/liveText`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relay?size=200`,
+  ];
 
-  try {
-    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/relay`, {
-      headers: {
-        "user-agent": UA,
-        accept: "application/json",
-        referer: "https://m.sports.naver.com/",
-      },
-      cache: "force-cache",
-      signal: controller.signal,
-    });
-    if (!res.ok) return [];
+  let textRelays: Record<string, unknown>[] = [];
 
-    const json = (await res.json()) as Record<string, unknown>;
-    const result = (json["result"] as Record<string, unknown> | undefined) ?? {};
-    const trd = (result["textRelayData"] as Record<string, unknown> | undefined) ?? {};
-    const textRelays: unknown[] = Array.isArray(trd["textRelays"])
-      ? (trd["textRelays"] as unknown[])
-      : [];
+  for (const endpoint of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(endpoint, {
+        headers: {
+          "user-agent": UA,
+          accept: "application/json",
+          referer: "https://m.sports.naver.com/",
+          "accept-language": "ko-KR,ko;q=0.9",
+        },
+        // no-store: 종료 경기지만 처음 파싱 시에는 신선하게 받고,
+        // Route 레벨 Cache-Control 헤더로 CDN/브라우저 캐시를 제어한다.
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
 
-    if (textRelays.length === 0) return [];
-
-    const events: ScoringEvent[] = [];
-    let awayScore = 0;
-    let homeScore = 0;
-
-    for (const raw of textRelays) {
-      const e = raw as Record<string, unknown>;
-      const inn = readNum(e, "inn", "inning") ?? 0;
-      if (!inn) continue;
-
-      const sub = e["inningSub"];
-      const isTop = sub === 1 || sub === "1"; // 초: 원정팀 공격
-      const isBot = sub === 2 || sub === "2"; // 말: 홈팀 공격
-      if (!isTop && !isBot) continue;
-
-      const title = (e["title"] as string | undefined) ?? "";
-      const textOptions =
-        (e["textOptions"] as Array<Record<string, unknown>> | undefined) ?? [];
-      const gs = (textOptions[0]?.["currentGameState"] as
-        | Record<string, unknown>
-        | undefined) ?? {};
-
-      // 1순위: currentGameState에서 점수 직접 추출
-      const stateHome = readNum(
-        gs,
-        "homeTeamScore", "homeScore", "hScore", "home",
-      );
-      const stateAway = readNum(
-        gs,
-        "awayTeamScore", "awayScore", "aScore", "away",
-      );
-
-      if (
-        stateHome !== null &&
-        stateAway !== null &&
-        (stateHome !== homeScore || stateAway !== awayScore)
-      ) {
-        const dHome = stateHome - homeScore;
-        const dAway = stateAway - awayScore;
-        if (dHome > 0 || dAway > 0) {
-          const scoringTeam = dHome > 0 ? homeId : awayId;
-          const runs = dHome > 0 ? dHome : dAway;
-          events.push({
-            inning: inn,
-            half: isTop ? "top" : "bottom",
-            teamId: scoringTeam,
-            runs,
-            description: extractDescription(title) || `${runs}점`,
-            player: extractPlayer(title),
-            awayScore: stateAway,
-            homeScore: stateHome,
-          });
-          homeScore = stateHome;
-          awayScore = stateAway;
-        }
+      if (!res.ok) {
+        console.log(`[scoring] ${gameId} ${endpoint.split(gameId)[1]} → ${res.status}`);
         continue;
       }
 
-      // 2순위: title 텍스트 기반 득점 감지
-      if (isScoringPlay(title)) {
-        const runs = extractRuns(title);
-        const scoringTeam = isTop ? awayId : homeId;
-        if (isTop) awayScore += runs;
-        else homeScore += runs;
+      const json = (await res.json()) as Record<string, unknown>;
+      const entries = extractRelayEntries(json);
+
+      console.log(`[scoring] ${gameId} entries=${entries.length} via ${endpoint.split(gameId)[1]}`);
+
+      if (entries.length > 0) {
+        textRelays = entries;
+        break;
+      }
+    } catch (err) {
+      console.log(`[scoring] ${gameId} fetch error:`, err);
+    }
+  }
+
+  if (textRelays.length === 0) {
+    console.log(`[scoring] ${gameId} no relay entries found across all endpoints`);
+    return [];
+  }
+
+  const events: ScoringEvent[] = [];
+  let awayScore = 0;
+  let homeScore = 0;
+
+  for (const e of textRelays) {
+    const inn = readNum(e, "inn", "inning", "inningCount", "currentInning") ?? 0;
+    if (!inn) continue;
+
+    const sub =
+      e["inningSub"] ??
+      e["inningDiv"] ??
+      e["half"] ??
+      e["currentInningSub"];
+    const isTop = sub === 1 || sub === "1" || sub === "top"; // 초: 원정팀 공격
+    const isBot = sub === 2 || sub === "2" || sub === "bottom"; // 말: 홈팀 공격
+    if (!isTop && !isBot) continue;
+
+    const title =
+      (e["title"] as string | undefined) ??
+      (e["playText"] as string | undefined) ??
+      (e["text"] as string | undefined) ??
+      "";
+
+    // 1순위: currentGameState에서 점수 직접 추출
+    const scores = readGameStateScores(e);
+    if (scores !== null && (scores.home !== homeScore || scores.away !== awayScore)) {
+      const dHome = scores.home - homeScore;
+      const dAway = scores.away - awayScore;
+      if (dHome > 0 || dAway > 0) {
+        const scoringTeam = dHome > 0 ? homeId : awayId;
+        const runs = dHome > 0 ? dHome : dAway;
         events.push({
           inning: inn,
           half: isTop ? "top" : "bottom",
           teamId: scoringTeam,
           runs,
-          description: extractDescription(title),
+          description: extractDescription(title) || `${runs}점`,
           player: extractPlayer(title),
-          awayScore,
-          homeScore,
+          awayScore: scores.away,
+          homeScore: scores.home,
         });
+        homeScore = scores.home;
+        awayScore = scores.away;
       }
+      continue;
     }
 
-    return events;
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timer);
+    // 2순위: title 텍스트 기반 득점 감지
+    if (title && isScoringPlay(title)) {
+      const runs = extractRuns(title);
+      const scoringTeam = isTop ? awayId : homeId;
+      if (isTop) awayScore += runs;
+      else homeScore += runs;
+      events.push({
+        inning: inn,
+        half: isTop ? "top" : "bottom",
+        teamId: scoringTeam,
+        runs,
+        description: extractDescription(title),
+        player: extractPlayer(title),
+        awayScore,
+        homeScore,
+      });
+    }
   }
+
+  return events;
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────

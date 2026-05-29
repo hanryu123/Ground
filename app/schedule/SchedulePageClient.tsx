@@ -534,7 +534,7 @@ function GameRow({
         </div>
       </div>
 
-      {/* ── 득점 경위 패널 (종료 경기만, 확장 시 노출) ── */}
+      {/* ── 득점 정보 패널 (종료 경기만, 확장 시 노출) ── */}
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -560,7 +560,7 @@ function GameRow({
   );
 }
 
-// ─── 득점 경위 패널 ───────────────────────────────────────────────────────────
+// ─── 득점 정보 패널 ───────────────────────────────────────────────────────────
 
 function ScoringPanel({
   events,
@@ -587,7 +587,7 @@ function ScoringPanel({
         className="px-3 py-2 text-[9px] uppercase tracking-[0.28em] text-white/35"
         style={{ fontWeight: 700, borderBottom: "1px solid rgba(255,255,255,0.06)" }}
       >
-        득점 경위
+        득점 정보
       </div>
 
       {/* 내용 */}
