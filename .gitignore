@@ -25,3 +25,8 @@ caption_config.json
 # tsc 증분 빌드 캐시
 tsconfig.tsbuildinfo
 .env*
+
+
+# Firebase 서비스 계정 키 — 절대 커밋 금지
+*firebase-adminsdk*.json
+ground-fd8bd-*.json
