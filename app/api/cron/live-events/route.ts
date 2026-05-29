@@ -555,15 +555,17 @@ export async function GET(req: Request) {
           if (relay.battingSide !== null) {
             // 1순위: battingSide(이닝 초/말 기반) — 가장 정확
             isPitching = relay.battingSide !== teamSide;
-          } else if (kind === "strikeout" && relay.strikeoutDirection !== null) {
-            // 스코어로 투수팀 추론 (이기거나 동점 → 우리가 투수팀일 가능성)
+          } else if (kind === "strikeout") {
+            // battingSide 불명 시 스코어 기반 추론: 이기는 팀이 투수팀일 가능성이 높음.
+            // 주의: direction별 분기("batting"→myS<oppS)는 방향이 역전되어
+            // 이기는 팀(투수팀)에게 "삼진 아웃", 지는 팀(타팀)에게 "탈삼진!"을 발송하는
+            // 치명적 역전 버그를 유발하므로 제거.
             const myS = myCurrentScore ?? 0;
             const oppS = oppCurrentScore ?? 0;
-            if (relay.strikeoutDirection === "pitching") {
-              isPitching = myS >= oppS;
-            } else {
-              isPitching = myS < oppS;
+            if (myS !== oppS) {
+              isPitching = myS > oppS;
             }
+            // 동점: isPitching=null 유지 → buildLiveEventCopy에서 스코어 기반 추론
           }
 
           const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName, myCurrentScore, oppCurrentScore);

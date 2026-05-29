@@ -270,91 +270,75 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unk
 function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { headline: string; content: string } {
   const { facts, tone } = input;
   const seedBase = `${facts.externalId}:${facts.myTeam}:${facts.myScore}:${facts.oppScore}`;
-  const hitDiff =
-    facts.myHits != null && facts.oppHits != null ? facts.myHits - facts.oppHits : null;
-  const errDiff =
-    facts.myErrors != null && facts.oppErrors != null ? facts.oppErrors - facts.myErrors : null;
-  const hrDiff =
-    facts.myHomeRuns != null && facts.oppHomeRuns != null ? facts.myHomeRuns - facts.oppHomeRuns : null;
   const gap = facts.myScore - facts.oppScore;
   const scoreLine = `${facts.myScore}:${facts.oppScore}`;
-  const statLine = `안타 ${facts.myHits ?? "?"}-${facts.oppHits ?? "?"}, 실책 ${facts.myErrors ?? "?"}-${facts.oppErrors ?? "?"}, 홈런 ${facts.myHomeRuns ?? "?"}-${facts.oppHomeRuns ?? "?"}`;
 
   const winHeads = [
-    `🔥 [한줄평] ${facts.myTeam}, 흐름 설계부터 마무리까지 완승.`,
-    `🔥 [한줄평] ${facts.myTeam}, 오늘은 약점 없이 이겼다.`,
-    `🔥 [한줄평] ${facts.myTeam}, 승부처 운영에서 급이 달랐다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 거의 흠잡을 데가 없었습니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 승부처에서 전혀 흔들리지 않았습니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘 완성도가 한 수 위였습니다.`,
   ] as const;
   const lossHeads = [
-    `🔥 [한줄평] ${facts.myTeam}는 오늘 경기 운영이 완전히 무너졌다.`,
-    `🔥 [한줄평] ${facts.myTeam}는 디테일에서 밀리며 자멸했다.`,
-    `🔥 [한줄평] ${facts.myTeam}는 초반부터 플랜이 꼬였다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이건 솔직히 변명이 없는 경기였습니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 패배해야 마땅한 흐름이었습니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이 결과 누구도 억울하다 할 수 없습니다.`,
   ] as const;
   const drawHeads = [
-    `😮‍💨 [한줄평] ${facts.myTeam} 오늘은 이길 경기 놓쳤다.`,
-    `😮‍💨 [한줄평] ${facts.myTeam} 무승부지만 내용은 찝찝했다.`,
-    `😮‍💨 [한줄평] ${facts.myTeam} 승부처 결정력이 아쉬웠다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이길 경기를 결국 가져오지 못했습니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 비겼지만 속은 편하지 않은 1점입니다.`,
+    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 결정적 순간 결정력이 끝내 터지지 않았습니다.`,
   ] as const;
-
-  const hitClause =
-    hitDiff == null
-      ? "타격 수치가 완전하진 않지만, 흐름 자체는 분명히 갈렸다."
-      : hitDiff >= 5
-        ? `${facts.myTeam} 타선이 안타 ${Math.abs(hitDiff)}개 우위를 만들면서 경기 템포를 지배했다.`
-        : hitDiff <= -5
-          ? `안타에서 ${Math.abs(hitDiff)}개 밀린 게 가장 큰 패인이었다.`
-          : `안타 격차는 크지 않았지만 득점권 실행력에서 차이가 났다.`;
-  const errorClause =
-    errDiff == null
-      ? "수비 장면 하나하나에서 집중력 차이가 체감됐다."
-      : errDiff >= 1
-        ? `${facts.oppTeam} 쪽 실수가 더 많아 접전 구간에서 흐름이 끊겼다.`
-        : errDiff <= -1
-          ? `${facts.myTeam} 실책이 나온 이닝마다 분위기를 내줬다.`
-          : "실책 숫자는 같아도 수비 난이도 높은 장면 처리에서 온도차가 있었다.";
-  const hrClause =
-    hrDiff == null
-      ? "장타 지표가 비어 있어도, 승부처에서 더 날카로운 쪽이 이겼다."
-      : hrDiff > 0
-        ? `홈런 ${facts.myHomeRuns}-${facts.oppHomeRuns}의 장타 우위가 결정타가 됐다.`
-        : hrDiff < 0
-          ? `홈런 ${facts.myHomeRuns}-${facts.oppHomeRuns} 열세가 그대로 화력 차이로 이어졌다.`
-          : "홈런 수는 같았지만 빅이닝을 만든 쪽이 결국 경기를 가져갔다.";
-
-  const closer = facts.clutchHit ?? facts.homeRun ?? facts.error ?? null;
-  const closerLine = closer
-    ? `키 장면으로는 "${clip(closer, 44)}" 한 줄만 봐도 오늘 흐름이 설명된다.`
-    : "결국 디테일에서 버틴 팀이 마지막에 웃은 경기였다.";
 
   if (tone === "win") {
     const headline = pickBySeed(`${seedBase}:win:head`, winHeads);
-    const first = pickBySeed(`${seedBase}:win:first`, [
-      `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}로 잡았다.`,
-      `${scoreLine}, ${facts.myTeam} 쪽 운영 완성도가 훨씬 높았다.`,
-      `${scoreLine} 승리. 경기 설계부터 마무리까지 크게 흔들리지 않았다.`,
-    ]);
+    const opener = gap >= 5
+      ? `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 완파했습니다.`
+      : `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 잡아냈습니다.`;
+    const heroPart = facts.winningPitcher
+      ? `오늘의 핵심은 ${facts.winningPitcher}, 마운드에서 흐름을 완전히 주도했습니다.`
+      : facts.clutchHit
+        ? `결승타 장면 — "${clip(facts.clutchHit, 40)}" — 이 한 방이 경기를 결정지었습니다.`
+        : `승부처마다 ${facts.myTeam}가 먼저 치고 나갔고, 상대는 끝내 따라오지 못했습니다.`;
+    const closerPart = facts.savePitcher
+      ? `${facts.savePitcher}가 뒷문을 철저히 잠갔습니다.`
+      : facts.clutchHit && facts.winningPitcher
+        ? `결승타 장면, "${clip(facts.clutchHit, 36)}" — 이것만으로 오늘 경기가 설명됩니다.`
+        : `다음 경기도 이 흐름 그대로 가져가야 합니다.`;
     return {
       headline,
-      content: `${first} 박스스코어만 봐도 ${statLine}로 우위가 분명하다. ${hitClause} ${errorClause} ${hrClause} ${closerLine}`,
+      content: `${opener} ${heroPart} ${closerPart} 다음 경기도 기대가 됩니다.`,
     };
   }
+
   if (tone === "draw") {
     const headline = pickBySeed(`${seedBase}:draw:head`, drawHeads);
+    const bodyPart = facts.losingPitcher
+      ? `${facts.losingPitcher}에게 패전이 붙지 않은 게 그나마 다행이지만, 내용은 좋지 않았습니다.`
+      : facts.clutchHit
+        ? `"${clip(facts.clutchHit, 36)}" — 이 장면 하나를 막지 못한 게 오늘의 핵심입니다.`
+        : `결정적인 순간마다 ${facts.myTeam} 쪽이 한 발씩 느렸습니다.`;
     return {
       headline,
-      content: `${facts.myTeam}와 ${facts.oppTeam}가 ${scoreLine}으로 비겼지만 내용은 팽팽하지 않았다. ${statLine}. ${hitClause} ${errorClause} ${closerLine}`,
+      content: `${facts.myTeam}와 ${facts.oppTeam}가 ${scoreLine}으로 나눴지만, 이 결과가 딱히 반갑지만은 않습니다. ${bodyPart} 승리를 손에 쥘 수 있었던 경기였는데, 결국 1점으로 마무리됐습니다.`,
     };
   }
+
+  // loss
   const headline = pickBySeed(`${seedBase}:loss:head`, lossHeads);
-  const first = gap <= -8
-    ? `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 크게 무너졌다.`
-    : `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 졌고, 추격 흐름을 만들지 못했다.`;
-  const pitcherLine = facts.losingPitcher
-    ? `${facts.losingPitcher} 한 명만 탓해선 정리가 안 되는 경기였고, 벤치 포함 전체 복기가 필요하다.`
-    : "특정 선수 한 명으로 덮을 경기가 아니라 팀 단위 복기가 필요하다.";
+  const opener = gap <= -8
+    ? `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 완패했습니다.`
+    : `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 졌습니다.`;
+  const corePart = facts.clutchHit
+    ? `"${clip(facts.clutchHit, 36)}" — 이 장면이 오늘 경기를 결정지었습니다.`
+    : facts.losingPitcher
+      ? `${facts.losingPitcher}가 패전 투수로 이름을 남겼지만, 한 명의 문제가 아니었습니다.`
+      : `승부처에서 번번이 무너지는 패턴이 오늘도 반복됐습니다.`;
+  const tailPart = facts.losingPitcher && facts.clutchHit
+    ? `${facts.losingPitcher}를 포함해 팀 전체가 복기해야 할 경기입니다.`
+    : `다음 경기, 반드시 되갚아야 합니다.`;
   return {
     headline,
-    content: `${first} 숫자로 보면 ${statLine}에서 이미 균형이 무너져 있었다. ${hitClause} ${errorClause} ${hrClause} ${pitcherLine}`,
+    content: `${opener} ${corePart} ${tailPart} 팬들도 오늘만큼은 할 말이 없습니다.`,
   };
 }
 
@@ -446,10 +430,16 @@ export async function generatePostGameReport(input: {
     ? `경기장: ${stadium} (${input.mySide === "home" ? "홈" : "원정"} 경기)`
     : `경기: ${input.mySide === "home" ? "홈" : "원정"} 경기`;
 
-  const system = `너는 ${team} 열성팬이야. 이 경기 결과가 인생의 전부인 것처럼 생사가 걸려있어. 딱 하나 — 직업이 KBO 캐스터라 존댓말은 나온다. 팬 95%, 캐스터 5%.
-승리하면 세상을 다 가진 환희, 패배하면 말도 안 나오는 절망 — 그게 문장 전체를 지배해야 해. 완전 중립 금지. 오직 우리 팀 편.
-기계적인 스포츠 기사 말투 절대 금지. 요약체/브리핑체/불릿체 금지.
-점수 차이, 안타 수, 실책 수, 홈런 수를 근거로 자신감 있게 칭찬하거나 날카롭게 비판해줘.
+  const system = `너는 ${team} 전담 편파 캐스터야. 직업적 품격(존댓말, 방송 어체)은 지키지만, 감정은 완전히 ${team} 편이야.
+경기 직후 단 하나의 한줄평을 날리는 순간이야 — 통계 브리핑이 아니라, 이 경기를 하나의 문장으로 정의하는 거야.
+중립 절대 금지. 오직 ${team} 팬의 눈으로 이 경기의 본질을 꿰뚫어라.
+
+작성 원칙:
+- 결승타·승리/패전투수·세이브처럼 명확한 주인공이 있으면 그 이름을 반드시 써라
+- 안타/실책/홈런 수를 나열하는 브리핑 절대 금지 — 숫자는 문장 흐름에 녹이거나 생략
+- 이 경기를 단 하나의 각도(영웅/패인/장면)로 날카롭게 잘라라
+- 칭찬할 때는 아낌없이, 비판할 때는 직설적으로 — "아쉽다" 한마디로 때우는 결론 금지
+
 반드시 JSON만 출력:
 {"headline":"🎙️ [캐스터 한줄평] ...","content":"3~4문장 단락"}
 
@@ -467,20 +457,27 @@ export async function generatePostGameReport(input: {
 - 볼넷: 볼 4개로 출루 (투수 실책)
 - 병살타: 타구 하나로 2명 아웃 (공격팀 최악)
 - 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님`;
-  const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘.\n" : "";
+  const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
+  const narrativeLines = [
+    input.facts.winningPitcher ? `승리투수: ${input.facts.winningPitcher}` : null,
+    input.facts.losingPitcher ? `패전투수: ${input.facts.losingPitcher}` : null,
+    input.facts.savePitcher ? `세이브: ${input.facts.savePitcher}` : null,
+    input.facts.clutchHit ? `결승타 장면: ${input.facts.clutchHit}` : null,
+    input.facts.homeRun && !input.facts.clutchHit ? `홈런 장면: ${input.facts.homeRun}` : null,
+  ].filter(Boolean).join("\n");
   const prompt = `팀:${input.facts.myTeam}
 상대:${input.facts.oppTeam}
 ${locationLine}
-결과:${input.tone}
-스코어:${input.facts.myScore}:${input.facts.oppScore}
-${rainLine}안타:${input.facts.myHits ?? "unknown"}:${input.facts.oppHits ?? "unknown"}
-실책:${input.facts.myErrors ?? "unknown"}:${input.facts.oppErrors ?? "unknown"}
-홈런:${input.facts.myHomeRuns ?? "unknown"}:${input.facts.oppHomeRuns ?? "unknown"}
-승리투수:${input.facts.winningPitcher ?? "정보없음"}
-패전투수:${input.facts.losingPitcher ?? "정보없음"}
-세이브:${input.facts.savePitcher ?? "unknown"}
-결승타:${input.facts.clutchHit ?? "unknown"}
-주요 장면:${(input.facts.notable ?? []).join(" | ") || "unknown"}`;
+결과:${input.tone} | 스코어:${input.facts.myScore}:${input.facts.oppScore}
+${rainLine ? `${rainLine}\n` : ""}
+▶ 핵심 내러티브 (한줄평의 중심으로 활용할 것):
+${narrativeLines || "투수/결승타 정보 없음"}
+
+▶ 참고 수치 (숫자 나열 금지, 필요시 맥락으로만 활용):
+안타:${input.facts.myHits ?? "?"}:${input.facts.oppHits ?? "?"}
+실책:${input.facts.myErrors ?? "?"}:${input.facts.oppErrors ?? "?"}
+홈런:${input.facts.myHomeRuns ?? "?"}:${input.facts.oppHomeRuns ?? "?"}
+주요 장면:${(input.facts.notable ?? []).join(" | ") || "없음"}`;
 
   const callLlm = async (timeoutMs: number) => {
     const controller = new AbortController();
