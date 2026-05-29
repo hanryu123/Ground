@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import StandingsSection from "@/components/StandingsSection";
 import { useMyTeam } from "@/lib/useMyTeam";
@@ -92,6 +93,21 @@ export default function RankPage() {
         <p className="text-[10px] text-white/20" style={{ letterSpacing: "0.02em" }}>
           찐팬의 목소리가 GROUND를 만들어요 ⚾️
         </p>
+        <div className="mt-2 flex items-center gap-3">
+          <Link
+            href="/privacy"
+            className="text-[10px] text-white/18 underline underline-offset-2 transition hover:text-white/35"
+          >
+            개인정보처리방침
+          </Link>
+          <span className="text-[10px] text-white/12">·</span>
+          <a
+            href={`mailto:janghanr@gmail.com?subject=${encodeURIComponent("[GROUND] 데이터 삭제 요청")}&body=${encodeURIComponent("안녕하세요,\n\nGROUND 앱에 저장된 제 데이터(푸시 토큰, 기기 ID) 삭제를 요청합니다.\n\n앱 버전: \n요청 사유 (선택): ")}`}
+            className="text-[10px] text-white/18 underline underline-offset-2 transition hover:text-white/35"
+          >
+            데이터 삭제 요청
+          </a>
+        </div>
       </motion.div>
     </section>
   );
