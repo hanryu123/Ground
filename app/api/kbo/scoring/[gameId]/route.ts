@@ -28,9 +28,17 @@ export type ScoringEvent = {
   description: string;
   /** 타자/주자 이름 (relay 텍스트에서 보강, 없으면 null) */
   player: string | null;
+  /** relay 텍스트에서 잡은 개별 득점 장면들 */
+  details?: ScoringDetail[];
   /** 이 이닝 종료 후 누적 스코어 */
   awayScore: number;
   homeScore: number;
+};
+
+export type ScoringDetail = {
+  player: string | null;
+  description: string;
+  runs: number | null;
 };
 
 // ─── inningScore 파싱 ─────────────────────────────────────────────────────────
@@ -103,23 +111,11 @@ function buildScoringEvents(
 // ─── Relay 텍스트로 설명 보강 ─────────────────────────────────────────────────
 // inningScore로 이미 정확한 득점은 잡혔으므로, 텍스트 relay는 설명 문구만 보강.
 
-function extractDescription(title: string): string {
-  const clean = title.replace(/\s*\(\d+호\)\s*/g, "").trim();
-  if (/만루\s*홈런/.test(clean)) return "만루 홈런";
-  if (/쓰리런/.test(clean)) return "쓰리런 홈런";
-  if (/투런/.test(clean)) return "투런 홈런";
-  if (/솔로\s*홈런/.test(clean)) return "솔로 홈런";
-  if (/홈런/.test(clean)) return "홈런";
-  const rbiHit = clean.match(/(\d+)\s*타점\s*([23]루타|안타)/);
-  if (rbiHit) return `${rbiHit[1]}타점 ${rbiHit[2]}`;
-  if (/희생플라이/.test(clean)) return "희생플라이";
-  const rbi = clean.match(/(\d+)\s*타점/);
-  if (rbi) {
-    const hitType = clean.match(/([23]루타|안타|적시타)/)?.[1];
-    return hitType ? `${rbi[1]}타점 ${hitType}` : `${rbi[1]}타점`;
-  }
-  if (/적시타/.test(clean)) return "적시타";
-  return "";
+function normalizeRelayTitle(title: string): string {
+  return title
+    .replace(/\s*\(\d+호\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function extractPlayer(title: string): string | null {
@@ -128,12 +124,84 @@ function extractPlayer(title: string): string | null {
   const STOP = new Set([
     "안타", "홈런", "투수", "타자", "볼넷", "삼진", "아웃",
     "희생", "적시", "만루", "솔로", "투런", "쓰리런", "폭투", "보크",
+    "득점", "실책", "포일", "주자",
   ]);
   return STOP.has(m[1]) ? null : m[1];
 }
 
 function isScoringPlay(title: string): boolean {
-  return /홈런|\d+\s*타점|희생플라이|적시타/.test(title);
+  return /홈런|\d+\s*타점|희생플라이|희생\s*플라이|적시타|밀어내기|폭투|보크|포일|실책|득점|홈인/.test(title);
+}
+
+function extractRunsFromTitle(title: string): number | null {
+  if (/만루\s*홈런|그랜드\s*슬램/.test(title)) return 4;
+  if (/쓰리런|3\s*점\s*홈런|3점포/.test(title)) return 3;
+  if (/투런|2\s*점\s*홈런|2점포/.test(title)) return 2;
+  if (/솔로|1\s*점\s*홈런|1점포/.test(title)) return 1;
+  const rbi = title.match(/(\d+)\s*타점/);
+  if (rbi) return parseInt(rbi[1], 10);
+  if (/희생플라이|희생\s*플라이|밀어내기|폭투|보크|포일|득점|홈인/.test(title)) return 1;
+  return null;
+}
+
+function extractDescription(title: string): string {
+  const clean = normalizeRelayTitle(title);
+  if (/만루\s*홈런|그랜드\s*슬램/.test(clean)) return "만루 홈런";
+  if (/쓰리런|3\s*점\s*홈런|3점포/.test(clean)) return "쓰리런 홈런";
+  if (/투런|2\s*점\s*홈런|2점포/.test(clean)) return "투런 홈런";
+  if (/솔로|1\s*점\s*홈런|1점포/.test(clean)) return "솔로 홈런";
+  if (/홈런/.test(clean)) return "홈런";
+  const rbiHit = clean.match(/(\d+)\s*타점\s*([23]루타|안타|적시타)/);
+  if (rbiHit) return `${rbiHit[1]}타점 ${rbiHit[2]}`;
+  if (/희생플라이|희생\s*플라이/.test(clean)) return "희생플라이";
+  if (/밀어내기/.test(clean)) return "밀어내기";
+  if (/폭투/.test(clean)) return "폭투로 득점";
+  if (/보크/.test(clean)) return "보크로 득점";
+  if (/포일/.test(clean)) return "포일로 득점";
+  if (/실책/.test(clean)) return "실책으로 득점";
+  const rbi = clean.match(/(\d+)\s*타점/);
+  if (rbi) {
+    const hitType = clean.match(/([23]루타|안타|적시타)/)?.[1];
+    return hitType ? `${rbi[1]}타점 ${hitType}` : `${rbi[1]}타점`;
+  }
+  if (/적시타/.test(clean)) return "적시타";
+  if (/득점|홈인/.test(clean)) return "득점";
+  return "";
+}
+
+function extractScoringDetail(title: string): ScoringDetail | null {
+  const clean = normalizeRelayTitle(title);
+  if (!isScoringPlay(clean)) return null;
+  const description = extractDescription(clean);
+  const player = extractPlayer(clean);
+  if (!description && !player) return null;
+  return {
+    player,
+    description: description || "득점",
+    runs: extractRunsFromTitle(clean),
+  };
+}
+
+function readRelayTitle(relay: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const direct = relay["title"] ?? relay["text"] ?? relay["playText"];
+  if (typeof direct === "string" && direct.trim()) parts.push(direct);
+  const textOptions = relay["textOptions"];
+  if (Array.isArray(textOptions)) {
+    parts.push(...textOptions
+      .map((item) => {
+        if (!item || typeof item !== "object") return "";
+        const obj = item as Record<string, unknown>;
+        return obj["title"] ?? obj["text"] ?? obj["playText"] ?? "";
+      })
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0));
+  }
+  return parts.join(" ");
+}
+
+function parseRelayHalf(relay: Record<string, unknown>): "top" | "bottom" {
+  const raw = relay["homeOrAway"] ?? relay["inningSub"];
+  return raw === 1 || raw === "1" ? "top" : "bottom";
 }
 
 // ─── Naver relay fetch ─────────────────────────────────────────────────────────
@@ -188,35 +256,52 @@ async function fetchScoringEvents(
         ? (trd["textRelays"] as Record<string, unknown>[])
         : [];
 
-      // {inning}_{half} → 설명/이름
-      const enrichMap = new Map<string, { description: string; player: string | null }>();
+      // {inning}_{half} → 개별 득점 장면들
+      const enrichMap = new Map<string, ScoringDetail[]>();
+      const seenDetail = new Set<string>();
       for (const relay of relays) {
         const inn = parseInt(String(relay["inn"] ?? 0), 10);
         if (!inn) continue;
 
-        const hoa = relay["homeOrAway"];
-        const isAway = hoa === 1 || hoa === "1"; // 1=초=원정팀 공격
-        const half = isAway ? "top" : "bottom";
-        const title = String(relay["title"] ?? "");
-        if (!isScoringPlay(title)) continue;
+        const half = parseRelayHalf(relay);
+        const title = readRelayTitle(relay);
+        const detail = extractScoringDetail(title);
+        if (!detail) continue;
 
-        const desc = extractDescription(title);
-        const player = extractPlayer(title);
-        if (desc || player) {
-          enrichMap.set(`${inn}_${half}`, { description: desc, player });
-        }
+        const key = `${inn}_${half}`;
+        const dedupeKey = `${key}:${detail.player ?? ""}:${detail.description}:${detail.runs ?? ""}`;
+        if (seenDetail.has(dedupeKey)) continue;
+        seenDetail.add(dedupeKey);
+        const list = enrichMap.get(key) ?? [];
+        list.push(detail);
+        enrichMap.set(key, list);
       }
 
       return events.map((ev) => {
         const key = `${ev.inning}_${ev.half}`;
-        const enrich = enrichMap.get(key);
-        return enrich
-          ? {
-              ...ev,
-              description: enrich.description || ev.description,
-              player: enrich.player,
-            }
-          : ev;
+        const details = enrichMap.get(key) ?? [];
+        if (details.length === 0) return ev;
+        const first = details[0];
+        const totalDetailRuns = details.reduce((sum, detail) => sum + (detail.runs ?? 0), 0);
+        const detailSummary = details
+          .slice(0, 2)
+          .map((detail) => `${detail.player ? `${detail.player} ` : ""}${detail.description}`)
+          .join(", ");
+        const singleDetailDescription =
+          first.runs == null || first.runs === ev.runs
+            ? first.description
+            : `${ev.runs}점 · ${first.description} 포함`;
+        return {
+          ...ev,
+          description:
+            details.length === 1
+              ? singleDetailDescription
+              : `${ev.runs}점 · ${detailSummary}${details.length > 2 ? " 외" : ""}`,
+          player: details.length === 1 ? first.player : null,
+          details: totalDetailRuns > 0 || details.some((detail) => detail.player)
+            ? details
+            : undefined,
+        };
       });
     }
 

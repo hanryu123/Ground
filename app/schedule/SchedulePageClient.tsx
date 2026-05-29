@@ -56,8 +56,6 @@ export default function SchedulePageClient({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const currentSectionRef = useRef(0);
-  const scrollLockedRef = useRef(false);
   const didLiveScrollRef = useRef(false);
 
   const live = useKboSchedule(initial);
@@ -130,32 +128,9 @@ export default function SchedulePageClient({
       const root = rootRef.current;
       const target = sectionRefs.current[index];
       if (!root || !target) return;
-      currentSectionRef.current = index;
       root.scrollTo({ top: target.offsetTop, behavior });
     },
     []
-  );
-
-  const bumpHaptic = useCallback(() => {
-    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate(12);
-    }
-  }, []);
-
-  const stepSection = useCallback(
-    (dir: 1 | -1) => {
-      if (scrollLockedRef.current) return;
-      const max = Math.max(0, sections.length - 1);
-      const next = Math.min(max, Math.max(0, currentSectionRef.current + dir));
-      if (next === currentSectionRef.current) return;
-      scrollLockedRef.current = true;
-      scrollToSection(next, "smooth");
-      bumpHaptic();
-      window.setTimeout(() => {
-        scrollLockedRef.current = false;
-      }, 430);
-    },
-    [sections.length, scrollToSection, bumpHaptic]
   );
 
   useEffect(() => {
@@ -178,60 +153,12 @@ export default function SchedulePageClient({
     return () => cancelAnimationFrame(raf);
   }, [live, initial, todayIndex, scrollToSection]);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchDeltaY = 0;
-    let axis: "x" | "y" | null = null;
-
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 8) return;
-      e.preventDefault();
-      stepSection(e.deltaY > 0 ? 1 : -1);
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      touchStartX = e.touches[0]?.clientX ?? 0;
-      touchStartY = e.touches[0]?.clientY ?? 0;
-      touchDeltaY = 0;
-      axis = null;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (!t) return;
-      const dx = t.clientX - touchStartX;
-      const dy = t.clientY - touchStartY;
-      if (axis == null && Math.hypot(dx, dy) > 8) {
-        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      }
-      if (axis === "x") return;
-      touchDeltaY = touchStartY - t.clientY;
-      e.preventDefault();
-    };
-    const onTouchEnd = () => {
-      if (axis !== "y") return;
-      if (Math.abs(touchDeltaY) < 24) return;
-      stepSection(touchDeltaY > 0 ? 1 : -1);
-    };
-
-    root.addEventListener("wheel", onWheel, { passive: false });
-    root.addEventListener("touchstart", onTouchStart, { passive: true });
-    root.addEventListener("touchmove", onTouchMove, { passive: false });
-    root.addEventListener("touchend", onTouchEnd, { passive: true });
-    return () => {
-      root.removeEventListener("wheel", onWheel);
-      root.removeEventListener("touchstart", onTouchStart);
-      root.removeEventListener("touchmove", onTouchMove);
-      root.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [stepSection]);
-
   return (
-    <div ref={rootRef} className="flex-1 min-h-0 overflow-y-auto">
-      <section className="px-0 pb-10">
+    <div
+      ref={rootRef}
+      className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth snap-y snap-proximity"
+    >
+      <section className="px-0 pb-28">
         <header className="px-7 pt-7">
           <p
             className="text-[10px] uppercase tracking-[0.32em] text-white/45"
@@ -278,7 +205,7 @@ function DaySection({
         : "text-white/45";
 
   return (
-    <div ref={sectionRef} className="px-5 pt-10">
+    <div ref={sectionRef} className="snap-start px-5 pt-10">
       <div className="mb-4 px-2">
         <div
           className="mb-2 flex items-center gap-1.5 text-white/70 drop-shadow-md"
@@ -606,63 +533,94 @@ function ScoringPanel({
             const teamName = isAway ? awayTeam : homeTeam;
             const inningLabel = `${ev.inning}회${ev.half === "top" ? "초" : "말"}`;
             const scoreLabel = `${ev.awayScore}:${ev.homeScore}`;
+            const details = ev.details ?? [];
 
             return (
               <li
                 key={i}
-                className="flex items-center gap-2 px-3 py-[7px]"
+                className="px-3 py-[8px]"
                 style={{
                   borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
                 }}
               >
-                {/* 이닝 */}
-                <span
-                  className="w-[38px] shrink-0 text-[10px] tabular-nums text-white/35"
-                  style={{ fontWeight: 600 }}
-                >
-                  {inningLabel}
-                </span>
+                <div className="flex items-start gap-2">
+                  {/* 이닝 */}
+                  <span
+                    className="w-[38px] shrink-0 pt-[1px] text-[10px] tabular-nums text-white/35"
+                    style={{ fontWeight: 600 }}
+                  >
+                    {inningLabel}
+                  </span>
 
-                {/* 팀 */}
-                <span
-                  className="w-[28px] shrink-0 text-[11px] text-white/60"
-                  style={{ fontWeight: 700 }}
-                >
-                  {teamName}
-                </span>
+                  {/* 팀 */}
+                  <span
+                    className="w-[28px] shrink-0 pt-[1px] text-[11px] text-white/60"
+                    style={{ fontWeight: 700 }}
+                  >
+                    {teamName}
+                  </span>
 
-                {/* 선수 + 설명 */}
-                <span className="flex-1 min-w-0 truncate text-[11px] text-white/80" style={{ fontWeight: 500 }}>
-                  {ev.player ? (
-                    <>
-                      <span className="text-white/90" style={{ fontWeight: 700 }}>{ev.player}</span>
-                      <span className="text-white/40 mx-1">·</span>
-                      {ev.description}
-                    </>
-                  ) : (
-                    ev.description
-                  )}
-                </span>
+                  {/* 선수 + 설명 */}
+                  <div className="min-w-0 flex-1">
+                    <p className="min-w-0 text-[11px] leading-snug text-white/82" style={{ fontWeight: 600 }}>
+                      {ev.player ? (
+                        <>
+                          <span className="text-white/95" style={{ fontWeight: 800 }}>{ev.player}</span>
+                          <span className="mx-1 text-white/40">·</span>
+                          {ev.description}
+                        </>
+                      ) : (
+                        ev.description
+                      )}
+                    </p>
+                    {details.length > 1 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {details.slice(0, 4).map((detail, detailIndex) => (
+                          <li
+                            key={`${detail.player ?? "run"}-${detail.description}-${detailIndex}`}
+                            className="min-w-0 truncate text-[10px] leading-snug text-white/42"
+                            style={{ fontWeight: 500 }}
+                          >
+                            <span className="mr-1 text-white/22">·</span>
+                            {detail.player && (
+                              <span className="text-white/60" style={{ fontWeight: 700 }}>{detail.player} </span>
+                            )}
+                            {detail.description}
+                            {detail.runs && detail.runs > 1 ? (
+                              <span className="text-white/28"> ({detail.runs}점)</span>
+                            ) : null}
+                          </li>
+                        ))}
+                        {details.length > 4 && (
+                          <li className="text-[10px] leading-snug text-white/25">
+                            +{details.length - 4}개 장면
+                          </li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
 
-                {/* 누적 스코어 */}
-                <span
-                  className="shrink-0 tabular-nums text-[11px] text-white/40"
-                  style={{ fontWeight: 700 }}
-                >
-                  {isAway ? (
-                    <>
-                      <span className="text-white/65">{ev.awayScore}</span>
-                      <span className="mx-0.5 text-white/25">:</span>
-                      {ev.homeScore}
-                    </>
-                  ) : (
-                    <>
-                      {ev.awayScore}
-                      <span className="mx-0.5 text-white/25">:</span>
-                      <span className="text-white/65">{ev.homeScore}</span>
-                    </>
-                  )}
-                </span>
+                  {/* 누적 스코어 */}
+                  <span
+                    className="shrink-0 pt-[1px] tabular-nums text-[11px] text-white/40"
+                    style={{ fontWeight: 700 }}
+                    aria-label={`누적 스코어 ${scoreLabel}`}
+                  >
+                    {isAway ? (
+                      <>
+                        <span className="text-white/65">{ev.awayScore}</span>
+                        <span className="mx-0.5 text-white/25">:</span>
+                        {ev.homeScore}
+                      </>
+                    ) : (
+                      <>
+                        {ev.awayScore}
+                        <span className="mx-0.5 text-white/25">:</span>
+                        <span className="text-white/65">{ev.homeScore}</span>
+                      </>
+                    )}
+                  </span>
+                </div>
               </li>
             );
           })}
