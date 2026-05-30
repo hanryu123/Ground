@@ -13,7 +13,7 @@ type Row = {
 
 export default function MarketingPushStats({ rows }: { rows: Row[] }) {
   return (
-    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
       <h2 className="text-lg font-semibold tracking-tight text-white">마케팅 푸시 성과</h2>
       <p className="mt-1 text-xs text-slate-400">최근 발송된 수동 푸시 · 발송 수 · 클릭 수 · CTR</p>
 

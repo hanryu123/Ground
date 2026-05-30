@@ -101,7 +101,7 @@ export default function PendingNotificationsSection({
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-950/20 p-5">
+    <div className="rounded-2xl border border-amber-500/30 bg-amber-950/20 p-5">
       <div className="flex items-center gap-3">
         <h2 className="text-lg font-semibold tracking-tight text-white">
           승인 대기 중인 알림

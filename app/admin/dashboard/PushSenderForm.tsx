@@ -75,7 +75,7 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
   const realSendDisabled = !isValid || state === "sending" || !testConfirmed || !realSendConfirmed;
 
   return (
-    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
       <h2 className="text-lg font-semibold tracking-tight text-white">수동 푸시 발송기</h2>
       <p className="mt-1 text-xs text-slate-400">
         미리보기 → 내 폰 테스트 → 실제 발송 확인 순서로 진행합니다. 클릭 트래킹 URL이 자동으로 삽입됩니다.

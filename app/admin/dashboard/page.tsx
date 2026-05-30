@@ -378,13 +378,18 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
   return (
     <main className="h-full overflow-y-auto bg-slate-950 text-slate-100">
-      <section className="mx-auto max-w-7xl px-6 py-10 pb-28">
-        <div className="mb-7">
+      <section className="mx-auto max-w-[1680px] px-8 py-10 pb-28 2xl:px-10">
+        <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
+          <div>
           <p className="text-[11px] uppercase tracking-[0.34em] text-slate-400">GROUND ADMIN</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">운영 관제 대시보드</h1>
           <p className="mt-2 text-sm text-slate-400">
             경기 데이터, 알림, AI 콘텐츠, 수동 발송을 한 화면에서 점검합니다.
           </p>
+          </div>
+          <div className="rounded-full border border-white/10 bg-slate-900/70 px-4 py-2 text-xs font-semibold text-slate-300">
+            Desktop Ops Console
+          </div>
         </div>
 
         <OperationalOverview
@@ -403,37 +408,17 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
         <GameControlSection games={gameRows} />
 
-        <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Total Active Users</p>
-            <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatNumber(totalUsers)}</p>
-            <p className="mt-1 text-xs text-slate-400">enabled 구독 기준 (앱 삭제 포함 가능)</p>
-            <div className="mt-2 flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="text-xs text-slate-300">
-                최근 30일 활성: <span className="font-bold text-white">{formatNumber(recentUsers)}명</span>
-              </span>
+        <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+            <h2 className="text-lg font-semibold tracking-tight text-white">트랙션 요약</h2>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <CompactStat label="Active" value={formatNumber(totalUsers)} hint={`30일 ${formatNumber(recentUsers)}`} />
+              <CompactStat label="Triggers" value={formatNumber(todaysTriggers)} hint="KST 오늘" />
+              <CompactStat label="Top Team" value={ranking[0]?.short ?? "-"} hint={ranking[0] ? `${formatNumber(ranking[0].count)}명` : "대기"} />
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Today&apos;s Triggers</p>
-            <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatNumber(todaysTriggers)}</p>
-            <p className="mt-1 text-xs text-slate-400">KST 오늘 sentAt 기준</p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Top Team</p>
-            <p className="mt-3 text-2xl font-bold tracking-tight text-white">
-              {ranking[0] ? ranking[0].label : "데이터 없음"}
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              {ranking[0] ? `${formatNumber(ranking[0].count)}명` : "집계 대기"}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">구단별 화력 랭킹</h2>
           <p className="mt-1 text-xs text-slate-400">
             favoriteTeam + 활성 구독자 기준 Top 10
@@ -442,7 +427,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           {ranking.length === 0 ? (
             <p className="mt-6 text-sm text-slate-400">아직 집계할 구독 데이터가 없습니다.</p>
           ) : (
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
               {ranking.map((row: RankingRow) => (
                 <li
                   key={row.teamId}
@@ -472,24 +457,31 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
             </ul>
           )}
         </div>
+        </div>
 
-        <CronStatusSection runs={recentCronRuns} />
+        <div className="mt-8 grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_1fr]">
+          <CronStatusSection runs={recentCronRuns} />
 
-        <CronTrigger />
+          <CronTrigger />
+        </div>
 
-        <PendingNotificationsSection initialItems={pendingItems} adminKey={key!} />
+        <div className="mt-8 grid grid-cols-1 gap-6 2xl:grid-cols-[0.95fr_1.05fr]">
+          <PendingNotificationsSection initialItems={pendingItems} adminKey={key!} />
 
-        <PushSenderForm
-          adminKey={key!}
-          teams={TEAMS.map((t) => ({ id: t.id, name: t.name, short: t.short }))}
-        />
+          <PushSenderForm
+            adminKey={key!}
+            teams={TEAMS.map((t) => ({ id: t.id, name: t.name, short: t.short }))}
+          />
+        </div>
 
-        <MarketingPushStats rows={marketingPushRows} />
+        <div className="mt-8 grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
+          <MarketingPushStats rows={marketingPushRows} />
 
-        <AdminAuditSection logs={auditLogs} />
+          <AdminAuditSection logs={auditLogs} />
+        </div>
 
         <div className="mt-8">
-          <div className="mb-[-1rem] px-1">
+          <div className="px-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-red-300/70">Danger Zone</p>
             <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">위험 작업</h2>
             <p className="mt-1 text-xs text-slate-400">삭제/정리성 작업은 아래 구역에 격리합니다.</p>
@@ -555,10 +547,20 @@ function MetricCard({
           ? "border-red-500/20 bg-red-950/20"
           : "border-white/10 bg-slate-900/70";
   return (
-    <div className={`rounded-2xl border p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] ${toneClass}`}>
+    <div className={`rounded-2xl border px-5 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.2)] ${toneClass}`}>
       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
-      <p className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-xs leading-relaxed text-slate-400">{hint}</p>
+      <p className="mt-2 text-2xl font-bold tracking-tight text-white xl:text-3xl">{value}</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">{hint}</p>
+    </div>
+  );
+}
+
+function CompactStat({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-slate-950/55 px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-white">{value}</p>
+      <p className="mt-0.5 truncate text-[11px] text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -593,7 +595,7 @@ function OperationalOverview({
   const resultCount = gameStatusCounts.RESULT ?? 0;
   const cancelCount = gameStatusCounts.CANCEL ?? 0;
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         label="Game Control"
         value={`${liveCount} LIVE / ${resultCount} FT`}

@@ -56,7 +56,7 @@ export default function CronTrigger() {
     : "전체";
 
   return (
-    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
       <h2 className="text-lg font-semibold tracking-tight text-white">크론 강제 실행</h2>
       <p className="mt-1 text-xs text-slate-400">시간 윈도우 무시하고 즉시 실행합니다.</p>
 
