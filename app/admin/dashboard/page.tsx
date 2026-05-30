@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { todayKstDate } from "@/lib/kbo";
+import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
+import type { LiveScoreGame } from "@/lib/score/types";
 import { findTeam, TEAMS } from "@/lib/teams";
 import PushSenderForm from "./PushSenderForm";
 import MarketingPushStats from "./MarketingPushStats";
@@ -89,9 +92,15 @@ type TodayGameRow = {
   awayScore: number;
   status: string;
   gameDate: Date | null;
+  lastSyncedAt: Date | null;
+  updatedAt: Date | null;
+  highlightVideoUrl: string | null;
+  syncSource: "NAVER+DB" | "NAVER" | "DB";
+};
+
+type DbTodayGameRow = Omit<TodayGameRow, "syncSource" | "lastSyncedAt" | "updatedAt"> & {
   lastSyncedAt: Date;
   updatedAt: Date;
-  highlightVideoUrl: string | null;
 };
 
 async function fetchRecentCronRuns(db: any, limit = 12): Promise<CronRunRow[]> {
@@ -125,6 +134,58 @@ function statusTone(status: string): string {
   return "text-slate-300 bg-slate-800/70 border-white/10";
 }
 
+async function fetchTodayScoreSnapshotSafe(date: string): Promise<LiveScoreGame[]> {
+  try {
+    return await fetchLiveScoreSnapshot(date);
+  } catch (error) {
+    console.warn(
+      `[admin/dashboard] failed to fetch naver score snapshot: ${(error as Error).message}`
+    );
+    return [];
+  }
+}
+
+function mergeTodayGameRows(
+  dbGames: DbTodayGameRow[],
+  naverGames: LiveScoreGame[]
+): TodayGameRow[] {
+  const dbByExternalId = new Map(dbGames.map((game) => [game.externalId, game]));
+  const seen = new Set<string>();
+
+  const naverRows: TodayGameRow[] = naverGames.map((game) => {
+    const dbGame = dbByExternalId.get(game.externalId);
+    seen.add(game.externalId);
+    return {
+      id: dbGame?.id ?? game.externalId,
+      externalId: game.externalId,
+      homeTeam: dbGame?.homeTeam ?? game.homeTeam,
+      awayTeam: dbGame?.awayTeam ?? game.awayTeam,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+      status: game.status,
+      gameDate: dbGame?.gameDate ?? game.gameDate,
+      lastSyncedAt: dbGame?.lastSyncedAt ?? null,
+      updatedAt: dbGame?.updatedAt ?? null,
+      highlightVideoUrl: dbGame?.highlightVideoUrl ?? null,
+      syncSource: dbGame ? "NAVER+DB" : "NAVER",
+    };
+  });
+
+  const dbOnlyRows: TodayGameRow[] = dbGames
+    .filter((game) => !seen.has(game.externalId))
+    .map((game) => ({
+      ...game,
+      syncSource: "DB",
+    }));
+
+  return [...naverRows, ...dbOnlyRows].sort((a, b) => {
+    const aTime = a.gameDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bTime = b.gameDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (aTime !== bTime) return aTime - bTime;
+    return `${a.awayTeam}-${a.homeTeam}`.localeCompare(`${b.awayTeam}-${b.homeTeam}`);
+  });
+}
+
 export default async function AdminDashboardPage({ searchParams }: Props) {
   const params = await Promise.resolve(searchParams ?? {});
   const key = firstParam(params.key);
@@ -132,6 +193,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   if (!expected || !key || key !== expected) notFound();
   const db = prisma as any;
 
+  const todayDate = todayKstDate();
   const todayStart = startOfTodayKst();
   const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -146,6 +208,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     todayNotifications,
     recentMarketingPushes,
     todayGames,
+    todayScoreSnapshot,
     pendingNotifications,
     recentCronRuns,
     recentDispatchCount,
@@ -252,6 +315,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         highlightVideoUrl: true,
       },
     }),
+    fetchTodayScoreSnapshotSafe(todayDate),
     db.pendingPushNotification.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "desc" },
@@ -363,7 +427,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     })
     .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
 
-  const gameRows = todayGames as TodayGameRow[];
+  const gameRows = mergeTodayGameRows(todayGames as DbTodayGameRow[], todayScoreSnapshot);
   const gameStatusCounts = gameRows.reduce<Record<string, number>>((acc, game) => {
     acc[game.status] = (acc[game.status] ?? 0) + 1;
     return acc;
@@ -377,7 +441,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const totalPushChannels = webPushCount + nativePushCount;
 
   return (
-    <main className="h-full overflow-y-auto bg-slate-950 text-slate-100">
+    <main className="min-h-dvh overflow-y-auto bg-slate-950 text-slate-100">
       <section className="mx-auto max-w-[1680px] px-8 py-10 pb-28 2xl:px-10">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
           <div>
@@ -629,7 +693,7 @@ function GameControlSection({ games }: { games: TodayGameRow[] }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-white">경기 관제</h2>
-          <p className="mt-1 text-xs text-slate-400">DB에 동기화된 오늘 경기 상태와 후속 작업 힌트입니다.</p>
+          <p className="mt-1 text-xs text-slate-400">Naver 오늘 경기 전체와 DB 동기화 상태를 함께 봅니다.</p>
         </div>
         <span className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-1 text-xs font-semibold text-slate-300">
           {games.length} games
@@ -637,15 +701,16 @@ function GameControlSection({ games }: { games: TodayGameRow[] }) {
       </div>
 
       {games.length === 0 ? (
-        <p className="mt-6 text-sm text-slate-400">오늘 동기화된 경기 데이터가 없습니다. 스코어 체크를 먼저 실행하세요.</p>
+        <p className="mt-6 text-sm text-slate-400">오늘 경기 데이터가 없습니다. Naver 스냅샷 또는 스코어 체크 상태를 확인하세요.</p>
       ) : (
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse text-sm">
+          <table className="w-full min-w-[1040px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.14em] text-slate-400">
                 <th className="pb-2 pr-4 font-semibold">Match</th>
                 <th className="pb-2 pr-4 text-center font-semibold">Score</th>
                 <th className="pb-2 pr-4 font-semibold">Status</th>
+                <th className="pb-2 pr-4 font-semibold">Source</th>
                 <th className="pb-2 pr-4 font-semibold">Last Sync</th>
                 <th className="pb-2 pr-4 font-semibold">Ops Hint</th>
                 <th className="pb-2 text-right font-semibold">Game ID</th>
@@ -656,7 +721,9 @@ function GameControlSection({ games }: { games: TodayGameRow[] }) {
                 const away = findTeam(game.awayTeam);
                 const home = findTeam(game.homeTeam);
                 const hint =
-                  game.status === "RESULT"
+                  game.syncSource === "NAVER"
+                    ? "DB 미동기화 · 스코어 체크 필요"
+                    : game.status === "RESULT"
                     ? game.highlightVideoUrl
                       ? "한줄평/하이라이트 확인"
                       : "한줄평·하이라이트 체크"
@@ -667,8 +734,14 @@ function GameControlSection({ games }: { games: TodayGameRow[] }) {
                         : game.status === "CANCEL"
                           ? "취소 알림 여부 확인"
                           : "라인업/프리뷰 대기";
+                const sourceTone =
+                  game.syncSource === "NAVER+DB"
+                    ? "border-emerald-500/20 bg-emerald-950/40 text-emerald-300"
+                    : game.syncSource === "NAVER"
+                      ? "border-amber-500/20 bg-amber-950/40 text-amber-300"
+                      : "border-slate-500/20 bg-slate-800/70 text-slate-300";
                 return (
-                  <tr key={game.id} className="border-b border-white/5 last:border-0">
+                  <tr key={game.externalId} className="border-b border-white/5 last:border-0">
                     <td className="py-3 pr-4">
                       <p className="font-semibold text-white">{away.short} @ {home.short}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{away.name} vs {home.name}</p>
@@ -681,7 +754,14 @@ function GameControlSection({ games }: { games: TodayGameRow[] }) {
                         {game.status}
                       </span>
                     </td>
-                    <td className="py-3 pr-4 text-xs text-slate-400">{formatDateTimeKst(game.lastSyncedAt)} KST</td>
+                    <td className="py-3 pr-4">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${sourceTone}`}>
+                        {game.syncSource}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-slate-400">
+                      {game.lastSyncedAt ? `${formatDateTimeKst(game.lastSyncedAt)} KST` : "DB 미동기화"}
+                    </td>
                     <td className="py-3 pr-4 text-slate-300">{hint}</td>
                     <td className="py-3 text-right font-mono text-xs text-slate-500">{game.externalId}</td>
                   </tr>
