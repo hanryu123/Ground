@@ -441,7 +441,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const totalPushChannels = webPushCount + nativePushCount;
 
   return (
-    <main className="min-h-dvh overflow-y-auto bg-slate-950 text-slate-100">
+    <main className="min-h-dvh bg-slate-950 text-slate-100">
       <section className="mx-auto max-w-[1680px] px-8 py-10 pb-28 2xl:px-10">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
           <div>

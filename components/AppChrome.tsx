@@ -12,7 +12,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
 
   if (isAdminRoute) {
     return (
-      <div className="min-h-dvh w-full bg-slate-950 text-slate-100">
+      <div className="touch-auto fixed inset-0 w-full overflow-y-auto overscroll-contain bg-slate-950 text-slate-100 [-webkit-overflow-scrolling:touch]">
         {children}
       </div>
     );
