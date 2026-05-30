@@ -68,7 +68,7 @@ function sanitizeTextValue(v: string | null | undefined): string | null {
   if (!v) return null;
   const t = compact(v);
   if (!t) return null;
-  if (/^(확인\s*중|tbd|미정|unknown|null|n\/a|-|없음)$/i.test(t)) return null;
+  if (/^(확인\s*중|tbd|미정|unknown|null|n\/a|-|없음|home|away|draw)$/i.test(t)) return null;
   return t;
 }
 
@@ -395,10 +395,10 @@ export async function fetchPostGameFacts(input: {
     oppHomeRuns,
     winningPitcher:
       pitching.winningPitcher ??
-      sanitizeTextValue(extractPitcherName(detail, ["winningpitcher", "winning_pitcher", "winner"])),
+      sanitizeTextValue(extractPitcherName(detail, ["winningpitcher", "winning_pitcher", "winpitcher", "win_pitcher"])),
     losingPitcher:
       pitching.losingPitcher ??
-      sanitizeTextValue(extractPitcherName(detail, ["losingpitcher", "losing_pitcher", "loser"])),
+      sanitizeTextValue(extractPitcherName(detail, ["losingpitcher", "losing_pitcher", "losepitcher", "lose_pitcher"])),
     savePitcher:
       pitching.savePitcher ??
       sanitizeTextValue(extractPitcherName(detail, ["savepitcher", "save_pitcher"])),
