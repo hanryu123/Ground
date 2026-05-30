@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deliverQueuedNotification } from "@/services/notificationService";
+import { writeAdminAuditLog } from "@/lib/adminAudit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,8 +35,23 @@ export async function POST(req: Request) {
   const result = await deliverQueuedNotification(id, origin);
 
   if (result.error) {
+    await writeAdminAuditLog({
+      action: "approve-pending-notification",
+      targetType: "pendingPushNotification",
+      targetId: id,
+      result: "error",
+      error: result.error,
+    });
     return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
   }
+
+  await writeAdminAuditLog({
+    action: "approve-pending-notification",
+    targetType: "pendingPushNotification",
+    targetId: id,
+    payload: result,
+    result: "success",
+  });
 
   return NextResponse.json({ ok: true, sent: result.sent, disabled: result.disabled, inboxCreated: result.inboxCreated });
 }

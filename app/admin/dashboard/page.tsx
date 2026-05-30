@@ -5,6 +5,8 @@ import PushSenderForm from "./PushSenderForm";
 import MarketingPushStats from "./MarketingPushStats";
 import CronTrigger from "./CronTrigger";
 import UserCleanup from "./UserCleanup";
+import PendingNotificationsSection from "./PendingNotificationsSection";
+import { fetchRecentAdminAuditLogs, type AdminAuditLogRow } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +69,62 @@ type RankingRow = {
   ratio: number;
 };
 
+type CronRunRow = {
+  id: string;
+  name: string;
+  status: string;
+  started_at: Date;
+  finished_at: Date | null;
+  duration_ms: number | null;
+  summary: unknown;
+  error: string | null;
+};
+
+type TodayGameRow = {
+  id: string;
+  externalId: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  status: string;
+  gameDate: Date | null;
+  lastSyncedAt: Date;
+  updatedAt: Date;
+  highlightVideoUrl: string | null;
+};
+
+async function fetchRecentCronRuns(db: any, limit = 12): Promise<CronRunRow[]> {
+  try {
+    return await db.$queryRawUnsafe(
+      `SELECT id, name, status, started_at, finished_at, duration_ms, summary, error
+       FROM cron_runs
+       ORDER BY started_at DESC
+       LIMIT $1`,
+      limit
+    );
+  } catch {
+    return [];
+  }
+}
+
+function stringifySummary(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const obj = value as Record<string, unknown>;
+  const keys = ["checked", "changed", "pushSent", "clutchSent", "rainDelaySent", "errors", "sent", "skipped"];
+  return keys
+    .filter((key) => obj[key] !== undefined && obj[key] !== null)
+    .map((key) => `${key} ${String(obj[key])}`)
+    .join(" · ");
+}
+
+function statusTone(status: string): string {
+  if (status === "success" || status === "READY" || status === "RESULT") return "text-emerald-300 bg-emerald-950/40 border-emerald-500/20";
+  if (status === "partial" || status === "blocked" || status === "LIVE" || status === "PENDING" || status === "SUSPENDED") return "text-amber-300 bg-amber-950/40 border-amber-500/20";
+  if (status === "error" || status === "FAILED" || status === "CANCEL") return "text-red-300 bg-red-950/40 border-red-500/20";
+  return "text-slate-300 bg-slate-800/70 border-white/10";
+}
+
 export default async function AdminDashboardPage({ searchParams }: Props) {
   const params = await Promise.resolve(searchParams ?? {});
   const key = firstParam(params.key);
@@ -75,9 +133,27 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const db = prisma as any;
 
   const todayStart = startOfTodayKst();
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const [totalUsers, recentUsers, teamRows, todaysTriggers, todayNotifications, recentMarketingPushes] = await Promise.all([
+  const [
+    totalUsers,
+    recentUsers,
+    webPushCount,
+    nativePushCount,
+    teamRows,
+    todaysTriggers,
+    todayNotifications,
+    recentMarketingPushes,
+    todayGames,
+    pendingNotifications,
+    recentCronRuns,
+    recentDispatchCount,
+    failedPostgameCount,
+    pendingPreviewCount,
+    readyPostgameCount,
+    auditLogs,
+  ] = await Promise.all([
     db.user.count({
       where: {
         pushSubscriptions: { some: { enabled: true } },
@@ -97,6 +173,8 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         },
       },
     }),
+    db.pushSubscription.count({ where: { enabled: true } }),
+    db.nativePushToken.count({ where: { enabled: true } }),
     db.user.groupBy({
       by: ["favoriteTeam"],
       where: {
@@ -151,6 +229,51 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         sentAt: true,
       },
     }),
+    db.game.findMany({
+      where: {
+        OR: [
+          { gameDate: { gte: todayStart, lt: todayEnd } },
+          { updatedAt: { gte: todayStart } },
+        ],
+      },
+      orderBy: [{ gameDate: "asc" }, { updatedAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        externalId: true,
+        homeTeam: true,
+        awayTeam: true,
+        homeScore: true,
+        awayScore: true,
+        status: true,
+        gameDate: true,
+        lastSyncedAt: true,
+        updatedAt: true,
+        highlightVideoUrl: true,
+      },
+    }),
+    db.pendingPushNotification.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        teamId: true,
+        topicKey: true,
+        title: true,
+        body: true,
+        url: true,
+        type: true,
+        status: true,
+        createdAt: true,
+      },
+    }),
+    fetchRecentCronRuns(db),
+    db.notificationDispatchState.count({ where: { createdAt: { gte: todayStart } } }),
+    db.postGameReport.count({ where: { status: "FAILED", updatedAt: { gte: todayStart } } }),
+    db.pregamePreview.count({ where: { status: "PENDING", updatedAt: { gte: todayStart } } }),
+    db.postGameReport.count({ where: { status: "READY", updatedAt: { gte: todayStart } } }),
+    fetchRecentAdminAuditLogs(18),
   ]);
 
   const maxCount = teamRows[0]?._count._all ?? 1;
@@ -240,18 +363,47 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     })
     .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
 
+  const gameRows = todayGames as TodayGameRow[];
+  const gameStatusCounts = gameRows.reduce<Record<string, number>>((acc, game) => {
+    acc[game.status] = (acc[game.status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const latestCron = recentCronRuns[0] as CronRunRow | undefined;
+  const failedCronRuns = recentCronRuns.filter((run: CronRunRow) => run.status === "error").length;
+  const pendingItems = pendingNotifications.map((item: any) => ({
+    ...item,
+    createdAt: item.createdAt.toISOString(),
+  }));
+  const totalPushChannels = webPushCount + nativePushCount;
+
   return (
     <main className="h-full overflow-y-auto bg-slate-950 text-slate-100">
-      <section className="mx-auto max-w-5xl px-6 py-10 pb-28">
+      <section className="mx-auto max-w-7xl px-6 py-10 pb-28">
         <div className="mb-7">
           <p className="text-[11px] uppercase tracking-[0.34em] text-slate-400">GROUND ADMIN</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">트랙션 대시보드</h1>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight">운영 관제 대시보드</h1>
           <p className="mt-2 text-sm text-slate-400">
-            활성 구독 유저와 구단별 팬 화력을 Prisma에서 실시간 집계합니다.
+            경기 데이터, 알림, AI 콘텐츠, 수동 발송을 한 화면에서 점검합니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <OperationalOverview
+          gameStatusCounts={gameStatusCounts}
+          todaysTriggers={todaysTriggers}
+          recentDispatchCount={recentDispatchCount}
+          totalPushChannels={totalPushChannels}
+          webPushCount={webPushCount}
+          nativePushCount={nativePushCount}
+          latestCron={latestCron}
+          failedCronRuns={failedCronRuns}
+          failedPostgameCount={failedPostgameCount}
+          pendingPreviewCount={pendingPreviewCount}
+          readyPostgameCount={readyPostgameCount}
+        />
+
+        <GameControlSection games={gameRows} />
+
+        <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Total Active Users</p>
             <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatNumber(totalUsers)}</p>
@@ -321,7 +473,11 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           )}
         </div>
 
+        <CronStatusSection runs={recentCronRuns} />
+
         <CronTrigger />
+
+        <PendingNotificationsSection initialItems={pendingItems} adminKey={key!} />
 
         <PushSenderForm
           adminKey={key!}
@@ -330,7 +486,16 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
         <MarketingPushStats rows={marketingPushRows} />
 
-        <UserCleanup />
+        <AdminAuditSection logs={auditLogs} />
+
+        <div className="mt-8">
+          <div className="mb-[-1rem] px-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-red-300/70">Danger Zone</p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">위험 작업</h2>
+            <p className="mt-1 text-xs text-slate-400">삭제/정리성 작업은 아래 구역에 격리합니다.</p>
+          </div>
+          <UserCleanup />
+        </div>
 
         <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">오늘 발송 알럿 히스토리</h2>
@@ -367,5 +532,222 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         </div>
       </section>
     </main>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  hint,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: "neutral" | "good" | "warn" | "bad";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-500/20 bg-emerald-950/20"
+      : tone === "warn"
+        ? "border-amber-500/20 bg-amber-950/20"
+        : tone === "bad"
+          ? "border-red-500/20 bg-red-950/20"
+          : "border-white/10 bg-slate-900/70";
+  return (
+    <div className={`rounded-2xl border p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] ${toneClass}`}>
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</p>
+      <p className="mt-2 text-xs leading-relaxed text-slate-400">{hint}</p>
+    </div>
+  );
+}
+
+function OperationalOverview({
+  gameStatusCounts,
+  todaysTriggers,
+  recentDispatchCount,
+  totalPushChannels,
+  webPushCount,
+  nativePushCount,
+  latestCron,
+  failedCronRuns,
+  failedPostgameCount,
+  pendingPreviewCount,
+  readyPostgameCount,
+}: {
+  gameStatusCounts: Record<string, number>;
+  todaysTriggers: number;
+  recentDispatchCount: number;
+  totalPushChannels: number;
+  webPushCount: number;
+  nativePushCount: number;
+  latestCron?: CronRunRow;
+  failedCronRuns: number;
+  failedPostgameCount: number;
+  pendingPreviewCount: number;
+  readyPostgameCount: number;
+}) {
+  const liveCount = gameStatusCounts.LIVE ?? 0;
+  const suspendedCount = gameStatusCounts.SUSPENDED ?? 0;
+  const resultCount = gameStatusCounts.RESULT ?? 0;
+  const cancelCount = gameStatusCounts.CANCEL ?? 0;
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+      <MetricCard
+        label="Game Control"
+        value={`${liveCount} LIVE / ${resultCount} FT`}
+        hint={`중단 ${suspendedCount} · 취소 ${cancelCount} · 총 ${Object.values(gameStatusCounts).reduce((a, b) => a + b, 0)}경기`}
+        tone={suspendedCount > 0 ? "warn" : "neutral"}
+      />
+      <MetricCard
+        label="Notification Ops"
+        value={formatNumber(todaysTriggers)}
+        hint={`오늘 인앱/푸시 생성 기준 · Dispatch lock ${formatNumber(recentDispatchCount)}건`}
+        tone="good"
+      />
+      <MetricCard
+        label="Push Channels"
+        value={formatNumber(totalPushChannels)}
+        hint={`Web ${formatNumber(webPushCount)} · Native ${formatNumber(nativePushCount)}`}
+      />
+      <MetricCard
+        label="Cron / AI"
+        value={failedCronRuns > 0 || failedPostgameCount > 0 ? "주의" : "정상"}
+        hint={`최근 크론 실패 ${failedCronRuns} · 한줄평 실패 ${failedPostgameCount} · 프리뷰 대기 ${pendingPreviewCount} · 한줄평 완료 ${readyPostgameCount}${latestCron ? ` · 최근 ${latestCron.name}` : ""}`}
+        tone={failedCronRuns > 0 || failedPostgameCount > 0 ? "bad" : pendingPreviewCount > 0 ? "warn" : "good"}
+      />
+    </div>
+  );
+}
+
+function GameControlSection({ games }: { games: TodayGameRow[] }) {
+  return (
+    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-white">경기 관제</h2>
+          <p className="mt-1 text-xs text-slate-400">DB에 동기화된 오늘 경기 상태와 후속 작업 힌트입니다.</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-1 text-xs font-semibold text-slate-300">
+          {games.length} games
+        </span>
+      </div>
+
+      {games.length === 0 ? (
+        <p className="mt-6 text-sm text-slate-400">오늘 동기화된 경기 데이터가 없습니다. 스코어 체크를 먼저 실행하세요.</p>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[860px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.14em] text-slate-400">
+                <th className="pb-2 pr-4 font-semibold">Match</th>
+                <th className="pb-2 pr-4 text-center font-semibold">Score</th>
+                <th className="pb-2 pr-4 font-semibold">Status</th>
+                <th className="pb-2 pr-4 font-semibold">Last Sync</th>
+                <th className="pb-2 pr-4 font-semibold">Ops Hint</th>
+                <th className="pb-2 text-right font-semibold">Game ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {games.map((game) => {
+                const away = findTeam(game.awayTeam);
+                const home = findTeam(game.homeTeam);
+                const hint =
+                  game.status === "RESULT"
+                    ? game.highlightVideoUrl
+                      ? "한줄평/하이라이트 확인"
+                      : "한줄평·하이라이트 체크"
+                    : game.status === "LIVE"
+                      ? "스코어·라이브 이벤트 감시"
+                      : game.status === "SUSPENDED"
+                        ? "우천 중단 알림/취소 전환 감시"
+                        : game.status === "CANCEL"
+                          ? "취소 알림 여부 확인"
+                          : "라인업/프리뷰 대기";
+                return (
+                  <tr key={game.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-white">{away.short} @ {home.short}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{away.name} vs {home.name}</p>
+                    </td>
+                    <td className="py-3 pr-4 text-center text-lg font-bold tabular-nums text-white">
+                      {game.awayScore}<span className="mx-1 text-slate-500">:</span>{game.homeScore}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusTone(game.status)}`}>
+                        {game.status}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-slate-400">{formatDateTimeKst(game.lastSyncedAt)} KST</td>
+                    <td className="py-3 pr-4 text-slate-300">{hint}</td>
+                    <td className="py-3 text-right font-mono text-xs text-slate-500">{game.externalId}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CronStatusSection({ runs }: { runs: CronRunRow[] }) {
+  return (
+    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+      <h2 className="text-lg font-semibold tracking-tight text-white">크론 실행 상태</h2>
+      <p className="mt-1 text-xs text-slate-400">최근 실행 결과를 운영자가 읽을 수 있는 형태로 요약합니다.</p>
+      {runs.length === 0 ? (
+        <p className="mt-6 text-sm text-slate-400">아직 cron_runs 로그가 없습니다.</p>
+      ) : (
+        <ul className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {runs.map((run) => (
+            <li key={run.id} className="rounded-xl border border-white/5 bg-slate-950/55 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-white">{run.name}</p>
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusTone(run.status)}`}>
+                  {run.status}
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                {formatDateTimeKst(run.started_at)} KST
+                {run.duration_ms != null ? ` · ${(run.duration_ms / 1000).toFixed(1)}s` : ""}
+              </p>
+              {stringifySummary(run.summary) && (
+                <p className="mt-2 text-xs text-slate-300">{stringifySummary(run.summary)}</p>
+              )}
+              {run.error && <p className="mt-2 text-xs text-red-300">{run.error}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AdminAuditSection({ logs }: { logs: AdminAuditLogRow[] }) {
+  return (
+    <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+      <h2 className="text-lg font-semibold tracking-tight text-white">운영 로그</h2>
+      <p className="mt-1 text-xs text-slate-400">어드민에서 누른 버튼과 결과를 추적합니다.</p>
+      {logs.length === 0 ? (
+        <p className="mt-6 text-sm text-slate-400">아직 운영 로그가 없습니다.</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {logs.map((log) => (
+            <li key={log.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/5 bg-slate-950/55 px-4 py-3 text-sm">
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${statusTone(log.result)}`}>
+                {log.result}
+              </span>
+              <span className="font-semibold text-white">{log.action}</span>
+              {log.target_type && <span className="text-slate-400">{log.target_type}{log.target_id ? `:${log.target_id}` : ""}</span>}
+              <span className="ml-auto text-xs text-slate-500">{formatDateTimeKst(log.created_at)} KST</span>
+              {log.error && <span className="basis-full text-xs text-red-300">{log.error}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

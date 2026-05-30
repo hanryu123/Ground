@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { writeAdminAuditLog } from "@/lib/adminAudit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,14 @@ export async function POST(req: Request) {
   await prisma.pendingPushNotification.update({
     where: { id },
     data: { status: "REJECTED", rejectedAt: new Date() },
+  });
+
+  await writeAdminAuditLog({
+    action: "reject-pending-notification",
+    targetType: "pendingPushNotification",
+    targetId: id,
+    payload: { teamId: pending.teamId, topicKey: pending.topicKey, title: pending.title },
+    result: "success",
   });
 
   return NextResponse.json({ ok: true });

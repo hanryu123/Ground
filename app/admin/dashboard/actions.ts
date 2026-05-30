@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendWebPush } from "@/lib/webPushServer";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
+import { writeAdminAuditLog } from "@/lib/adminAudit";
 
 export async function testClaude(): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -102,9 +103,23 @@ export async function cleanInactiveUsers(includeStale: boolean): Promise<{ ok: b
           pushSubscriptions: { none: { enabled: true } },
         };
     const result = await prisma.user.deleteMany({ where: whereClause });
+    await writeAdminAuditLog({
+      action: "clean-inactive-users",
+      targetType: "user",
+      payload: { includeStale },
+      result: "success",
+    });
     return { ok: true, deleted: result.count };
   } catch (e) {
-    return { ok: false, error: String(e).slice(0, 200) };
+    const error = String(e).slice(0, 200);
+    await writeAdminAuditLog({
+      action: "clean-inactive-users",
+      targetType: "user",
+      payload: { includeStale },
+      result: "error",
+      error,
+    });
+    return { ok: false, error };
   }
 }
 
@@ -126,6 +141,14 @@ export async function forceCron(
     cache: "no-store",
   });
   const json = await res.json().catch(() => ({}));
+  await writeAdminAuditLog({
+    action: `force-cron:${path}`,
+    targetType: "cron",
+    targetId: path,
+    payload: { teamId: teamId ?? null, status: res.status, result: json },
+    result: res.ok ? "success" : "error",
+    error: res.ok ? null : JSON.stringify(json).slice(0, 300),
+  });
   if (!res.ok) return { ok: false, error: JSON.stringify(json) };
   return { ok: true, result: json };
 }
@@ -133,6 +156,32 @@ export async function forceCron(
 export type SendPushResult =
   | { ok: true; sentCount: number; total: number; id: string }
   | { ok: false; error: string };
+
+export async function estimateMarketingPushTargets(input: {
+  targetTeamId: string | null;
+  testOnly: boolean;
+}): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    if (input.testOnly) {
+      const adminEmail = process.env.ADMIN_TEST_EMAIL;
+      if (!adminEmail) return { ok: false, error: "ADMIN_TEST_EMAIL 미설정" };
+      const count = await prisma.pushSubscription.count({
+        where: { enabled: true, user: { email: adminEmail } },
+      });
+      return { ok: true, count };
+    }
+
+    const count = await prisma.pushSubscription.count({
+      where: {
+        enabled: true,
+        ...(input.targetTeamId ? { user: { favoriteTeam: input.targetTeamId } } : {}),
+      },
+    });
+    return { ok: true, count };
+  } catch (e) {
+    return { ok: false, error: String(e).slice(0, 200) };
+  }
+}
 
 export async function sendMarketingPush(input: {
   title: string;
@@ -183,6 +232,14 @@ export async function sendMarketingPush(input: {
 
   if (subs.length === 0) {
     await prisma.marketingPush.delete({ where: { id: record.id } });
+    await writeAdminAuditLog({
+      action: testOnly ? "send-test-marketing-push" : "send-marketing-push",
+      targetType: "marketingPush",
+      targetId: record.id,
+      payload: { title, targetTeamId, testOnly },
+      result: "blocked",
+      error: "해당 구독자 없음",
+    });
     return { ok: false, error: "해당 구독자 없음" };
   }
 
@@ -196,6 +253,13 @@ export async function sendMarketingPush(input: {
 
   const sentCount = results.filter((r) => r.ok).length;
   await prisma.marketingPush.update({ where: { id: record.id }, data: { sentCount } });
+  await writeAdminAuditLog({
+    action: testOnly ? "send-test-marketing-push" : "send-marketing-push",
+    targetType: "marketingPush",
+    targetId: record.id,
+    payload: { title, body: msgBody, url, targetTeamId, testOnly, total: subs.length },
+    result: "success",
+  });
 
   return { ok: true, id: record.id, sentCount, total: subs.length };
 }
