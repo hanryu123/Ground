@@ -168,6 +168,12 @@ type ParsedPitchingResult = {
   savePitcher: string | null;
 };
 
+type ParsedEtcRecords = {
+  clutchHit: string | null;
+  homeRun: string | null;
+  notable: string[];
+};
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   return v as Record<string, unknown>;
@@ -217,24 +223,69 @@ function parseBoxStats(recordResponse: unknown): ParsedBoxStats {
 function parsePitchingResult(recordResponse: unknown): ParsedPitchingResult {
   const result = asRecord(recordResponse)?.result;
   const recordData = asRecord(result)?.recordData;
-  const rows = asRecord(recordData)?.pitchingResult;
-  if (!Array.isArray(rows)) {
-    return { winningPitcher: null, losingPitcher: null, savePitcher: null };
-  }
   let winningPitcher: string | null = null;
   let losingPitcher: string | null = null;
   let savePitcher: string | null = null;
+
+  const applyRows = (rows: unknown) => {
+    if (!Array.isArray(rows)) return;
+    for (const item of rows) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const wls = readString(row.wls)?.toUpperCase() ?? "";
+      const name = sanitizeTextValue(readString(row.name));
+      if (!name) continue;
+      if (wls === "W" || wls === "승") winningPitcher = winningPitcher ?? name;
+      else if (wls === "L" || wls === "패") losingPitcher = losingPitcher ?? name;
+      else if (wls === "S" || wls === "세") savePitcher = savePitcher ?? name;
+    }
+  };
+
+  applyRows(asRecord(recordData)?.pitchingResult);
+  const pitchersBoxscore = asRecord(recordData && asRecord(recordData)?.pitchersBoxscore);
+  applyRows(pitchersBoxscore?.home);
+  applyRows(pitchersBoxscore?.away);
+
+  return { winningPitcher, losingPitcher, savePitcher };
+}
+
+function formatEtcRecord(how: string | null, result: string | null): string | null {
+  if (!result) return null;
+  if (!how) return result;
+  return `${how}: ${result}`;
+}
+
+function parseEtcRecords(recordResponse: unknown): ParsedEtcRecords {
+  const result = asRecord(recordResponse)?.result;
+  const recordData = asRecord(result)?.recordData;
+  const rows = asRecord(recordData)?.etcRecords;
+  if (!Array.isArray(rows)) {
+    return { clutchHit: null, homeRun: null, notable: [] };
+  }
+
+  let clutchHit: string | null = null;
+  let homeRun: string | null = null;
+  const notable: string[] = [];
   for (const item of rows) {
     const row = asRecord(item);
     if (!row) continue;
-    const wls = readString(row.wls)?.toUpperCase() ?? "";
-    const name = sanitizeTextValue(readString(row.name));
-    if (!name) continue;
-    if (wls === "W" || wls === "승") winningPitcher = winningPitcher ?? name;
-    else if (wls === "L" || wls === "패") losingPitcher = losingPitcher ?? name;
-    else if (wls === "S" || wls === "세") savePitcher = savePitcher ?? name;
+    const how = sanitizeTextValue(readString(row.how));
+    const resultText = sanitizeTextValue(readString(row.result));
+    const line = formatEtcRecord(how, resultText);
+    if (!line) continue;
+    notable.push(clip(line, 100));
+    if (!clutchHit && /(결승타|결승)/.test(`${how ?? ""} ${resultText ?? ""}`)) {
+      clutchHit = clip(line, 100);
+    }
+    const isHomeRunRecord =
+      /(홈런|솔로포|투런|스리런|만루포)/.test(how ?? "") ||
+      (!/(결승타|결승)/.test(how ?? "") &&
+        /(홈런|솔로포|투런|스리런|만루포)/.test(resultText ?? ""));
+    if (!homeRun && isHomeRunRecord) {
+      homeRun = clip(line, 100);
+    }
   }
-  return { winningPitcher, losingPitcher, savePitcher };
+  return { clutchHit, homeRun, notable };
 }
 
 function countTeamKeyword(texts: string[], teamShort: string, regex: RegExp): number | null {
@@ -267,6 +318,42 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unk
   }
 }
 
+function hasOfficialNarrative(recordResponse: unknown): boolean {
+  const pitching = parsePitchingResult(recordResponse);
+  const etc = parseEtcRecords(recordResponse);
+  return Boolean(
+    pitching.winningPitcher ||
+      pitching.losingPitcher ||
+      pitching.savePitcher ||
+      etc.clutchHit
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchPostGameRecord(gameId: string): Promise<unknown | null> {
+  const url = `${NAVER_BASE}/schedule/games/${gameId}/record`;
+  const first = await fetchJsonWithTimeout(url, 2500);
+  if (hasOfficialNarrative(first)) return first;
+  await delay(1200);
+  return await fetchJsonWithTimeout(url, 2500);
+}
+
+async function fetchPostGameRelay(gameId: string): Promise<unknown | null> {
+  const endpoints = [
+    `${NAVER_BASE}/schedule/games/${gameId}/relay?fields=relayTexts`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relay`,
+    `${NAVER_BASE}/schedule/games/${gameId}/relayTexts`,
+  ];
+  for (const endpoint of endpoints) {
+    const json = await fetchJsonWithTimeout(endpoint, 1600);
+    if (json) return json;
+  }
+  return null;
+}
+
 function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { headline: string; content: string } {
   const { facts, tone } = input;
   const seedBase = `${facts.externalId}:${facts.myTeam}:${facts.myScore}:${facts.oppScore}`;
@@ -294,11 +381,13 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
     const opener = gap >= 5
       ? `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 완파했습니다.`
       : `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 잡아냈습니다.`;
-    const heroPart = facts.winningPitcher
-      ? `오늘의 핵심은 ${facts.winningPitcher}, 마운드에서 흐름을 완전히 주도했습니다.`
+    const heroPart = facts.clutchHit && facts.winningPitcher
+      ? `결승타 장면 — "${clip(facts.clutchHit, 40)}" — 여기에 ${facts.winningPitcher}의 승리 투구까지 붙으니 설명이 끝납니다.`
       : facts.clutchHit
         ? `결승타 장면 — "${clip(facts.clutchHit, 40)}" — 이 한 방이 경기를 결정지었습니다.`
-        : `승부처마다 ${facts.myTeam}가 먼저 치고 나갔고, 상대는 끝내 따라오지 못했습니다.`;
+        : facts.winningPitcher
+          ? `오늘의 핵심은 ${facts.winningPitcher}, 마운드에서 흐름을 완전히 주도했습니다.`
+          : `승부처마다 ${facts.myTeam}가 먼저 치고 나갔고, 상대는 끝내 따라오지 못했습니다.`;
     const closerPart = facts.savePitcher
       ? `${facts.savePitcher}가 뒷문을 철저히 잠갔습니다.`
       : facts.clutchHit && facts.winningPitcher
@@ -361,14 +450,14 @@ export async function fetchPostGameFacts(input: {
   oppScore: number;
   mySide: Side;
 }): Promise<PostGameFacts> {
-  const detail = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}`, 900);
-  const box = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}/record`, 900);
-  const relay = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}/relayTexts`, 900);
+  const detail = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}`, 1200);
+  const box = await fetchPostGameRecord(input.externalId);
+  const relay = await fetchPostGameRelay(input.externalId);
   const texts = [...collectTexts(detail), ...collectTexts(relay)].map((line) => clip(line, 100));
   const side: Side = input.mySide;
-  const opposite: Side = side === "home" ? "away" : "home";
   const stats = parseBoxStats(box);
   const pitching = parsePitchingResult(box);
+  const etc = parseEtcRecords(box);
 
   const myHits = side === "home" ? stats.homeHits : stats.awayHits;
   const oppHits = side === "home" ? stats.awayHits : stats.homeHits;
@@ -402,10 +491,10 @@ export async function fetchPostGameFacts(input: {
     savePitcher:
       pitching.savePitcher ??
       sanitizeTextValue(extractPitcherName(detail, ["savepitcher", "save_pitcher"])),
-    clutchHit: firstByKeyword(texts, /(결승타|역전타|적시타|결정타)/),
-    homeRun: firstByKeyword(texts, /(홈런|솔로포|투런|스리런)/),
+    clutchHit: etc.clutchHit ?? firstByKeyword(texts, /(결승타|역전타|적시타|결정타)/),
+    homeRun: etc.homeRun ?? firstByKeyword(texts, /(홈런|솔로포|투런|스리런)/),
     error: firstByKeyword(texts, /(실책|에러|E\d)/i),
-    notable: texts.slice(0, 5),
+    notable: [...etc.notable, ...texts].slice(0, 5),
   };
 }
 
@@ -436,6 +525,7 @@ export async function generatePostGameReport(input: {
 
 작성 원칙:
 - 결승타·승리/패전투수·세이브처럼 명확한 주인공이 있으면 그 이름을 반드시 써라
+- 핵심 내러티브에 실명이 있으면 본문 첫 두 문장 안에 최소 한 명은 반드시 박아라
 - 안타/실책/홈런 수를 나열하는 브리핑 절대 금지 — 숫자는 문장 흐름에 녹이거나 생략
 - 이 경기를 단 하나의 각도(영웅/패인/장면)로 날카롭게 잘라라
 - 칭찬할 때는 아낌없이, 비판할 때는 직설적으로 — "아쉽다" 한마디로 때우는 결론 금지
