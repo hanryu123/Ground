@@ -35,6 +35,9 @@ export type PostGameFacts = {
   homeRun?: string | null;
   error?: string | null;
   notable?: string[];
+  myPlayers?: string[];
+  oppPlayers?: string[];
+  gameTime?: string | null;
   /** 경기 도중 우천 중단이 있었던 경우 true */
   wasRainSuspended?: boolean;
 };
@@ -174,6 +177,11 @@ type ParsedEtcRecords = {
   notable: string[];
 };
 
+type ParsedPlayerLists = {
+  homePlayers: string[];
+  awayPlayers: string[];
+};
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   return v as Record<string, unknown>;
@@ -218,6 +226,75 @@ function parseBoxStats(recordResponse: unknown): ParsedBoxStats {
     homeHomeRuns,
     awayHomeRuns,
   };
+}
+
+function parsePlayerLists(recordResponse: unknown): ParsedPlayerLists {
+  const result = asRecord(recordResponse)?.result;
+  const recordData = asRecord(result)?.recordData;
+  const battersBoxscore = asRecord(recordData && asRecord(recordData)?.battersBoxscore);
+  const pitchersBoxscore = asRecord(recordData && asRecord(recordData)?.pitchersBoxscore);
+
+  const collectNames = (...lists: unknown[]): string[] => {
+    const names = new Set<string>();
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        const row = asRecord(item);
+        const name = sanitizeTextValue(readString(row?.name));
+        if (name) names.add(name);
+      }
+    }
+    return [...names];
+  };
+
+  return {
+    homePlayers: collectNames(battersBoxscore?.home, pitchersBoxscore?.home),
+    awayPlayers: collectNames(battersBoxscore?.away, pitchersBoxscore?.away),
+  };
+}
+
+function resolveGameTimeInstruction(gameTime?: string | null): string | null {
+  if (!gameTime) return null;
+  const hour = Number.parseInt(gameTime.slice(0, 2), 10);
+  if (!Number.isFinite(hour)) return `경기 시작 시간: ${gameTime}`;
+  if (hour < 17) {
+    return `경기 시작 시간: ${gameTime} 낮 경기. "밤", "오늘 밤", "야간" 표현 금지. 필요하면 "오늘", "이날", "잠실의 오후"처럼 써라.`;
+  }
+  if (hour < 18) {
+    return `경기 시작 시간: ${gameTime} 오후 경기. "오늘 밤"으로 단정하지 말고 "오늘", "이날", "경기 후반"처럼 써라.`;
+  }
+  return `경기 시작 시간: ${gameTime} 야간 경기. "밤" 표현 사용 가능.`;
+}
+
+function isNonNightGame(gameTime?: string | null): boolean {
+  if (!gameTime) return false;
+  const hour = Number.parseInt(gameTime.slice(0, 2), 10);
+  return Number.isFinite(hour) && hour < 18;
+}
+
+function hasNightExpression(text: string): boolean {
+  return /(오늘\s*밤|밤이었|밤입니다|밤이네요|야간|나이트게임)/.test(text);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasUnlabeledOpponentPlayerMention(text: string, oppTeam: string, oppPlayers: string[] | undefined): boolean {
+  const names = (oppPlayers ?? []).filter((name) => name.length >= 2);
+  for (const name of names) {
+    const regex = new RegExp(escapeRegExp(name), "g");
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) != null) {
+      const start = Math.max(0, match.index - 14);
+      const end = Math.min(text.length, match.index + name.length + 14);
+      const context = text.slice(start, end);
+      if (!context.includes(oppTeam) && !/(상대|타자|타선|중심타선)/.test(context)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function parsePitchingResult(recordResponse: unknown): ParsedPitchingResult {
@@ -449,6 +526,7 @@ export async function fetchPostGameFacts(input: {
   myScore: number;
   oppScore: number;
   mySide: Side;
+  gameTime?: string | null;
 }): Promise<PostGameFacts> {
   const detail = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}`, 1200);
   const box = await fetchPostGameRecord(input.externalId);
@@ -458,6 +536,7 @@ export async function fetchPostGameFacts(input: {
   const stats = parseBoxStats(box);
   const pitching = parsePitchingResult(box);
   const etc = parseEtcRecords(box);
+  const playerLists = parsePlayerLists(box);
 
   const myHits = side === "home" ? stats.homeHits : stats.awayHits;
   const oppHits = side === "home" ? stats.awayHits : stats.homeHits;
@@ -469,6 +548,8 @@ export async function fetchPostGameFacts(input: {
   const oppHomeRuns =
     (side === "home" ? stats.awayHomeRuns : stats.homeHomeRuns) ??
     countTeamKeyword(texts, findTeam(input.opponentTeamId).short, /(홈런|솔로포|투런|스리런)/);
+  const myPlayers = side === "home" ? playerLists.homePlayers : playerLists.awayPlayers;
+  const oppPlayers = side === "home" ? playerLists.awayPlayers : playerLists.homePlayers;
 
   return {
     externalId: input.externalId,
@@ -495,6 +576,9 @@ export async function fetchPostGameFacts(input: {
     homeRun: etc.homeRun ?? firstByKeyword(texts, /(홈런|솔로포|투런|스리런)/),
     error: firstByKeyword(texts, /(실책|에러|E\d)/i),
     notable: [...etc.notable, ...texts].slice(0, 5),
+    myPlayers,
+    oppPlayers,
+    gameTime: input.gameTime ?? null,
   };
 }
 
@@ -518,6 +602,7 @@ export async function generatePostGameReport(input: {
   const locationLine = stadium
     ? `경기장: ${stadium} (${input.mySide === "home" ? "홈" : "원정"} 경기)`
     : `경기: ${input.mySide === "home" ? "홈" : "원정"} 경기`;
+  const gameTimeLine = resolveGameTimeInstruction(input.facts.gameTime);
 
   const system = `너는 ${team} 전담 편파 캐스터야. 직업적 품격(존댓말, 방송 어체)은 지키지만, 감정은 완전히 ${team} 편이야.
 경기 직후 단 하나의 한줄평을 날리는 순간이야 — 통계 브리핑이 아니라, 이 경기를 하나의 문장으로 정의하는 거야.
@@ -541,6 +626,9 @@ export async function generatePostGameReport(input: {
 - 아래 금칙어 금지: "확인 중", "정보 없음", "탓할 수 없는"
 - 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용
 - 경기장/구장 언급 시 반드시 아래 제공된 실제 경기장 위치를 사용할 것
+- 선수 소속 절대 오인 금지. 상대 선수 명단에 있는 이름을 ${team} 선수, ${team} 중심타자, ${team} 주인공처럼 쓰면 실패다
+- 상대 선수 기록은 "${input.facts.oppTeam} 타자/상대 타자/상대 중심타선"으로만 다뤄라
+- 상대 선수 이름을 단독 주어로 세우지 마라. 반드시 "${input.facts.oppTeam}의 OOO" 또는 "상대 타자 OOO"처럼 소속을 붙여라
 
 ⚾ 야구 용어 절대 해석 규칙:
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
@@ -558,8 +646,12 @@ export async function generatePostGameReport(input: {
   const prompt = `팀:${input.facts.myTeam}
 상대:${input.facts.oppTeam}
 ${locationLine}
-결과:${input.tone} | 스코어:${input.facts.myScore}:${input.facts.oppScore}
+${gameTimeLine ? `${gameTimeLine}\n` : ""}결과:${input.tone} | 스코어:${input.facts.myScore}:${input.facts.oppScore}
 ${rainLine ? `${rainLine}\n` : ""}
+▶ 선수 소속 경계 (절대 위반 금지):
+우리 팀(${input.facts.myTeam}) 선수: ${(input.facts.myPlayers ?? []).slice(0, 18).join(", ") || "명단 없음"}
+상대 팀(${input.facts.oppTeam}) 선수: ${(input.facts.oppPlayers ?? []).slice(0, 18).join(", ") || "명단 없음"}
+
 ▶ 핵심 내러티브 (한줄평의 중심으로 활용할 것):
 ${narrativeLines || "투수/결승타 정보 없음"}
 
@@ -605,6 +697,8 @@ ${narrativeLines || "투수/결승타 정보 없음"}
       const content = clip(parsed?.content ?? "", 320);
       if (!headline || !content) return null;
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
+      if (isNonNightGame(input.facts.gameTime) && hasNightExpression(`${headline} ${content}`)) return null;
+      if (hasUnlabeledOpponentPlayerMention(content, input.facts.oppTeam, input.facts.oppPlayers)) return null;
       return { headline, content };
     } catch (error) {
       console.error("[postgame-llm] request_failed", (error as Error).message);

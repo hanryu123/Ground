@@ -34,6 +34,7 @@ type PostgameJob = {
   myScore: number;
   oppScore: number;
   mySide: "home" | "away";
+  gameTime?: string | null;
   facts: PostGameFacts | null; // mock 모드면 사전 생성, 일반이면 null → fetch.
 };
 
@@ -49,6 +50,7 @@ type MockPostgameOverrides = {
   myHomeRuns: number | null;
   oppHomeRuns: number | null;
   externalId: string;
+  gameTime: string | null;
   bothTeams: boolean;
 };
 
@@ -91,6 +93,7 @@ function readMockOverrides(url: URL): MockPostgameOverrides | null {
     oppHomeRuns: nullableInt(url.searchParams.get("oppHomeRuns"), 2),
     externalId:
       (url.searchParams.get("mockGameId") ?? "").trim() || `alpha-mock-${Date.now()}`,
+    gameTime: (url.searchParams.get("gameTime") ?? "").trim() || null,
     bothTeams: url.searchParams.get("bothTeams") !== "0",
   };
 }
@@ -107,6 +110,7 @@ function buildMockFacts(input: {
   oppErrors: number | null;
   myHomeRuns: number | null;
   oppHomeRuns: number | null;
+  gameTime?: string | null;
 }): PostGameFacts {
   return {
     externalId: input.externalId,
@@ -127,6 +131,9 @@ function buildMockFacts(input: {
     homeRun: null,
     error: null,
     notable: [],
+    myPlayers: [],
+    oppPlayers: [],
+    gameTime: input.gameTime ?? null,
   };
 }
 
@@ -138,6 +145,7 @@ function buildMockJobs(mock: MockPostgameOverrides): PostgameJob[] {
     myScore: mock.myScore,
     oppScore: mock.oppScore,
     mySide: "home",
+    gameTime: mock.gameTime,
     facts: buildMockFacts({
       teamId: mock.teamId,
       opponentTeamId: mock.opponentTeamId,
@@ -150,6 +158,7 @@ function buildMockJobs(mock: MockPostgameOverrides): PostgameJob[] {
       oppErrors: mock.oppErrors,
       myHomeRuns: mock.myHomeRuns,
       oppHomeRuns: mock.oppHomeRuns,
+      gameTime: mock.gameTime,
     }),
   };
   if (!mock.bothTeams) return [primary];
@@ -161,6 +170,7 @@ function buildMockJobs(mock: MockPostgameOverrides): PostgameJob[] {
     myScore: mock.oppScore,
     oppScore: mock.myScore,
     mySide: "away",
+    gameTime: mock.gameTime,
     facts: buildMockFacts({
       teamId: mock.opponentTeamId,
       opponentTeamId: mock.teamId,
@@ -173,6 +183,7 @@ function buildMockJobs(mock: MockPostgameOverrides): PostgameJob[] {
       oppErrors: mock.myErrors,
       myHomeRuns: mock.oppHomeRuns,
       oppHomeRuns: mock.myHomeRuns,
+      gameTime: mock.gameTime,
     }),
   };
   return [primary, opposite];
@@ -218,6 +229,7 @@ export async function GET(req: Request) {
           myScore: isHomeFan ? game.result!.homeScore : game.result!.awayScore,
           oppScore: isHomeFan ? game.result!.awayScore : game.result!.homeScore,
           mySide: isHomeFan ? "home" : "away",
+          gameTime: game.time,
           facts: null,
         });
       }
@@ -247,6 +259,7 @@ export async function GET(req: Request) {
         myScore: job.myScore,
         oppScore: job.oppScore,
         mySide: job.mySide,
+        gameTime: job.gameTime,
       }));
     // 경기 중 우천 중단이 있었는지 확인 (rain-delay 알림 발송 여부로 판단)
     const rainDelayRecord = await prisma.notificationDispatchState.findFirst({
