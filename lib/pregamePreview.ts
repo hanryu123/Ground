@@ -1,5 +1,10 @@
 import { findTeam } from "@/lib/teams";
 import type { LiveGame } from "@/lib/kbo";
+import {
+  buildTeamMomentumFromLiveGames,
+  fetchTeamMomentum,
+  type TeamMomentum,
+} from "@/lib/teamMomentum";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL =
@@ -25,6 +30,10 @@ export type PregamePreviewOutput = {
   lines: string[];
   context: {
     recentForm: string;
+    recentRecord: string;
+    recentSummary: string;
+    currentStreak: string | null;
+    lastGame: string | null;
     recentScores: string[];
     newsSnippets: string[];
   };
@@ -39,36 +48,6 @@ function clip(text: string, max = 88): string {
   const normalized = compact(text);
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, max - 2)}..`;
-}
-
-function resultMark(game: LiveGame, teamId: string): "W" | "L" | "D" | null {
-  if (!game.result) return null;
-  if (game.result.winnerId == null) return "D";
-  return game.result.winnerId === teamId ? "W" : "L";
-}
-
-function buildRecentFormSummary(recentGames: LiveGame[], teamId: string): { form: string; scores: string[] } {
-  const ordered = [...recentGames]
-    .filter((g) => g.result)
-    .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)))
-    .slice(-5);
-  const formTokens: string[] = [];
-  const scoreLines: string[] = [];
-  for (const game of ordered) {
-    const myIsHome = game.homeId === teamId;
-    const myTeam = findTeam(teamId).short;
-    const oppId = myIsHome ? game.awayId : game.homeId;
-    const oppTeam = findTeam(oppId).short;
-    const myScore = myIsHome ? game.result?.homeScore ?? 0 : game.result?.awayScore ?? 0;
-    const oppScore = myIsHome ? game.result?.awayScore ?? 0 : game.result?.homeScore ?? 0;
-    const mark = resultMark(game, teamId);
-    if (mark) formTokens.push(mark);
-    scoreLines.push(`${myTeam} ${myScore}:${oppScore} ${oppTeam}`);
-  }
-  return {
-    form: formTokens.length > 0 ? formTokens.join("") : "기록 없음",
-    scores: scoreLines.slice(-5),
-  };
 }
 
 function collectTexts(root: unknown): string[] {
@@ -148,21 +127,29 @@ export async function fetchPregameNewsContext(input: {
   return dedup.slice(0, 8);
 }
 
-function buildFallback(input: PregamePreviewInput): PregamePreviewOutput {
+function buildFallback(input: PregamePreviewInput, momentum: TeamMomentum): PregamePreviewOutput {
   const team = findTeam(input.teamId).short;
   const opp = findTeam(input.opponentTeamId).short;
-  const recent = buildRecentFormSummary(input.recentGames, input.teamId);
+  const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
+  const streakLine =
+    momentum.streak && momentum.streak.count >= 3
+      ? `${team}, 지금 ${momentum.streak.label} 흐름까지 안고 들어가는 경기입니다.`
+      : `${team} 최근 흐름은 ${momentum.summary}`;
   return {
     title: "🎙️ 오늘의 캐스터 관전 포인트",
     lines: [
-      `${team} 최근 5경기 흐름 ${recent.form}! 오늘도 이 기세 이어갑니다!`,
-      `오늘 선발 ${input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher} 투수, 오늘 기대가 큽니다!`,
+      streakLine,
+      `오늘 선발 ${starter} 투수, 이 흐름을 바꿀 첫 공부터 중요합니다!`,
       `${opp} 상대로 ${input.game.time} 시작, ${team} 팬 여러분 오늘도 함께 응원합시다!`,
       `타선도 불방망이 예열 완료! ${team}, 오늘 꼭 잡겠습니다!`,
     ].map((line) => clip(line)),
     context: {
-      recentForm: recent.form,
-      recentScores: recent.scores,
+      recentForm: momentum.recentForm,
+      recentRecord: momentum.recentRecord,
+      recentSummary: momentum.summary,
+      currentStreak: momentum.streak?.label ?? null,
+      lastGame: momentum.lastGameLine,
+      recentScores: momentum.recentScores,
       newsSnippets: input.newsContext.slice(0, 4),
     },
     source: "fallback",
@@ -181,13 +168,23 @@ function parseStructuredResponse(text: string): { title?: string; lines?: string
 }
 
 export async function generatePregamePreview(input: PregamePreviewInput): Promise<PregamePreviewOutput> {
-  const fallback = buildFallback(input);
+  const localMomentum = buildTeamMomentumFromLiveGames({
+    teamId: input.teamId,
+    asOfDate: input.date,
+    games: input.recentGames,
+  });
+  const momentum =
+    (await fetchTeamMomentum({
+      teamId: input.teamId,
+      asOfDate: input.date,
+      includeAsOfDate: false,
+    })) ?? localMomentum;
+  const fallback = buildFallback(input, momentum);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return fallback;
 
   const team = findTeam(input.teamId).short;
   const opp = findTeam(input.opponentTeamId).short;
-  const recent = buildRecentFormSummary(input.recentGames, input.teamId);
   const newsBlock = input.newsContext.slice(0, 5).join(" | ") || "없음";
   const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
 
@@ -205,7 +202,10 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 - 비관적·부정적 조건문 절대 금지: "~하지 못하면", "~못 할 경우", "~힘들어집니다", "~걱정됩니다", "~불안합니다" 류 표현 사용 금지
 - 불안감·걱정·압박감 조성 문구 금지: 오직 기대·흥분·자신감만
 - 스코어·경기 결과 추론 금지 (경기 전이므로)
-- 특정 날짜·특정 스코어(예: "14:0", "지난 화요일") 직접 언급 금지 — 최근 흐름(폼) 맥락으로만 활용
+- 최근 흐름은 반드시 "최근 5경기", "직전 경기", "연승/연패"를 구분해서 해석
+- 3연승/3연패 이상이면 반드시 언급. 8연패 이상이면 프리뷰의 핵심 서사로 삼아라
+- 최근 5경기가 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지. "최근 5경기 4승 1패지만 직전 패배"처럼 균형 있게 써라
+- 특정 스코어는 필요할 때만 한 번 자연스럽게 사용하고, 숫자 나열식 브리핑은 금지
 
 ⚾ 야구 용어 절대 해석 규칙:
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
@@ -217,7 +217,11 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 상대:${opp}
 경기:${input.date} ${input.game.time} ${input.game.stadium}
 우리 선발:${starter}
-최근 5경기 흐름(W=승/L=패/D=무):${recent.form}
+최근 흐름 요약:${momentum.summary}
+최근 5경기:${momentum.recentRecord} / ${momentum.recentForm}
+현재 연속 흐름:${momentum.streak?.label ?? "없음"}
+직전 경기:${momentum.lastGameLine ?? "없음"}
+최근 스코어:${momentum.recentScores.join(" | ") || "없음"}
 프리뷰/뉴스 컨텍스트:${newsBlock}`;
 
   const callLlm = async (timeoutMs: number) => {
@@ -275,8 +279,12 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
     title: best.title,
     lines: best.lines,
     context: {
-      recentForm: recent.form,
-      recentScores: recent.scores,
+      recentForm: momentum.recentForm,
+      recentRecord: momentum.recentRecord,
+      recentSummary: momentum.summary,
+      currentStreak: momentum.streak?.label ?? null,
+      lastGame: momentum.lastGameLine,
+      recentScores: momentum.recentScores,
       newsSnippets: input.newsContext.slice(0, 4),
     },
     source: "llm",

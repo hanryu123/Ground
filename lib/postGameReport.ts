@@ -1,4 +1,5 @@
 import { findTeam, TEAMS } from "@/lib/teams";
+import { fetchTeamMomentum, type TeamMomentum } from "@/lib/teamMomentum";
 
 const NAVER_BASE = "https://api-gw.sports.naver.com";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -37,6 +38,7 @@ export type PostGameFacts = {
   notable?: string[];
   myPlayers?: string[];
   oppPlayers?: string[];
+  recentMomentum?: TeamMomentum | null;
   gameTime?: string | null;
   /** 경기 도중 우천 중단이 있었던 경우 true */
   wasRainSuspended?: boolean;
@@ -276,6 +278,12 @@ function hasNightExpression(text: string): boolean {
   return /(오늘\s*밤|밤이었|밤입니다|밤이네요|야간|나이트게임)/.test(text);
 }
 
+function dateFromExternalId(externalId: string): string | null {
+  const raw = externalId.slice(0, 8);
+  if (!/^\d{8}$/.test(raw)) return null;
+  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -436,6 +444,12 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
   const seedBase = `${facts.externalId}:${facts.myTeam}:${facts.myScore}:${facts.oppScore}`;
   const gap = facts.myScore - facts.oppScore;
   const scoreLine = `${facts.myScore}:${facts.oppScore}`;
+  const momentumLine =
+    facts.recentMomentum?.streak && facts.recentMomentum.streak.count >= 3
+      ? `최근 흐름까지 보면 ${facts.recentMomentum.streak.label}, 이 숫자는 절대 가볍게 넘길 수 없습니다.`
+      : facts.recentMomentum?.summary
+        ? `최근 흐름은 ${facts.recentMomentum.summary}`
+        : "";
 
   const winHeads = [
     `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 거의 흠잡을 데가 없었습니다.`,
@@ -472,7 +486,7 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
         : `다음 경기도 이 흐름 그대로 가져가야 합니다.`;
     return {
       headline,
-      content: `${opener} ${heroPart} ${closerPart} 다음 경기도 기대가 됩니다.`,
+      content: `${opener} ${momentumLine ? `${momentumLine} ` : ""}${heroPart} ${closerPart} 다음 경기도 기대가 됩니다.`,
     };
   }
 
@@ -485,7 +499,7 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
         : `결정적인 순간마다 ${facts.myTeam} 쪽이 한 발씩 느렸습니다.`;
     return {
       headline,
-      content: `${facts.myTeam}와 ${facts.oppTeam}가 ${scoreLine}으로 나눴지만, 이 결과가 딱히 반갑지만은 않습니다. ${bodyPart} 승리를 손에 쥘 수 있었던 경기였는데, 결국 1점으로 마무리됐습니다.`,
+      content: `${facts.myTeam}와 ${facts.oppTeam}가 ${scoreLine}으로 나눴지만, 이 결과가 딱히 반갑지만은 않습니다. ${momentumLine ? `${momentumLine} ` : ""}${bodyPart} 승리를 손에 쥘 수 있었던 경기였는데, 결국 1점으로 마무리됐습니다.`,
     };
   }
 
@@ -504,7 +518,7 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
     : `다음 경기, 반드시 되갚아야 합니다.`;
   return {
     headline,
-    content: `${opener} ${corePart} ${tailPart} 팬들도 오늘만큼은 할 말이 없습니다.`,
+    content: `${opener} ${momentumLine ? `${momentumLine} ` : ""}${corePart} ${tailPart} 팬들도 오늘만큼은 할 말이 없습니다.`,
   };
 }
 
@@ -528,9 +542,19 @@ export async function fetchPostGameFacts(input: {
   mySide: Side;
   gameTime?: string | null;
 }): Promise<PostGameFacts> {
-  const detail = await fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}`, 1200);
-  const box = await fetchPostGameRecord(input.externalId);
-  const relay = await fetchPostGameRelay(input.externalId);
+  const gameDate = dateFromExternalId(input.externalId);
+  const [detail, box, relay, recentMomentum] = await Promise.all([
+    fetchJsonWithTimeout(`${NAVER_BASE}/schedule/games/${input.externalId}`, 1200),
+    fetchPostGameRecord(input.externalId),
+    fetchPostGameRelay(input.externalId),
+    gameDate
+      ? fetchTeamMomentum({
+          teamId: input.teamId,
+          asOfDate: gameDate,
+          includeAsOfDate: true,
+        })
+      : Promise.resolve(null),
+  ]);
   const texts = [...collectTexts(detail), ...collectTexts(relay)].map((line) => clip(line, 100));
   const side: Side = input.mySide;
   const stats = parseBoxStats(box);
@@ -578,6 +602,7 @@ export async function fetchPostGameFacts(input: {
     notable: [...etc.notable, ...texts].slice(0, 5),
     myPlayers,
     oppPlayers,
+    recentMomentum,
     gameTime: input.gameTime ?? null,
   };
 }
@@ -614,6 +639,9 @@ export async function generatePostGameReport(input: {
 - 안타/실책/홈런 수를 나열하는 브리핑 절대 금지 — 숫자는 문장 흐름에 녹이거나 생략
 - 이 경기를 단 하나의 각도(영웅/패인/장면)로 날카롭게 잘라라
 - 칭찬할 때는 아낌없이, 비판할 때는 직설적으로 — "아쉽다" 한마디로 때우는 결론 금지
+- 최근 흐름은 반드시 최근 5경기, 직전 경기, 연승/연패 스트릭을 구분해서 해석
+- 3연승/3연패 이상이면 문맥상 자연스럽게 언급. 8연패 이상이면 반드시 한줄평의 핵심 서사로 삼아라
+- 최근 5경기 성적이 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지
 
 반드시 JSON만 출력:
 {"headline":"🎙️ [캐스터 한줄평] ...","content":"3~4문장 단락"}
@@ -654,6 +682,12 @@ ${rainLine ? `${rainLine}\n` : ""}
 
 ▶ 핵심 내러티브 (한줄평의 중심으로 활용할 것):
 ${narrativeLines || "투수/결승타 정보 없음"}
+
+▶ 최근 팀 흐름 (오늘 경기 결과까지 반영):
+${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
+최근 5경기: ${input.facts.recentMomentum?.recentRecord ?? "기록 없음"} / ${input.facts.recentMomentum?.recentForm ?? "기록 없음"}
+현재 연속 흐름: ${input.facts.recentMomentum?.streak?.label ?? "없음"}
+직전 경기: ${input.facts.recentMomentum?.lastGameLine ?? "없음"}
 
 ▶ 참고 수치 (숫자 나열 금지, 필요시 맥락으로만 활용):
 안타:${input.facts.myHits ?? "?"}:${input.facts.oppHits ?? "?"}
