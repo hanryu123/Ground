@@ -85,17 +85,20 @@ function extractStrikeoutDetail(fullText: string): StrikeoutDetail {
 }
 
 /**
- * 객체 내 모든 문자열 값을 재귀적으로 추출.
- * textOptions 안에 currentGameState 등 중첩 필드에 숨어있는 텍스트도 커버.
+ * 실제 중계 문장만 추출한다.
+ * currentPlayersInfo/currentGamePlayerStats 같은 통계 객체에는 과거 타석 결과
+ * ("4구|플라이|삼진|")가 들어가므로 이벤트 감지에 쓰면 안 된다.
  */
-function extractAllStrings(obj: unknown, depth = 0): string[] {
-  if (depth > 4) return [];
-  if (typeof obj === "string") return obj ? [obj] : [];
-  if (Array.isArray(obj)) return obj.flatMap((v) => extractAllStrings(v, depth + 1));
-  if (obj && typeof obj === "object") {
-    return Object.values(obj as Record<string, unknown>).flatMap((v) => extractAllStrings(v, depth + 1));
+function extractRelayPlayTexts(entry: RelayEntry): string[] {
+  const texts = [entry.title, entry.text];
+  for (const option of entry.textOptions ?? []) {
+    texts.push(option.text, option.title, option.playText);
+    const playerChange = option.playerChange as Record<string, unknown> | undefined;
+    if (typeof playerChange?.liveText === "string") texts.push(playerChange.liveText);
   }
-  return [];
+  return texts
+    .map((text) => (typeof text === "string" ? text.trim() : ""))
+    .filter(Boolean);
 }
 
 /**
@@ -111,6 +114,22 @@ function extractPlayerName(text: string): string | null {
   // 팀명·포지션 등 불용어 제외
   const stopWords = new Set(["삼진", "홈런", "투수", "타자", "포수", "볼넷", "안타", "아웃", "득점", "실점", "경기", "이닝"]);
   return stopWords.has(m[1]) ? null : m[1];
+}
+
+function resolveEntryBattingSide(entry: RelayEntry, eventText: string): "home" | "away" | null {
+  const sub = entry.inningSub;
+  if (sub === 1 || sub === "1") return "away";
+  if (sub === 2 || sub === "2") return "home";
+
+  // Naver relay의 homeOrAway: "0"=초/원정 공격, "1"=말/홈 공격
+  const homeOrAway = entry.homeOrAway;
+  if (homeOrAway === 0 || homeOrAway === "0") return "away";
+  if (homeOrAway === 1 || homeOrAway === "1") return "home";
+
+  const textInningMatch = eventText.match(/\d{1,2}회\s*(초|말)/);
+  if (textInningMatch) return textInningMatch[1] === "초" ? "away" : "home";
+
+  return null;
 }
 
 type RelayEntry = {
@@ -262,17 +281,15 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
         for (const entry of allToProcess) {
           // title 우선, text fallback
           const mainText = (entry.title ?? entry.text ?? "");
-          // extractAllStrings: 엔트리 전체를 재귀 탐색해 모든 문자열 수집
-          // → textOptions 내 중첩 객체에 숨어있는 삼진/홈런 텍스트도 잡음
-          const fullText = extractAllStrings(entry).join(" ");
+          const eventText = extractRelayPlayTexts(entry).join(" ");
 
           const eventKinds: Array<LiveEventKind> = [];
-          if (/투수\s*교체|투수교체|구원등판/.test(fullText)) eventKinds.push("pitcherChange");
-          if (/삼진|탈삼진/.test(fullText)) eventKinds.push("strikeout");
+          if (/투수\s*교체|투수교체|구원등판/.test(eventText)) eventKinds.push("pitcherChange");
+          if (/삼진|탈삼진/.test(eventText)) eventKinds.push("strikeout");
           // "홈런성 타구", "홈런 위협", "홈런 예감" 등 미확정 언급은 제외
           const isHomeRun =
-            /(?:솔로|투런|쓰리런|만루)홈런|홈런[!！]|홈런입니다|홈런[을를이가]/.test(fullText) &&
-            !/홈런성|홈런\s*(?:위협|같은|나오면|나온|예감|일보)/.test(fullText);
+            /(?:솔로|투런|쓰리런|만루)홈런|홈런[!！]|홈런입니다|홈런[을를이가]/.test(eventText) &&
+            !/홈런성|홈런\s*(?:위협|같은|나오면|나온|예감|일보)/.test(eventText);
           if (isHomeRun) eventKinds.push("homeRun");
           if (eventKinds.length === 0) continue;
 
@@ -287,22 +304,10 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
             : null;
 
           // ⚾ 초/말 결정 — 홈팀=말(Bottom), 원정팀=초(Top)
-          // 1순위: entry.inningSub — 해당 엔트리 고유값 (inningSub 1=초=원정공격, 2=말=홈공격)
-          //   전체 JSON 스캔은 1회초 엔트리의 값을 게임 내내 반환하는 버그가 있으므로 절대 사용 금지.
-          let battingSide: "home" | "away" | null = null;
-          {
-            const sub = entry.inningSub;
-            if (sub === 1 || sub === "1") battingSide = "away";   // 초: 원정팀 공격
-            else if (sub === 2 || sub === "2") battingSide = "home";  // 말: 홈팀 공격
-          }
+          // entry 고유 필드만 우선 사용. 전체 JSON 스캔은 오래된 이닝값을 잡을 수 있어 fallback으로만 둔다.
+          let battingSide = resolveEntryBattingSide(entry, eventText);
 
-          // 2순위: 텍스트에서 "N회초"/"N회말" 직접 파싱
-          if (battingSide == null) {
-            const textInningMatch = fullText.match(/\d{1,2}회\s*(초|말)/);
-            if (textInningMatch) battingSide = textInningMatch[1] === "초" ? "away" : "home";
-          }
-
-          // 3순위: 상위 JSON 최상위 필드 (relay 배열 내 값은 이미 entry.inningSub로 처리)
+          // 최후 fallback: 상위 JSON 최상위 필드
           if (battingSide == null) {
             battingSide = resolveInningSide(json);
           }
@@ -313,16 +318,17 @@ async function fetchRelayInfo(gameId: string, lastSeqNo: number): Promise<{ rela
           // 릴레이 텍스트(title 우선)에서 선수 이름 추출
           const playerName = extractPlayerName(mainText) ??
             extractPlayerName((entry.textOptions ?? [])[0]?.playText ?? "") ??
+            extractPlayerName(eventText) ??
             null;
 
           // 삼진 세부 상황 파싱 (strikeout 이벤트일 때만)
           const strikeoutDetail = eventKinds.includes("strikeout")
-            ? extractStrikeoutDetail(fullText)
+            ? extractStrikeoutDetail(eventText)
             : null;
 
           // 삼진 방향: 텍스트에서 직접 투수성공/타자실패 판별
           const strikeoutDirection = eventKinds.includes("strikeout")
-            ? detectStrikeoutDirection(fullText)
+            ? detectStrikeoutDirection(eventText)
             : null;
 
           results.push({ eventKinds, battingSide, strikeoutDirection, inning, inningLabel, eventKey, playerName, strikeoutDetail });
@@ -399,12 +405,7 @@ function buildLiveEventCopy(
 ): { title: string; body: string } {
   const inning = inningLabel ? `[${inningLabel}] ` : "";
   const name = playerName ?? null;
-  // isPitching 불명확 시 스코어로 방향 추론 (이기면 수비 성공 관점, 지면 공격 실패 관점)
-  const resolvedPitching: boolean | null =
-    isPitching !== null ? isPitching :
-    (myScore != null && oppScore != null)
-      ? myScore >= oppScore  // 이기거나 동점 → 수비 잘 하는 중 → 삼진은 호투로 해석
-      : null;
+  const resolvedPitching = isPitching;
 
   if (kind === "homeRun") {
     if (resolvedPitching === false) {
@@ -522,22 +523,6 @@ export async function GET(req: Request) {
     for (const relay of relays) {
       for (const kind of relay.eventKinds) {
         for (const teamId of [game.homeId, game.awayId]) {
-          // 이번 크론 실행 내 완전히 동일한 이벤트(같은 seqNo) 중복 방지
-          // eventKey 포함: 같은 경기라도 seqNo 다른 삼진 2개는 각각 통과 가능
-          const runKey = `${game.id}:${teamId}:${kind}:${relay.eventKey}`;
-          if (sentThisRun.has(runKey)) { skipped += 1; continue; }
-
-          const lock = await markDispatchOnce({
-            alertKind: "live-event",
-            teamScope: teamId,
-            eventKey: `${game.id}:${kind}:${relay.eventKey}`,
-            gameExternalId: game.id,
-          });
-          if (!lock) {
-            skipped += 1;
-            continue;
-          }
-
           const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
           const teamSide: "home" | "away" = teamId === game.homeId ? "home" : "away";
 
@@ -555,17 +540,28 @@ export async function GET(req: Request) {
           if (relay.battingSide !== null) {
             // 1순위: battingSide(이닝 초/말 기반) — 가장 정확
             isPitching = relay.battingSide !== teamSide;
-          } else if (kind === "strikeout") {
-            // battingSide 불명 시 스코어 기반 추론: 이기는 팀이 투수팀일 가능성이 높음.
-            // 주의: direction별 분기("batting"→myS<oppS)는 방향이 역전되어
-            // 이기는 팀(투수팀)에게 "삼진 아웃", 지는 팀(타팀)에게 "탈삼진!"을 발송하는
-            // 치명적 역전 버그를 유발하므로 제거.
-            const myS = myCurrentScore ?? 0;
-            const oppS = oppCurrentScore ?? 0;
-            if (myS !== oppS) {
-              isPitching = myS > oppS;
-            }
-            // 동점: isPitching=null 유지 → buildLiveEventCopy에서 스코어 기반 추론
+          }
+
+          // 삼진은 공격/수비 관점이 반대로 갈리는 이벤트라 공수 판별 없이 보내면 안 된다.
+          if (kind === "strikeout" && isPitching === null) {
+            skipped += 1;
+            continue;
+          }
+
+          // 이번 크론 실행 내 완전히 동일한 이벤트(같은 seqNo) 중복 방지
+          // eventKey 포함: 같은 경기라도 seqNo 다른 삼진 2개는 각각 통과 가능
+          const runKey = `${game.id}:${teamId}:${kind}:${relay.eventKey}`;
+          if (sentThisRun.has(runKey)) { skipped += 1; continue; }
+
+          const lock = await markDispatchOnce({
+            alertKind: "live-event",
+            teamScope: teamId,
+            eventKey: `${game.id}:${kind}:${relay.eventKey}`,
+            gameExternalId: game.id,
+          });
+          if (!lock) {
+            skipped += 1;
+            continue;
           }
 
           const fallback = buildLiveEventCopy(kind, myTeamShort, oppTeamShort, isPitching, relay.inningLabel, relay.playerName, myCurrentScore, oppCurrentScore);
