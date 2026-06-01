@@ -4,7 +4,6 @@ import { isKboRegularOffDay, todayKstDate } from "@/lib/kbo";
 import { finishCronRun, startCronRun } from "@/lib/cronRunLogger";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
-import { releaseCheckScoreLock, tryAcquireCheckScoreLock } from "@/lib/score/lock";
 import { loadMockSnapshotWithOverrides, readScoreCronDevOverrides } from "@/lib/score/devOverrides";
 import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
@@ -20,7 +19,7 @@ import type { LiveScoreGame } from "@/lib/score/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 45;
+export const maxDuration = 10;
 
 /**
  * 점수 변동 cron — 6대 알림 시스템 중 "스코어 알림" 책임만 담당.
@@ -54,9 +53,20 @@ type RouteSummary = {
   fetchError: string | null;
   triggerSource: string;
   targetDate: string;
+  durationMs?: number;
+  deadlineMs: number;
+  deferredTasks: string[];
   skipped?: string;
   clearedGames?: number;
 };
+
+const DEFAULT_RESPONSE_BUDGET_MS = 8500;
+const MIN_LOOP_BUDGET_MS = 900;
+const MIN_ALERT_BUDGET_MS = 3600;
+const MIN_RELAY_BUDGET_MS = 4600;
+const MIN_CLUTCH_BUDGET_MS = 5200;
+const SCORE_LLM_TIMEOUT_MS = 2200;
+const SCORE_PUSH_TIMEOUT_MS = 2200;
 
 function isFastMode(url: URL): boolean {
   const raw = (url.searchParams.get("fast") ?? "").toLowerCase();
@@ -67,6 +77,26 @@ function dayRangeKst(date: string): { start: Date; end: Date } {
   const start = new Date(`${date}T00:00:00+09:00`);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
+}
+
+function readResponseBudgetMs(url: URL): number {
+  const raw = Number.parseInt(url.searchParams.get("budgetMs") ?? "", 10);
+  if (Number.isFinite(raw) && raw >= 2500 && raw <= 9000) return raw;
+  const env = Number.parseInt(process.env.CHECK_SCORE_BUDGET_MS ?? "", 10);
+  if (Number.isFinite(env) && env >= 2500 && env <= 9000) return env;
+  return DEFAULT_RESPONSE_BUDGET_MS;
+}
+
+function remainingMs(deadlineAt: number): number {
+  return deadlineAt - Date.now();
+}
+
+function hasBudget(deadlineAt: number, minMs: number): boolean {
+  return remainingMs(deadlineAt) > minMs;
+}
+
+function deferOnce(summary: RouteSummary, task: string) {
+  if (!summary.deferredTasks.includes(task)) summary.deferredTasks.push(task);
 }
 
 const SCORE_NAVER_UA =
@@ -169,7 +199,10 @@ async function fetchLatestPlayText(externalId: string): Promise<RelayParseResult
 }
 
 export async function GET(req: Request) {
+  const startedAt = Date.now();
   const url = new URL(req.url);
+  const responseBudgetMs = readResponseBudgetMs(url);
+  const deadlineAt = startedAt + responseBudgetMs;
   // auth check temporarily open — re-enable after confirmed working
   // const auth = authorizeCron(req, url);
   // if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
@@ -184,6 +217,7 @@ export async function GET(req: Request) {
   }
 
   const fastMode = isFastMode(url);
+  const clutchEnabled = url.searchParams.get("clutch") === "1";
   const targetDate = todayKstDate();
   const isOffDay = isKboRegularOffDay(targetDate);
   const triggerSource = url.searchParams.get("source") ?? "unknown";
@@ -191,12 +225,12 @@ export async function GET(req: Request) {
 
   const runId = await startCronRun("check-score", {
     fastMode,
+    clutchEnabled,
     tickRaw: dev.tick,
     targetDate,
     isOffDay,
     triggerSource,
   });
-  let lockAcquired = false;
 
   const summary: RouteSummary = {
     fastMode,
@@ -215,13 +249,13 @@ export async function GET(req: Request) {
     fetchError: null,
     triggerSource,
     targetDate,
+    deadlineMs: responseBudgetMs,
+    deferredTasks: [],
   };
 
   let snapshot: LiveScoreGame[] = [];
 
   try {
-    lockAcquired = true; // advisory lock removed — PgBouncer transaction mode incompatible
-
     if (isOffDay && dev.tick == null) {
       const { start, end } = dayRangeKst(targetDate);
       const cleared = await prisma.game.deleteMany({
@@ -229,6 +263,7 @@ export async function GET(req: Request) {
       });
       summary.skipped = "MONDAY_OFF";
       summary.clearedGames = cleared.count;
+      summary.durationMs = Date.now() - startedAt;
       await finishCronRun({ id: runId, status: "success", summary });
       return NextResponse.json({ ok: true, runId, ...summary });
     }
@@ -249,6 +284,10 @@ export async function GET(req: Request) {
     if (snapshot.length === 0 || snapshot.every((game) => game.status === "CANCEL")) {
       if (snapshot.length > 0) {
         for (const game of snapshot) {
+          if (!hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
+            deferOnce(summary, `cancel:${game.externalId}`);
+            continue;
+          }
           const cancelSummary = await sendCancelAlerts({ game, targetDate, origin: url.origin });
           summary.cancelSent += cancelSummary.sent;
           summary.disabled += cancelSummary.disabled;
@@ -261,9 +300,10 @@ export async function GET(req: Request) {
       });
       summary.skipped = snapshot.length === 0 ? "NO_GAMES" : "ALL_CANCELLED";
       summary.clearedGames = cleared.count;
+      summary.durationMs = Date.now() - startedAt;
       await finishCronRun({
         id: runId,
-        status: summary.fetchError ? "partial" : "success",
+        status: summary.fetchError || summary.deferredTasks.length > 0 ? "partial" : "success",
         summary,
         error: summary.fetchError,
       });
@@ -271,6 +311,12 @@ export async function GET(req: Request) {
     }
 
     for (const game of snapshot) {
+      if (!hasBudget(deadlineAt, MIN_LOOP_BUDGET_MS)) {
+        summary.skipped = "DEADLINE_REACHED";
+        deferOnce(summary, "remaining-games");
+        break;
+      }
+
       summary.checked += 1;
       try {
         const previous = await prisma.game.findUnique({
@@ -302,11 +348,13 @@ export async function GET(req: Request) {
 
         if (!previous) {
           // 새로 들어온 게임이 이미 CANCEL 상태라면 즉시 취소 알림.
-          if (game.status === "CANCEL") {
+          if (game.status === "CANCEL" && hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
             const cancelSummary = await sendCancelAlerts({ game, targetDate, origin: url.origin });
             summary.cancelSent += cancelSummary.sent;
             summary.disabled += cancelSummary.disabled;
             summary.inboxCreated += cancelSummary.inboxCreated;
+          } else if (game.status === "CANCEL") {
+            deferOnce(summary, `cancel:${game.externalId}`);
           }
           continue;
         }
@@ -352,22 +400,29 @@ export async function GET(req: Request) {
           }
         }
 
-        if (justSuspended) {
+        if (justSuspended && hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
           const rainDelaySummary = await sendRainDelayAlerts({ game, targetDate, origin: url.origin });
           summary.rainDelaySent += rainDelaySummary.sent;
           summary.disabled += rainDelaySummary.disabled;
           summary.inboxCreated += rainDelaySummary.inboxCreated;
+        } else if (justSuspended) {
+          deferOnce(summary, `rain-delay:${game.externalId}`);
         }
 
-        if (justCancelled) {
+        if (justCancelled && hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
           const cancelSummary = await sendCancelAlerts({ game, targetDate, origin: url.origin, wasMidGame });
           summary.cancelSent += cancelSummary.sent;
           summary.disabled += cancelSummary.disabled;
           summary.inboxCreated += cancelSummary.inboxCreated;
+        } else if (justCancelled) {
+          deferOnce(summary, `cancel:${game.externalId}`);
         }
 
-        // ─── 클러치 상황 감지 (LIVE 경기, fast모드 제외) ────────────────
-        if (game.status === "LIVE" && !fastMode) {
+        // ─── 클러치 상황 감지 ───────────────────────────────────────────
+        // check-score는 cron-job.org 응답 시간 보호가 최우선이다.
+        // 클러치는 relay fetch + LLM + push까지 이어지는 무거운 작업이라 기본 cron에서는 분리하고,
+        // 별도 스케줄이 `?clutch=1`로 호출할 때만 수행한다.
+        if (game.status === "LIVE" && !fastMode && clutchEnabled && hasBudget(deadlineAt, MIN_CLUTCH_BUDGET_MS)) {
           try {
             const clutchData = await fetchClutchData(game.externalId);
             if (clutchData) {
@@ -393,9 +448,16 @@ export async function GET(req: Request) {
           } catch (e) {
             console.error("[check-score] clutch detection failed", game.externalId, e);
           }
+        } else if (game.status === "LIVE" && !fastMode && clutchEnabled) {
+          deferOnce(summary, `clutch:${game.externalId}`);
         }
 
         if (!scoreChanged) continue;
+
+        if (!hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
+          deferOnce(summary, `score:${game.externalId}`);
+          continue;
+        }
 
         const scoreDedupeKey = `score:${game.externalId}:${game.homeScore}:${game.awayScore}`;
         const alreadyNotified = await prisma.notification.findFirst({
@@ -418,7 +480,11 @@ export async function GET(req: Request) {
         });
         if (dedupe.count === 0) continue;
 
-        const relayResult = fastMode ? null : await fetchLatestPlayText(game.externalId);
+        const relayResult =
+          fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
+            ? null
+            : await fetchLatestPlayText(game.externalId);
+        if (!relayResult && !fastMode) deferOnce(summary, `relay:${game.externalId}`);
 
         // ⚾ 이닝 초/말: 득점한 팀으로 결정 — 가장 신뢰도 높은 방법
         //   홈팀 득점 → 홈팀이 공격 중 → 말(Bottom)
@@ -453,6 +519,9 @@ export async function GET(req: Request) {
           dbGameId: updated.id,
           latestPlayText,
           fastMode,
+          llmTimeoutMs: SCORE_LLM_TIMEOUT_MS,
+          llmRetryTimeoutMs: null,
+          pushTimeoutMs: SCORE_PUSH_TIMEOUT_MS,
           origin: url.origin,
         });
         summary.changed += 1;
@@ -467,9 +536,10 @@ export async function GET(req: Request) {
       }
     }
 
+    summary.durationMs = Date.now() - startedAt;
     await finishCronRun({
       id: runId,
-      status: summary.errors > 0 || summary.fetchError ? "partial" : "success",
+      status: summary.errors > 0 || summary.fetchError || summary.deferredTasks.length > 0 ? "partial" : "success",
       summary,
       error: summary.fetchError,
     });
@@ -481,11 +551,8 @@ export async function GET(req: Request) {
   } catch (error) {
     const message = (error as Error).message;
     summary.errors += 1;
+    summary.durationMs = Date.now() - startedAt;
     await finishCronRun({ id: runId, status: "error", summary, error: message });
     return NextResponse.json({ ok: false, runId, error: message, ...summary }, { status: 500 });
-  } finally {
-    if (lockAcquired) {
-      await releaseCheckScoreLock();
-    }
   }
 }

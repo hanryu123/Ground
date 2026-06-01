@@ -45,7 +45,11 @@ export function enforcePolite(text: string): string {
     return tail;
   });
 
-  return fixed.join("");
+  return fixed
+    .join(" ")
+    .replace(/\s+([!！?？.。])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -94,6 +98,7 @@ type GenerateScorePushOptions = {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  retryTimeoutMs?: number | null;
 };
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -105,8 +110,14 @@ function compactText(text: string): string {
 
 function clipForPush(text: string): string {
   const compact = compactText(text);
-  if (compact.length <= 65) return compact;
-  return `${compact.slice(0, 63)}..`;
+  if (compact.length <= 86) return compact;
+  return `${compact.slice(0, 84)}..`;
+}
+
+function clipTitle(text: string): string {
+  const compact = compactText(text);
+  if (compact.length <= 48) return compact;
+  return `${compact.slice(0, 46)}..`;
 }
 
 function resolveScoreGap(input: GenerateScorePushInput): number {
@@ -207,6 +218,57 @@ function ensureInningScorePrefix(
   }
 
   return `[${inningTag}] ${myTeamShort} ${myScore}:${oppScore} ${oppTeamShort} | ${compact}`;
+}
+
+function buildScorePushTitle(
+  inningTag: string,
+  myTeamShort: string,
+  myScore: number,
+  oppScore: number,
+  oppTeamShort: string,
+): string {
+  const inning = inningTag && inningTag !== "경기중" ? `${inningTag} ` : "";
+  return clipTitle(`[KBO] ${inning}${myTeamShort} ${myScore}:${oppScore} ${oppTeamShort}`);
+}
+
+function stripScoreEventNoise(text: string): string {
+  return compactText(text)
+    .replace(/\d{1,2}회(?:초|말)?/g, "")
+    .replace(/스코어\s*변동[:：]?\s*/g, "")
+    .replace(/^[가-힣A-Za-z]{1,8}\s+\d{1,2}\s*:\s*\d{1,2}\s+[가-힣A-Za-z]{1,8}\s*/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function buildScoringPlaySummary(input: GenerateScorePushInput): string | null {
+  const scoringTeam = input.tone === "against"
+    ? findTeam(input.opponentTeam)
+    : findTeam(input.favoriteTeam);
+  let detail = stripScoreEventNoise(input.latestPlayText);
+  if (!detail || detail.length < 3) return null;
+  if (/^스코어\s*변동|^[a-z]+ \d+:\d+ [a-z]+$/i.test(detail)) return null;
+
+  detail = detail
+    .replace(/\s*[:：]\s*/g, "! ")
+    .replace(/\s*[-–—]\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const hasTeamPrefix =
+    detail.startsWith(scoringTeam.name) ||
+    detail.startsWith(scoringTeam.short);
+  const summary = hasTeamPrefix ? detail : `${scoringTeam.name} ${detail}`;
+  return clipForPush(summary);
+}
+
+function attachScoringPlaySummary(body: string, input: GenerateScorePushInput): string {
+  const cleanBody = stripLlmHeaderPrefix(body);
+  if (input.tone === "against") return cleanBody;
+  const summary = buildScoringPlaySummary(input);
+  if (!summary) return cleanBody;
+  if (cleanBody.includes(summary) || summary.includes(cleanBody)) return summary;
+  return `${summary} · ${cleanBody}`;
 }
 
 function enforceBaseballConsistency(text: string, input: GenerateScorePushInput): string {
@@ -546,6 +608,7 @@ ${emotionGuide}
 - 감탄 멘트 한 줄만 출력. 이닝 태그·스코어·팀명은 앞에 자동으로 붙음 — 다시 쓰지 마
 - 금지 패턴 예시 (절대 출력 불가): "[2회초]", "**[2회초]**", "한화 0:1 두산", "🎙 [N회]"
 - 네가 이닝·스코어·팀명을 출력하면 자동 헤더와 100% 중복된다 — 오직 감정 멘트만
+- 득점 장면 설명(선수명·타구 방향·몇 득점)은 코드가 별도로 붙인다 — 너는 같은 설명을 반복하지 말고 감정 반응만 써라
 - 데이터 의심 절대 금지: "이상한데요", "맞나요?", "잠깐" 등 주어진 이닝·스코어를 의심하는 표현 금지 — 데이터는 항상 정확하다. 네가 홈/원정을 모르기 때문에 이닝 공격권을 추론하면 반드시 틀린다
 - 15~35자 이내
 ${emojiRule}${avoid}`;
@@ -884,17 +947,27 @@ export async function generateScorePushCopyWithOptions(
   const inningTag = extractInningTag(input.latestPlayText);
   const myTeamShort = findTeam(input.favoriteTeam).short;
   const oppTeamShort = findTeam(input.opponentTeam).short;
+  const team = findTeam(input.favoriteTeam);
+  const isScoringTeam = input.tone !== "against";
+  const title = isScoringTeam
+    ? buildScorePushTitle(inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort)
+    : `⚾️ ${team.short} 실시간`;
   const normalizeAndFinalize = (rawBody: string): string => {
     const variety = ensureCopyVariety(rawBody, input);
     const gapAware = enforceScoreGapTone(variety, input);
     const consistent = enforceBaseballConsistency(gapAware, input);
     const polite = enforcePolite(consistent);
-    const withHeader = ensureInningScorePrefix(polite, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
-    return clipForPush(ensureNovelBody(input, withHeader));
+    if (!isScoringTeam) {
+      const withHeader = ensureInningScorePrefix(polite, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
+      return clipForPush(ensureNovelBody(input, withHeader));
+    }
+    const bodyOnly = stripLlmHeaderPrefix(polite);
+    const novel = stripLlmHeaderPrefix(ensureNovelBody(input, bodyOnly));
+    return clipForPush(attachScoringPlaySummary(novel, input));
   };
   if (!apiKey) {
     console.error("[ScoreLLM] ANTHROPIC_API_KEY missing — fallback 사용");
-    return { title: input.fallbackTitle, body: normalizeAndFinalize(input.fallbackBody) };
+    return { title, body: normalizeAndFinalize(input.fallbackBody) };
   }
 
   /** 단일 Claude 호출 시도. 성공 시 생성 텍스트, 실패 시 null */
@@ -943,9 +1016,10 @@ export async function generateScorePushCopyWithOptions(
   let generated = await tryCall(options.timeoutMs ?? 8000, 1);
 
   // 2차 시도: 10초 (1차 실패 시)
-  if (!generated) {
+  const retryTimeoutMs = options.retryTimeoutMs === undefined ? 10000 : options.retryTimeoutMs;
+  if (!generated && retryTimeoutMs != null && retryTimeoutMs > 0) {
     console.warn("[ScoreLLM] 1차 실패 → 재시도 중... team:", input.favoriteTeam);
-    generated = await tryCall(10000, 2);
+    generated = await tryCall(retryTimeoutMs, 2);
   }
 
   if (!generated) {
@@ -955,9 +1029,8 @@ export async function generateScorePushCopyWithOptions(
 
   const finalized = normalizeAndFinalize(generated);
   console.log("[ScoreLLM] finalized:", finalized);
-  const team = findTeam(input.favoriteTeam);
   return {
-    title: `⚾️ ${team.short} 실시간`,
+    title,
     body: finalized,
   };
 }

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendWebPush } from "@/lib/webPushServer";
 import { findTeam } from "@/lib/teams";
 import { buildBiasedScoreCopy, computePulseState } from "@/lib/pushTemplate";
-import { generateScorePushCopy } from "@/lib/pushLlm";
+import { generateScorePushCopyWithOptions } from "@/lib/pushLlm";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   isTopicEnabled,
@@ -78,6 +78,9 @@ export async function dispatchScoreAlertsForGame(input: {
   dbGameId: string;
   latestPlayText: string;
   fastMode: boolean;
+  llmTimeoutMs?: number;
+  llmRetryTimeoutMs?: number | null;
+  pushTimeoutMs?: number;
   origin: string;
 }): Promise<{ sent: number; disabled: number; inboxCreated: number; llmCalls: number }> {
   const homeDelta = input.game.homeScore - input.previousHomeScore;
@@ -155,19 +158,26 @@ export async function dispatchScoreAlertsForGame(input: {
         copyPromise = Promise.resolve(fallback);
       } else {
         llmCalls += 1;
-        copyPromise = generateScorePushCopy({
-          favoriteTeam,
-          opponentTeam: oppTeamId,
-          myScore,
-          oppScore,
-          tone,
-          latestPlayText: input.latestPlayText,
-          fallbackTitle: fallback.title,
-          fallbackBody: fallback.body,
-          recentBodies: recentBodies.get(favoriteTeam) ?? [],
-          prevMyScore,
-          prevOppScore,
-        });
+        copyPromise = generateScorePushCopyWithOptions(
+          {
+            favoriteTeam,
+            opponentTeam: oppTeamId,
+            myScore,
+            oppScore,
+            tone,
+            latestPlayText: input.latestPlayText,
+            fallbackTitle: fallback.title,
+            fallbackBody: fallback.body,
+            recentBodies: recentBodies.get(favoriteTeam) ?? [],
+            prevMyScore,
+            prevOppScore,
+          },
+          {
+            timeoutMs: input.llmTimeoutMs ?? 2500,
+            retryTimeoutMs: input.llmRetryTimeoutMs ?? null,
+            maxTokens: 80,
+          }
+        );
       }
       copyCache.set(cacheKey, copyPromise);
     }
@@ -182,7 +192,7 @@ export async function dispatchScoreAlertsForGame(input: {
         latestPlayText: input.latestPlayText,
         teamId: favoriteTeam,
       },
-      { favoriteTeam, origin: input.origin }
+      { favoriteTeam, origin: input.origin, timeoutMs: input.pushTimeoutMs ?? 2500 }
     );
 
     return {

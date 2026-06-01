@@ -91,7 +91,7 @@ type WebPushPayload = Record<string, unknown> & {
 export async function sendWebPush(
   subscription: StoredSubscription,
   payload: WebPushPayload,
-  options?: { favoriteTeam?: string | null; origin?: string | null }
+  options?: { favoriteTeam?: string | null; origin?: string | null; timeoutMs?: number }
 ): Promise<{ ok: boolean; statusCode?: number; body?: string }> {
   if (!ensureConfigured()) {
     return { ok: false, body: "vapid_not_configured" };
@@ -119,7 +119,7 @@ export async function sendWebPush(
   };
 
   try {
-    await webpush.sendNotification(
+    const sendPromise = webpush.sendNotification(
       {
         endpoint: subscription.endpoint,
         keys: {
@@ -133,6 +133,14 @@ export async function sendWebPush(
         urgency: "normal",
       }
     );
+    const timeoutMs = options?.timeoutMs ?? 6500;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(`web_push_timeout_${timeoutMs}ms`)), timeoutMs);
+    });
+    await Promise.race([sendPromise, timeoutPromise]).finally(() => {
+      if (timeout) clearTimeout(timeout);
+    });
     return { ok: true };
   } catch (e) {
     const err = e as { statusCode?: number; body?: string; stack?: string };
