@@ -223,6 +223,18 @@ export async function GET(req: Request) {
   const triggerSource = url.searchParams.get("source") ?? "unknown";
   const dev = readScoreCronDevOverrides(url);
 
+  // 월요일 휴식일에는 DB 로깅/정리 작업도 하지 않고 즉시 응답한다.
+  // cron-job.org는 force=1로 호출하므로, 이 빠른 경로가 없으면 DB cold start만으로도 504가 날 수 있다.
+  if (isOffDay && dev.tick == null) {
+    return NextResponse.json({
+      ok: true,
+      skipped: "MONDAY_OFF",
+      fastPath: true,
+      targetDate,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
   const runId = await startCronRun("check-score", {
     fastMode,
     clutchEnabled,
@@ -256,18 +268,6 @@ export async function GET(req: Request) {
   let snapshot: LiveScoreGame[] = [];
 
   try {
-    if (isOffDay && dev.tick == null) {
-      const { start, end } = dayRangeKst(targetDate);
-      const cleared = await prisma.game.deleteMany({
-        where: { gameDate: { gte: start, lt: end } },
-      });
-      summary.skipped = "MONDAY_OFF";
-      summary.clearedGames = cleared.count;
-      summary.durationMs = Date.now() - startedAt;
-      await finishCronRun({ id: runId, status: "success", summary });
-      return NextResponse.json({ ok: true, runId, ...summary });
-    }
-
     try {
       snapshot =
         dev.tick != null
