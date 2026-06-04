@@ -9,6 +9,7 @@ import {
   type AlertKind,
   type TopicKey,
 } from "@/lib/notifications/topics";
+import { findTeam } from "@/lib/teams";
 
 /**
  * 공통 알림 서비스.
@@ -95,6 +96,25 @@ export async function markDispatchOnce(input: {
 
 const PUSH_FAIL_DISABLE_STATUSES = new Set([401, 403, 404, 410]);
 
+function normalizePushTitle(input: {
+  teamId: string;
+  topicKey: TopicKey;
+  title: string;
+  type: "GAME_START" | "GAME_RESULT" | "SCORE_UPDATE" | "SYSTEM";
+}): string {
+  const withoutKbo = input.title.replace(/^\s*\[KBO\]\s*/i, "").trim();
+  if (
+    input.type === "SCORE_UPDATE" ||
+    input.topicKey === "score" ||
+    input.topicKey === "livePitcherChange" ||
+    input.topicKey === "liveStrikeout" ||
+    input.topicKey === "liveHomeRun"
+  ) {
+    return `⚾️ ${findTeam(input.teamId).short} 실시간`;
+  }
+  return withoutKbo || input.title;
+}
+
 /**
  * 실제 FCM 발송 로직 (alpha guard 없음 — 호출 전에 guard 해야 함).
  * sendTeamTopicNotification 과 deliverQueuedNotification 두 곳에서 공유.
@@ -109,6 +129,7 @@ async function _doDeliverPush(input: {
   type: "GAME_START" | "GAME_RESULT" | "SCORE_UPDATE" | "SYSTEM";
   origin: string;
 }): Promise<{ sent: number; disabled: number; inboxCreated: number }> {
+  const title = normalizePushTitle(input);
   const rawSubs = await prisma.pushSubscription.findMany({
     where: {
       enabled: true,
@@ -133,7 +154,7 @@ async function _doDeliverPush(input: {
     const push = await sendWebPush(
       { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
       {
-        title: input.title,
+        title,
         body: input.body,
         url: input.url,
         teamId: input.teamId,
@@ -164,7 +185,7 @@ async function _doDeliverPush(input: {
     const created = await prisma.notification.createMany({
       data: sentRows.map((row) => ({
         userId: row.sub.userId,
-        title: input.title,
+        title,
         body: input.body,
         deeplinkUrl: input.url,
         sentAt: new Date(),
@@ -196,7 +217,7 @@ async function _doDeliverPush(input: {
       const tokens = filtered.map((r) => r.token);
       const fcmResult = await sendFcmMulticast({
         tokens,
-        title: input.title,
+        title,
         body: input.body,
         url: input.url,
         data: { teamId: input.teamId, topicKey: input.topicKey },
@@ -219,7 +240,7 @@ async function _doDeliverPush(input: {
         await prisma.notification.createMany({
           data: successTokens.map((t) => ({
             userId: tokenToUserId.get(t) ?? "unknown",
-            title: input.title,
+            title,
             body: input.body,
             deeplinkUrl: input.url,
             sentAt: new Date(),
@@ -259,13 +280,14 @@ export async function sendTeamTopicNotification(input: {
 }): Promise<{ sent: number; disabled: number; inboxCreated: number; queued?: number }> {
   // AUTO_CONFIRM_PUSH=false 로 명시해야만 PENDING 저장, 그 외(미설정 포함)는 즉시 발송
   const autoConfirm = process.env.AUTO_CONFIRM_PUSH !== "false";
+  const title = normalizePushTitle(input);
 
   if (!autoConfirm) {
     await prisma.pendingPushNotification.create({
       data: {
         teamId: input.teamId,
         topicKey: input.topicKey,
-        title: input.title,
+        title,
         body: input.body,
         url: input.url,
         type: input.type,

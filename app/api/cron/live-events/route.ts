@@ -601,7 +601,7 @@ export async function GET(req: Request) {
           const result = await sendTeamTopicNotification({
             teamId,
             topicKey: kind === "pitcherChange" ? "livePitcherChange" : kind === "homeRun" ? "liveHomeRun" : "liveStrikeout",
-            title: fallback.title,
+            title: `⚾️ ${myTeamShort} 실시간`,
             body: finalBody,
             url: "/today",
             payload: {

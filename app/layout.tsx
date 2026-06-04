@@ -19,6 +19,22 @@ export const metadata: Metadata = {
       "라인업부터 실시간 편파 중계, 하이라이트까지, 내 팀의 결정적 순간을 전해드릴게요.",
   },
   applicationName: "GROUND",
+  icons: {
+    icon: [
+      {
+        url: "/icons/favicon-32x32.png",
+        sizes: "32x32",
+        type: "image/png",
+      },
+    ],
+    apple: [
+      {
+        url: "/icons/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
   appleWebApp: {
     capable: true,
     title: "GROUND",

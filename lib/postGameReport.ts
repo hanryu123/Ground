@@ -533,6 +533,26 @@ function parseJsonBlock(text: string): { headline?: string; content?: string } |
   }
 }
 
+function hasVerifiedComebackFact(facts: PostGameFacts): boolean {
+  return [
+    facts.clutchHit,
+    facts.homeRun,
+    facts.error,
+    ...(facts.notable ?? []),
+  ].some((line) => typeof line === "string" && /역전/.test(line));
+}
+
+function isSafePostGameCopy(input: { headline: string; content: string; facts: PostGameFacts }): boolean {
+  const text = `${input.headline} ${input.content}`;
+  if (/직전\s*경기|어제|어젯밤|전날|최근\s*\d*\s*경기|연승|연패|설욕|복수|즉각\s*반격|반등/.test(text)) {
+    return false;
+  }
+  if (!hasVerifiedComebackFact(input.facts) && /역전패|역전승|역전극|대역전/.test(text)) {
+    return false;
+  }
+  return true;
+}
+
 export async function fetchPostGameFacts(input: {
   externalId: string;
   teamId: string;
@@ -651,6 +671,8 @@ export async function generatePostGameReport(input: {
 - content: 3~4문장 한 단락(줄바꿈 없이, 문장마다 어휘를 다르게), 존댓말
 - 우리 팀 관점 고정, 상대팀과 똑같은 내용 재사용 금지
 - "먹히다/먹힌다" 절대 금지
+- 제공된 오늘 경기 데이터 안에 없는 맥락 금지: 직전 경기, 어제/전날, 최근 N경기, 연승/연패, 설욕, 복수, 반등, 즉각 반격 언급 금지
+- 주요 장면에 "역전"이 명시되지 않았으면 역전승/역전패/역전극 언급 금지
 - 아래 금칙어 금지: "확인 중", "정보 없음", "탓할 수 없는"
 - 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용
 - 경기장/구장 언급 시 반드시 아래 제공된 실제 경기장 위치를 사용할 것
@@ -733,6 +755,10 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
       if (isNonNightGame(input.facts.gameTime) && hasNightExpression(`${headline} ${content}`)) return null;
       if (hasUnlabeledOpponentPlayerMention(content, input.facts.oppTeam, input.facts.oppPlayers)) return null;
+      if (!isSafePostGameCopy({ headline, content, facts: input.facts })) {
+        console.warn("[postgame-llm] rejected unsafe copy", { headline, content });
+        return null;
+      }
       return { headline, content };
     } catch (error) {
       console.error("[postgame-llm] request_failed", (error as Error).message);

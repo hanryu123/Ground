@@ -154,24 +154,26 @@ export async function dispatchScoreAlertsForGame(input: {
     const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${input.latestPlayText}`;
     let copyPromise = copyCache.get(cacheKey);
     if (!copyPromise) {
+      const copyInput = {
+        favoriteTeam,
+        opponentTeam: oppTeamId,
+        myScore,
+        oppScore,
+        mySide: isHomeFan ? "home" as const : "away" as const,
+        tone,
+        latestPlayText: input.latestPlayText,
+        fallbackTitle: fallback.title,
+        fallbackBody: fallback.body,
+        recentBodies: recentBodies.get(favoriteTeam) ?? [],
+        prevMyScore,
+        prevOppScore,
+      };
       if (input.fastMode) {
-        copyPromise = Promise.resolve(fallback);
+        copyPromise = generateScorePushCopyWithOptions(copyInput, { apiKeyOverride: "" });
       } else {
         llmCalls += 1;
         copyPromise = generateScorePushCopyWithOptions(
-          {
-            favoriteTeam,
-            opponentTeam: oppTeamId,
-            myScore,
-            oppScore,
-            tone,
-            latestPlayText: input.latestPlayText,
-            fallbackTitle: fallback.title,
-            fallbackBody: fallback.body,
-            recentBodies: recentBodies.get(favoriteTeam) ?? [],
-            prevMyScore,
-            prevOppScore,
-          },
+          copyInput,
           {
             timeoutMs: input.llmTimeoutMs ?? 2500,
             retryTimeoutMs: input.llmRetryTimeoutMs ?? null,

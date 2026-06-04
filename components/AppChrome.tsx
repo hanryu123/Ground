@@ -9,6 +9,7 @@ import PageShell from "@/components/PageShell";
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
+  const isDocumentRoute = pathname === "/privacy" || pathname?.startsWith("/privacy/");
 
   if (isAdminRoute) {
     return (
@@ -16,6 +17,10 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     );
+  }
+
+  if (isDocumentRoute) {
+    return <>{children}</>;
   }
 
   return (

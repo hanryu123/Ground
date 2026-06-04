@@ -53,6 +53,11 @@
     touch-action: pan-y;
   }
 
+  .document-shell,
+  .document-shell * {
+    touch-action: pan-y;
+  }
+
   /* 명시적으로 가로 스크롤이 필요한 영역(예: 칩 행, 가로 캐러셀) 에선 이 클래스로 풀어준다. */
   .touch-pan-all {
     touch-action: pan-x pan-y;
