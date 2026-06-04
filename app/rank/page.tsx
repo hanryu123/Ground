@@ -7,14 +7,14 @@ import { useMyTeam } from "@/lib/useMyTeam";
 import { useKboToday } from "@/lib/useKboToday";
 
 const ease = [0.22, 1, 0.36, 1] as const;
+const CONTACT_EMAIL = "ground.admiin@gmail.com";
 
 const MAIL_TO = (() => {
-  const to = "janghanr@gmail.com";
   const subject = encodeURIComponent("[GROUND 피드백] 야구 찐팬의 한마디");
   const body = encodeURIComponent(
     "기기명 (예: iPhone 15 Pro): \n응원 구단: \n\n불편하셨던 점이나 GROUND 팀에게 바라는 점을 자유롭게 적어주세요! ⚾️",
   );
-  return `mailto:${to}?subject=${subject}&body=${body}`;
+  return `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
 })();
 
 /**
@@ -102,7 +102,7 @@ export default function RankPage() {
           </Link>
           <span className="text-[10px] text-white/12">·</span>
           <a
-            href={`mailto:janghanr@gmail.com?subject=${encodeURIComponent("[GROUND] 데이터 삭제 요청")}&body=${encodeURIComponent("안녕하세요,\n\nGROUND 앱에 저장된 제 데이터(푸시 토큰, 기기 ID) 삭제를 요청합니다.\n\n앱 버전: \n요청 사유 (선택): ")}`}
+            href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("[GROUND] 데이터 삭제 요청")}&body=${encodeURIComponent("안녕하세요,\n\nGROUND 앱에 저장된 제 데이터(푸시 토큰, 기기 ID) 삭제를 요청합니다.\n\n앱 버전: \n요청 사유 (선택): ")}`}
             className="text-[10px] text-white/18 underline underline-offset-2 transition hover:text-white/35"
           >
             데이터 삭제 요청

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   },
 };
 
-const CONTACT_EMAIL = "janghanr@gmail.com";
+const CONTACT_EMAIL = "ground.admiin@gmail.com";
 
 const collectedItems = [
   {
