@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { LiveGame } from "@/lib/kbo";
 import type { TodayFeedStatus } from "@/lib/kbo";
 import type { StandingRow } from "@/config/standings";
@@ -39,42 +39,62 @@ type UseKboTodayOptions = {
   withStandings?: boolean;
 };
 
-/**
- * /api/kbo/today 를 60초 마다 폴링.
- * 서버에서 실패하면 폴백 데이터가 들어오므로 null 은 첫 로드 직전만 잠깐.
- */
 export function useKboToday(
   teamId?: string,
   options?: UseKboTodayOptions
 ): KboTodayPayload | null {
   const [data, setData] = useState<KboTodayPayload | null>(null);
   const withStandings = options?.withStandings ?? true;
+  const phase = data?.gamePhase ?? null;
+
+  const load = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (teamId) params.set("teamId", teamId);
+      if (!withStandings) params.set("withStandings", "0");
+      params.set("_", String(Date.now()));
+      const qs = params.toString();
+      const r = await fetch(`/api/kbo/today?${qs}`, {
+        cache: "no-store",
+        headers: {
+          "cache-control": "no-cache",
+          pragma: "no-cache",
+        },
+      });
+      if (!r.ok) return;
+      const j = (await r.json()) as KboTodayPayload;
+      setData(j);
+    } catch {
+      // 네트워크 일시 장애는 조용히 다음 주기로 넘김
+    }
+  }, [teamId, withStandings]);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const params = new URLSearchParams();
-        if (teamId) params.set("teamId", teamId);
-        if (!withStandings) params.set("withStandings", "0");
-        const qs = params.toString();
-        const r = await fetch(`/api/kbo/today${qs ? `?${qs}` : ""}`, {
-          cache: "no-store",
-        });
-        if (!r.ok) return;
-        const j = (await r.json()) as KboTodayPayload;
-        if (!cancelled) setData(j);
-      } catch {
-        // 네트워크 일시 장애는 조용히 다음 주기로 넘김
-      }
-    };
     void load();
-    const t = window.setInterval(load, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
+  }, [load]);
+
+  useEffect(() => {
+    const intervalMs = phase === "LIVE" ? 12_000 : phase === "PRE" ? 30_000 : 60_000;
+    const tick = () => {
+      if (document.visibilityState !== "hidden") void load();
     };
-  }, [teamId, withStandings]);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const onFocus = () => void load();
+
+    const t = window.setInterval(tick, intervalMs);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onFocus);
+
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onFocus);
+    };
+  }, [load, phase]);
 
   return data;
 }

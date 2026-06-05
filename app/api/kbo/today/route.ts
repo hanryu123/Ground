@@ -13,6 +13,13 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function jsonNoStore(body: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(body, init);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.headers.set("Pragma", "no-cache");
+  return res;
+}
+
 function isPregamePreviewWindow(gameTime: string | undefined, date: string, now = new Date()): boolean {
   // gameTime이 있으면 경기 시작 -90분 ~ +0분 구간에만 노출
   // (경기 시작 후엔 status가 LIVE/RESULT로 바뀌어 이 함수 자체가 호출되지 않음)
@@ -191,7 +198,7 @@ export async function GET(req: Request) {
       };
     }
 
-    return NextResponse.json({
+    return jsonNoStore({
       date,
       status,
       gamePhase,
@@ -204,7 +211,7 @@ export async function GET(req: Request) {
       fallback: false,
     });
   } catch (err) {
-    return NextResponse.json(
+    return jsonNoStore(
       {
         error: (err as Error).message,
         date,

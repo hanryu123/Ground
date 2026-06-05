@@ -1,4 +1,4 @@
-import { findTeam } from "@/lib/teams";
+import { TEAMS, findTeam } from "@/lib/teams";
 
 /**
  * Claude 반말 어미 → 존댓말 강제 변환 후처리
@@ -128,6 +128,30 @@ function buildRealtimeTitle(teamId: string): string {
 
 function resolveScoreGap(input: GenerateScorePushInput): number {
   return Math.abs(input.myScore - input.oppScore);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const TEAM_ALIAS_PATTERN = TEAMS.flatMap((team) => [
+  team.name,
+  team.short,
+  team.nameEn,
+  team.shortEn,
+])
+  .filter(Boolean)
+  .sort((a, b) => b.length - a.length)
+  .map(escapeRegExp)
+  .join("|");
+
+function stripBattingContextNoise(text: string): string {
+  const teamAlias = `(?:${TEAM_ALIAS_PATTERN})`;
+  return compactText(text)
+    // "NC 다이노스 LG 공격", "한화 공격", "KT 위즈 LG 공격" 같은 릴레이 공수 표기 제거
+    .replace(new RegExp(`(?:^|[|·,\\s])(?:${teamAlias}\\s*){1,3}공격\\s*[·:：\\-–—]?\\s*`, "gi"), " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function resolveScoreGapTier(input: GenerateScorePushInput): "close" | "danger" | "garbage" {
@@ -281,10 +305,11 @@ function buildScorePushTitle(
 }
 
 function stripScoreEventNoise(text: string): string {
-  return compactText(text)
+  return stripBattingContextNoise(text)
     .replace(/\d{1,2}회(?:초|말)?/g, "")
     .replace(/스코어\s*변동[:：]?\s*/g, "")
     .replace(/^[가-힣A-Za-z]{1,8}\s+\d{1,2}\s*:\s*\d{1,2}\s+[가-힣A-Za-z]{1,8}\s*/g, "")
+    .replace(new RegExp(`(?:${TEAM_ALIAS_PATTERN}\\s*){1,3}공격\\s*[·:：\\-–—]?\\s*`, "gi"), " ")
     .replace(/\([^)]*\)/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -304,6 +329,8 @@ function buildScoringPlaySummary(input: GenerateScorePushInput): string | null {
     .replace(/\s{2,}/g, " ")
     .trim();
 
+  if (/^공격\b|공격\s*$/.test(detail)) return null;
+
   const hasTeamPrefix =
     detail.startsWith(scoringTeam.name) ||
     detail.startsWith(scoringTeam.short);
@@ -312,7 +339,7 @@ function buildScoringPlaySummary(input: GenerateScorePushInput): string | null {
 }
 
 function attachScoringPlaySummary(body: string, input: GenerateScorePushInput): string {
-  const cleanBody = stripLlmHeaderPrefix(body);
+  const cleanBody = stripBattingContextNoise(stripLlmHeaderPrefix(body));
   if (input.tone === "against") return cleanBody;
   const summary = buildScoringPlaySummary(input);
   if (!summary) return cleanBody;
@@ -337,9 +364,10 @@ function enforceBaseballConsistency(text: string, input: GenerateScorePushInput)
 }
 
 function extractEventHook(latestPlayText: string): string | null {
-  const cleaned = compactText(latestPlayText)
+  const cleaned = stripBattingContextNoise(latestPlayText)
     .replace(/\d{1,2}회(?:초|말)?/g, "")
     .replace(/스코어\s*변동[:：]?\s*/g, "")
+    .replace(new RegExp(`(?:${TEAM_ALIAS_PATTERN}\\s*){1,3}공격\\s*[·:：\\-–—]?\\s*`, "gi"), " ")
     .replace(/[()]/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -453,6 +481,23 @@ function enforceRunCount(text: string, input: GenerateScorePushInput): string {
   }
 
   return normalized;
+}
+
+function enforceScoreGapLabel(text: string, input: GenerateScorePushInput): string {
+  const gap = resolveScoreGap(input);
+  const normalized = compactText(text);
+
+  if (gap === 0) {
+    return normalized
+      .replace(/(?:한|[1-9]\d*)\s*점\s*차(?:가|로|까지|의)?/g, "동점")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  return normalized
+    .replace(/(?:한|[1-9]\d*)\s*점\s*차/g, `${gap}점 차`)
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function enforceNextAttackInning(text: string, input: GenerateScorePushInput): string {
@@ -691,6 +736,7 @@ ${emotionGuide}
 - 금지 패턴 예시 (절대 출력 불가): "[2회초]", "**[2회초]**", "한화 0:1 두산", "🎙 [N회]"
 - 네가 이닝·스코어·팀명을 출력하면 자동 헤더와 100% 중복된다 — 오직 감정 멘트만
 - 득점 장면 설명(선수명·타구 방향·몇 득점)은 코드가 별도로 붙인다 — 너는 같은 설명을 반복하지 말고 감정 반응만 써라
+- 점수차 표현은 사용자 프롬프트의 "점수차 N점"만 사용 — N이 1이 아니면 "1점 차/한 점 차" 절대 금지
 - 데이터 의심 절대 금지: "이상한데요", "맞나요?", "잠깐" 등 주어진 이닝·스코어를 의심하는 표현 금지 — 데이터는 항상 정확하다. 네가 홈/원정을 모르기 때문에 이닝 공격권을 추론하면 반드시 틀린다
 - 15~35자 이내
 ${emojiRule}${avoid}`;
@@ -1046,7 +1092,8 @@ export async function generateScorePushCopyWithOptions(
     const variety = ensureCopyVariety(rawBody, input);
     const gapAware = enforceScoreGapTone(variety, input);
     const runAware = enforceRunCount(gapAware, input);
-    const inningAware = enforceNextAttackInning(runAware, input);
+    const scoreGapAware = enforceScoreGapLabel(runAware, input);
+    const inningAware = enforceNextAttackInning(scoreGapAware, input);
     const consistent = enforceBaseballConsistency(inningAware, input);
     const polite = enforcePolite(consistent);
     const withPlaySummary =

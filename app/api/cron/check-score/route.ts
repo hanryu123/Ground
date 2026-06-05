@@ -121,7 +121,8 @@ function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResu
     if (!Array.isArray(textRelays) || textRelays.length === 0) return null;
 
     const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
-    const title = (last["title"] as string | undefined) ?? "";
+    const rawTitle = (last["title"] as string | undefined) ?? "";
+    const title = /공격/.test(rawTitle) ? "" : rawTitle;
     const rawInn = last["inn"] ?? last["inning"];
     const inn: number | null = typeof rawInn === "number" ? rawInn
       : typeof rawInn === "string" ? (parseInt(rawInn) || null) : null;
