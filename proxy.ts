@@ -14,10 +14,14 @@ export function proxy(req: NextRequest) {
 
   if (pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/admin/auth")) {
     if (pathname.startsWith("/api/admin/push-diagnostics")) {
-      const apiSecret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD ?? process.env.CRON_SECRET;
+      const apiSecrets = [
+        process.env.ADMIN_SECRET,
+        process.env.ADMIN_PASSWORD,
+        process.env.CRON_SECRET,
+      ].filter((value): value is string => Boolean(value));
       const auth = req.headers.get("authorization");
       const querySecret = req.nextUrl.searchParams.get("key") ?? req.nextUrl.searchParams.get("secret");
-      if (apiSecret && (auth === `Bearer ${apiSecret}` || querySecret === apiSecret)) {
+      if (apiSecrets.some((secret) => auth === `Bearer ${secret}` || querySecret === secret)) {
         return NextResponse.next();
       }
     }

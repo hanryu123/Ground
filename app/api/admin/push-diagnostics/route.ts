@@ -26,15 +26,18 @@ type NativeTokenRow = {
   lastSeenAt: Date | null;
 };
 
-function authSecret(): string | undefined {
-  return process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD ?? process.env.CRON_SECRET;
+function authSecrets(): string[] {
+  return [
+    process.env.ADMIN_SECRET,
+    process.env.ADMIN_PASSWORD,
+    process.env.CRON_SECRET,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function isAuthorized(req: Request, url: URL): boolean {
-  const secret = authSecret();
-  if (!secret) return false;
   const auth = req.headers.get("authorization");
-  return auth === `Bearer ${secret}` || url.searchParams.get("key") === secret || url.searchParams.get("secret") === secret;
+  const querySecret = url.searchParams.get("key") ?? url.searchParams.get("secret");
+  return authSecrets().some((secret) => auth === `Bearer ${secret}` || querySecret === secret);
 }
 
 function parseTopic(raw: string | null): TopicKey {
@@ -188,7 +191,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: false,
       error: "unauthorized",
-      hasAuthSecret: Boolean(authSecret()),
+      hasAuthSecret: authSecrets().length > 0,
     }, { status: 401 });
   }
 
@@ -240,7 +243,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: false,
       error: "unauthorized",
-      hasAuthSecret: Boolean(authSecret()),
+      hasAuthSecret: authSecrets().length > 0,
     }, { status: 401 });
   }
 
