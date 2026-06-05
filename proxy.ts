@@ -13,6 +13,15 @@ export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/admin/auth")) {
+    if (pathname.startsWith("/api/admin/push-diagnostics")) {
+      const apiSecret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD ?? process.env.CRON_SECRET;
+      const auth = req.headers.get("authorization");
+      const querySecret = req.nextUrl.searchParams.get("key") ?? req.nextUrl.searchParams.get("secret");
+      if (apiSecret && (auth === `Bearer ${apiSecret}` || querySecret === apiSecret)) {
+        return NextResponse.next();
+      }
+    }
+
     const token = req.cookies.get("admin-token")?.value;
     const expected = process.env.ADMIN_PASSWORD;
 
