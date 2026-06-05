@@ -20,6 +20,32 @@ type NativePushOptions = {
 };
 
 let _listenersRegistered = false;
+let _latestOptions: NativePushOptions | null = null;
+let _lastToken: { value: string; platform: string } | null = null;
+
+async function registerTokenWithServer(
+  token: string,
+  platform: string,
+  options: NativePushOptions
+): Promise<void> {
+  const res = await fetch("/api/notifications/subscribe/native", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-ground-user-id": options.userId,
+    },
+    body: JSON.stringify({
+      token,
+      platform,
+      favoriteTeam: options.favoriteTeam,
+      topics: options.topics ?? {},
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`native subscribe failed (${res.status})`);
+  }
+}
 
 export async function registerNativePush(options: NativePushOptions): Promise<void> {
   // 서버 사이드 렌더링 / 웹 환경에서는 실행하지 않음
@@ -38,6 +64,7 @@ export async function registerNativePush(options: NativePushOptions): Promise<vo
   }
 
   if (!Capacitor.isNativePlatform()) return;
+  _latestOptions = options;
 
   // 권한 요청
   let permission: { receive: string };
@@ -51,63 +78,58 @@ export async function registerNativePush(options: NativePushOptions): Promise<vo
     return;
   }
 
-  // 기기 등록 (FCM/APNs 토큰 발급 요청)
-  await PushNotifications.register();
-
   // 리스너는 한 번만 등록
-  if (_listenersRegistered) return;
-  _listenersRegistered = true;
+  if (!_listenersRegistered) {
+    _listenersRegistered = true;
 
-  // 1) 토큰 수신 → 서버에 저장
-  await PushNotifications.addListener("registration", async (token: Token) => {
-    const platform = Capacitor.getPlatform(); // "ios" | "android"
-    try {
-      await fetch("/api/notifications/subscribe/native", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-ground-user-id": options.userId,
-        },
-        body: JSON.stringify({
-          token: token.value,
-          platform,
-          favoriteTeam: options.favoriteTeam,
-          topics: options.topics ?? {},
-        }),
-      });
-      console.info("[nativePush] token registered:", token.value.slice(0, 12) + "…");
-    } catch (err) {
-      console.error("[nativePush] token registration failed:", err);
-    }
-  });
+    // 1) 토큰 수신 → 서버에 저장
+    await PushNotifications.addListener("registration", async (token: Token) => {
+      const platform = Capacitor.getPlatform(); // "ios" | "android"
+      _lastToken = { value: token.value, platform };
+      const latest = _latestOptions;
+      if (!latest) return;
 
-  // 2) 토큰 등록 에러
-  await PushNotifications.addListener("registrationError", (err: unknown) => {
-    console.error("[nativePush] registration error:", err);
-  });
-
-  // 3) 포그라운드 알림 수신 (앱이 켜져 있을 때)
-  await PushNotifications.addListener(
-    "pushNotificationReceived",
-    (notification: PushNotificationSchema) => {
-      console.info("[nativePush] foreground notification:", notification.title);
-      // 필요하면 앱 내 토스트/인박스 UI 갱신
-    }
-  );
-
-  // 4) 알림 클릭 (앱 백그라운드/종료 후 탭)
-  await PushNotifications.addListener(
-    "pushNotificationActionPerformed",
-    (action: ActionPerformed) => {
-      const url: string = (action.notification.data as Record<string, string>)?.url ?? "/";
-      // 딥링크: Today 탭 or 지정 경로로 이동
-      if (url.startsWith("http")) {
-        window.location.href = url;
-      } else {
-        window.location.pathname = url;
+      try {
+        await registerTokenWithServer(token.value, platform, latest);
+        console.info("[nativePush] token registered:", token.value.slice(0, 12) + "…");
+      } catch (err) {
+        console.error("[nativePush] token registration failed:", err);
       }
-    }
-  );
+    });
+
+    // 2) 토큰 등록 에러
+    await PushNotifications.addListener("registrationError", (err: unknown) => {
+      console.error("[nativePush] registration error:", err);
+    });
+
+    // 3) 포그라운드 알림 수신 (앱이 켜져 있을 때)
+    await PushNotifications.addListener(
+      "pushNotificationReceived",
+      (notification: PushNotificationSchema) => {
+        console.info("[nativePush] foreground notification:", notification.title);
+        // 필요하면 앱 내 토스트/인박스 UI 갱신
+      }
+    );
+
+    // 4) 알림 클릭 (앱 백그라운드/종료 후 탭)
+    await PushNotifications.addListener(
+      "pushNotificationActionPerformed",
+      (action: ActionPerformed) => {
+        const url: string = (action.notification.data as Record<string, string>)?.url ?? "/";
+        // 딥링크: Today 탭 or 지정 경로로 이동
+        if (url.startsWith("http")) {
+          window.location.href = url;
+        } else {
+          window.location.pathname = url;
+        }
+      }
+    );
+  } else if (_lastToken) {
+    await registerTokenWithServer(_lastToken.value, _lastToken.platform, options);
+  }
+
+  // 기기 등록은 리스너 연결 후 호출해야 registration 이벤트를 놓치지 않는다.
+  await PushNotifications.register();
 }
 
 /** 네이티브 앱에서 푸시 토큰 등록 해제 (설정에서 알림 OFF 시). */
