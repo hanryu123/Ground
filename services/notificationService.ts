@@ -38,6 +38,14 @@ type ActiveSubscription = {
   user: { favoriteTeam: string | null };
 };
 
+function matchesNativePushEnv(topics: unknown, appEnv: string | null): boolean {
+  if (matchesCurrentPushEnv(topics)) return true;
+  if (!topics || typeof topics !== "object") {
+    return matchesCurrentPushEnv({ appEnv });
+  }
+  return matchesCurrentPushEnv({ ...(topics as Record<string, unknown>), appEnv });
+}
+
 export function authorizeCron(req: Request, url: URL): CronAuthResult {
   const secret = process.env.CRON_SECRET;
   if (!secret) return { ok: true };
@@ -230,7 +238,7 @@ async function _doDeliverPush(input: {
 
     const filtered = nativeTokenRows.filter(
       (r) =>
-        matchesCurrentPushEnv(r.topics) &&
+        matchesNativePushEnv(r.topics, r.appEnv) &&
         isTopicEnabled(r.topics, input.topicKey)
     );
 

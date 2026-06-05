@@ -6,6 +6,17 @@ type ApnsResult = {
   failed: string[];
 };
 
+export type ApnsConfigStatus = {
+  configured: boolean;
+  keyIdSet: boolean;
+  teamIdSet: boolean;
+  privateKeySet: boolean;
+  privateKeyLooksLikeP8: boolean;
+  topic: string;
+  environment: "development" | "production";
+  host: string;
+};
+
 let cachedJwt: { value: string; issuedAt: number } | null = null;
 
 function base64url(input: Buffer | string): string {
@@ -36,6 +47,27 @@ function getApnsConfig() {
     teamId,
     privateKey: normalizePrivateKey(privateKey),
     topic,
+    host: environment === "development" ? "api.sandbox.push.apple.com" : "api.push.apple.com",
+  };
+}
+
+export function getApnsConfigStatus(): ApnsConfigStatus {
+  const keyId = process.env.APNS_KEY_ID?.trim();
+  const teamId = process.env.APNS_TEAM_ID?.trim();
+  const privateKey = process.env.APNS_PRIVATE_KEY?.trim();
+  const topic = process.env.APNS_BUNDLE_ID?.trim() || "com.ground.kbo";
+  const environment = process.env.APNS_ENV?.trim() === "development" ? "development" : "production";
+  const normalizedKey = privateKey ? normalizePrivateKey(privateKey) : "";
+
+  return {
+    configured: Boolean(keyId && teamId && privateKey),
+    keyIdSet: Boolean(keyId),
+    teamIdSet: Boolean(teamId),
+    privateKeySet: Boolean(privateKey),
+    privateKeyLooksLikeP8:
+      normalizedKey.includes("BEGIN PRIVATE KEY") && normalizedKey.includes("END PRIVATE KEY"),
+    topic,
+    environment,
     host: environment === "development" ? "api.sandbox.push.apple.com" : "api.push.apple.com",
   };
 }
@@ -164,4 +196,49 @@ export async function sendApnsMulticast(input: {
   }
 
   return { ok, failed };
+}
+
+export async function sendApnsDebug(input: {
+  token: string;
+  title: string;
+  body: string;
+  url?: string;
+  data?: Record<string, string>;
+}): Promise<{
+  ok: boolean;
+  disable: boolean;
+  status: number;
+  reason?: string;
+  host: string;
+  topic: string;
+}> {
+  const config = getApnsConfig();
+  const jwt = createJwt();
+  const payload = Buffer.from(JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      badge: 1,
+      sound: "default",
+    },
+    url: input.url ?? "/",
+    ...(input.data ?? {}),
+  }));
+
+  const client = http2.connect(`https://${config.host}`);
+  try {
+    const result = await sendApnsRequest({
+      client,
+      token: input.token,
+      jwt,
+      topic: config.topic,
+      payload,
+    });
+    return {
+      ...result,
+      host: config.host,
+      topic: config.topic,
+    };
+  } finally {
+    client.close();
+  }
 }
