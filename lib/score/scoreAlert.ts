@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { sendApnsMulticast } from "@/lib/apns";
+import { sendFcmMulticast } from "@/lib/firebaseAdmin";
 import { sendWebPush } from "@/lib/webPushServer";
 import { findTeam } from "@/lib/teams";
 import { buildBiasedScoreCopy, computePulseState } from "@/lib/pushTemplate";
@@ -29,6 +31,15 @@ type ScoreSubscription = {
   user: { favoriteTeam: string | null };
 };
 
+type ScoreNativeToken = {
+  token: string;
+  platform: string;
+  userId: string;
+  favoriteTeam: string | null;
+  topics: unknown;
+  appEnv: string | null;
+};
+
 const PUSH_FAIL_DISABLE_STATUSES = new Set([401, 403, 404, 410]);
 
 function uniqueLatestSubByUser(subs: ScoreSubscription[]): ScoreSubscription[] {
@@ -40,6 +51,14 @@ function uniqueLatestSubByUser(subs: ScoreSubscription[]): ScoreSubscription[] {
     }
   }
   return [...map.values()];
+}
+
+function matchesNativePushEnv(topics: unknown, appEnv: string | null): boolean {
+  if (matchesCurrentPushEnv(topics)) return true;
+  if (!topics || typeof topics !== "object") {
+    return matchesCurrentPushEnv({ appEnv });
+  }
+  return matchesCurrentPushEnv({ ...(topics as Record<string, unknown>), appEnv });
 }
 
 async function fetchRecentBodiesByTeam(teamIds: string[]): Promise<Map<string, string[]>> {
@@ -106,21 +125,43 @@ export async function dispatchScoreAlertsForGame(input: {
   const activeSubs = uniqueLatestSubByUser(rawSubs as ScoreSubscription[]).filter(
     (sub) => matchesCurrentPushEnv(sub.topics) && isTopicEnabled(sub.topics, "score")
   );
-  if (activeSubs.length === 0) {
+
+  const rawNativeTokens = await prisma.nativePushToken.findMany({
+    where: {
+      enabled: true,
+      favoriteTeam: { in: [input.game.homeTeam, input.game.awayTeam] },
+    },
+    select: {
+      token: true,
+      platform: true,
+      userId: true,
+      favoriteTeam: true,
+      topics: true,
+      appEnv: true,
+    },
+  });
+  const activeNativeTokens = (rawNativeTokens as ScoreNativeToken[]).filter(
+    (row) =>
+      matchesNativePushEnv(row.topics, row.appEnv) &&
+      isTopicEnabled(row.topics, "score")
+  );
+
+  if (activeSubs.length === 0 && activeNativeTokens.length === 0) {
     return { sent: 0, disabled: 0, inboxCreated: 0, llmCalls: 0 };
   }
 
   const recentBodies = await fetchRecentBodiesByTeam(
-    activeSubs
-      .map((sub) => sub.user.favoriteTeam)
+    [
+      ...activeSubs.map((sub) => sub.user.favoriteTeam),
+      ...activeNativeTokens.map((row) => row.favoriteTeam),
+    ]
       .filter((teamId): teamId is string => Boolean(teamId))
   );
 
   const copyCache = new Map<string, Promise<{ title: string; body: string }>>();
   let llmCalls = 0;
 
-  const pushResults = await mapWithConcurrency(activeSubs, 12, async (sub) => {
-    const favoriteTeam = sub.user.favoriteTeam;
+  const buildAlertForTeam = async (favoriteTeam: string | null) => {
     if (!favoriteTeam) return null;
 
     let tone: "for" | "against" | null = null;
@@ -185,23 +226,10 @@ export async function dispatchScoreAlertsForGame(input: {
     }
     const aiCopy = await copyPromise;
 
-    const push = await sendWebPush(
-      { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-      {
-        title: aiCopy.title,
-        body: aiCopy.body,
-        url: "/today",
-        latestPlayText: input.latestPlayText,
-        teamId: favoriteTeam,
-      },
-      { favoriteTeam, origin: input.origin, timeoutMs: input.pushTimeoutMs ?? 2500 }
-    );
-
     return {
-      sub,
+      favoriteTeam,
       tone,
       aiCopy,
-      push,
       payload: {
         dedupeKey: `score:${input.game.externalId}:${input.game.homeScore}:${input.game.awayScore}`,
         gameId: input.dbGameId,
@@ -214,6 +242,79 @@ export async function dispatchScoreAlertsForGame(input: {
         tone,
         latestPlayText: input.latestPlayText,
       } as Prisma.InputJsonValue,
+    };
+  };
+
+  const pushResults = await mapWithConcurrency(activeSubs, 12, async (sub) => {
+    const alert = await buildAlertForTeam(sub.user.favoriteTeam);
+    if (!alert) return null;
+
+    const push = await sendWebPush(
+      { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+      {
+        title: alert.aiCopy.title,
+        body: alert.aiCopy.body,
+        url: "/today",
+        latestPlayText: input.latestPlayText,
+        teamId: alert.favoriteTeam,
+      },
+      { favoriteTeam: alert.favoriteTeam, origin: input.origin, timeoutMs: input.pushTimeoutMs ?? 2500 }
+    );
+
+    return {
+      sub,
+      aiCopy: alert.aiCopy,
+      push,
+      payload: alert.payload,
+    };
+  });
+
+  const nativeResults = await mapWithConcurrency(activeNativeTokens, 12, async (row) => {
+    const alert = await buildAlertForTeam(row.favoriteTeam);
+    if (!alert) return null;
+
+    try {
+      const platform = row.platform.toLowerCase();
+      if (platform === "ios") {
+        const result = await sendApnsMulticast({
+          tokens: [row.token],
+          title: alert.aiCopy.title,
+          body: alert.aiCopy.body,
+          url: "/today",
+          data: { teamId: alert.favoriteTeam, topicKey: "score" },
+        });
+        return {
+          row,
+          aiCopy: alert.aiCopy,
+          payload: alert.payload,
+          ok: result.ok > 0,
+          failed: result.failed.includes(row.token),
+        };
+      }
+
+      const result = await sendFcmMulticast({
+        tokens: [row.token],
+        title: alert.aiCopy.title,
+        body: alert.aiCopy.body,
+        url: "/today",
+        data: { teamId: alert.favoriteTeam, topicKey: "score" },
+      });
+      return {
+        row,
+        aiCopy: alert.aiCopy,
+        payload: alert.payload,
+        ok: result.ok > 0,
+        failed: result.failed.includes(row.token),
+      };
+    } catch (err) {
+      console.warn("[scoreAlert] native score push failed:", (err as Error).message);
+      return {
+        row,
+        aiCopy: alert.aiCopy,
+        payload: alert.payload,
+        ok: false,
+        failed: false,
+      };
     };
   });
 
@@ -235,12 +336,26 @@ export async function dispatchScoreAlertsForGame(input: {
     disabled = rows.reduce((acc, row) => acc + row.count, 0);
   }
 
+  const failedNativeTokens = nativeResults
+    .filter((row): row is NonNullable<typeof row> => row != null && row.failed)
+    .map((row) => row.row.token);
+  if (failedNativeTokens.length > 0) {
+    const disabledNative = await prisma.nativePushToken.updateMany({
+      where: { token: { in: failedNativeTokens }, enabled: true },
+      data: { enabled: false },
+    });
+    disabled += disabledNative.count;
+  }
+
   const sentRows = pushResults.filter(
     (row): row is NonNullable<typeof row> => row != null && row.push.ok
   );
+  const nativeSentRows = nativeResults.filter(
+    (row): row is NonNullable<typeof row> => row != null && row.ok
+  );
   let inboxCreated = 0;
 
-  if (sentRows.length > 0) {
+  if (sentRows.length > 0 || nativeSentRows.length > 0) {
     const dedupKeys = new Set<string>();
     const inboxRows: Array<{
       userId: string;
@@ -265,11 +380,25 @@ export async function dispatchScoreAlertsForGame(input: {
         payload: row.payload,
       });
     }
+    for (const row of nativeSentRows) {
+      const key = `${row.row.userId}:${row.aiCopy.title}:${row.aiCopy.body}`;
+      if (dedupKeys.has(key)) continue;
+      dedupKeys.add(key);
+      inboxRows.push({
+        userId: row.row.userId,
+        title: row.aiCopy.title,
+        body: row.aiCopy.body,
+        deeplinkUrl: "/today",
+        sentAt: new Date(),
+        type: "SCORE_UPDATE",
+        payload: row.payload,
+      });
+    }
     if (inboxRows.length > 0) {
       const created = await prisma.notification.createMany({ data: inboxRows });
       inboxCreated = created.count;
     }
   }
 
-  return { sent: sentRows.length, disabled, inboxCreated, llmCalls };
+  return { sent: sentRows.length + nativeSentRows.length, disabled, inboxCreated, llmCalls };
 }
