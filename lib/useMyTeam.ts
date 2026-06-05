@@ -9,8 +9,17 @@ export const ONBOARDING_DONE_KEY = "ground-onboarding-complete";
 
 const DEFAULT_ID = "doosan";
 
+function readInitialTeamId(): string {
+  if (typeof window === "undefined") return DEFAULT_ID;
+  try {
+    return localStorage.getItem(MY_TEAM_KEY) || DEFAULT_ID;
+  } catch {
+    return DEFAULT_ID;
+  }
+}
+
 export function useMyTeam(): Team {
-  const [id, setId] = useState<string>(DEFAULT_ID);
+  const [id, setId] = useState<string>(readInitialTeamId);
 
   useEffect(() => {
     try {

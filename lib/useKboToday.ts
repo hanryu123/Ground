@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveGame } from "@/lib/kbo";
 import type { TodayFeedStatus } from "@/lib/kbo";
 import type { StandingRow } from "@/config/standings";
@@ -13,6 +13,7 @@ export type KboTodayPayload = {
   fallback?: boolean;
   games: LiveGame[];
   standings: StandingRow[];
+  teamId?: string | null;
   pregamePreview?: {
     status: "PENDING" | "READY" | "FAILED";
     title: string | null;
@@ -46,8 +47,16 @@ export function useKboToday(
   const [data, setData] = useState<KboTodayPayload | null>(null);
   const withStandings = options?.withStandings ?? true;
   const phase = data?.gamePhase ?? null;
+  const requestKey = `${teamId ?? ""}:${withStandings ? "standings" : "lite"}`;
+  const latestRequestKey = useRef(requestKey);
+
+  useEffect(() => {
+    latestRequestKey.current = requestKey;
+    setData(null);
+  }, [requestKey]);
 
   const load = useCallback(async () => {
+    const key = requestKey;
     try {
       const params = new URLSearchParams();
       if (teamId) params.set("teamId", teamId);
@@ -63,11 +72,11 @@ export function useKboToday(
       });
       if (!r.ok) return;
       const j = (await r.json()) as KboTodayPayload;
-      setData(j);
+      if (latestRequestKey.current === key) setData(j);
     } catch {
       // 네트워크 일시 장애는 조용히 다음 주기로 넘김
     }
-  }, [teamId, withStandings]);
+  }, [requestKey, teamId, withStandings]);
 
   useEffect(() => {
     void load();

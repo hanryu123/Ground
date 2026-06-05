@@ -109,11 +109,10 @@ export async function GET(req: Request) {
       : null;
 
     // ── DB 쿼리 병렬 실행 ────────────────────────────────────────────────────
-    const canShowFallbackReport = teamGame == null || teamGame.status === "RESULT";
     const isResult = teamId != null && teamGame?.status === "RESULT";
     const isBefore = teamId != null && teamGame?.status === "BEFORE";
 
-    const [gameRow, directReport, latestReport, previewRow] = await Promise.all([
+    const [gameRow, directReport, previewRow] = await Promise.all([
       // 하이라이트 영상
       isResult && teamGame.id
         ? prisma.game.findUnique({ where: { externalId: teamGame.id }, select: { highlightVideoUrl: true } })
@@ -122,14 +121,6 @@ export async function GET(req: Request) {
       isResult && teamGame.id
         ? prisma.postGameReport.findUnique({
             where: { externalId_teamId: { externalId: teamGame.id, teamId: teamId! } },
-            select: { status: true, gameDate: true, title: true, content: true, bodyLines: true, generatedAt: true },
-          })
-        : Promise.resolve(null),
-      // 가장 최근 READY 리포트 (폴백용 — RESULT 없거나 오늘 리포트 없을 때)
-      teamId != null && canShowFallbackReport
-        ? prisma.postGameReport.findFirst({
-            where: { teamId, status: "READY" },
-            orderBy: [{ gameDate: "desc" }, { generatedAt: "desc" }],
             select: { status: true, gameDate: true, title: true, content: true, bodyLines: true, generatedAt: true },
           })
         : Promise.resolve(null),
@@ -155,13 +146,13 @@ export async function GET(req: Request) {
       };
     }
 
-    // 포스트게임 리포트 (직접 → 최신 폴백)
+    // 포스트게임 리포트 — 선택팀의 오늘 경기가 끝난 경우에만 해당 경기 리포트 노출
     let postGameReport: {
       status: "PENDING" | "GENERATING" | "READY" | "FAILED";
       headline: string | null; content: string | null; active: boolean;
       visibleUntil: string | null; generatedAt: string | null;
     } | null = null;
-    const reportSource = directReport ?? (canShowFallbackReport ? latestReport : null);
+    const reportSource = directReport;
     if (reportSource) {
       const fallbackContent = Array.isArray(reportSource.bodyLines)
         ? reportSource.bodyLines.filter((l): l is string => typeof l === "string").join(" ")
@@ -202,6 +193,7 @@ export async function GET(req: Request) {
       date,
       status,
       gamePhase,
+      teamId: teamId ?? null,
       message,
       games,
       standings,
@@ -215,6 +207,7 @@ export async function GET(req: Request) {
       {
         error: (err as Error).message,
         date,
+        teamId: teamId ?? null,
         status: "NO_GAMES",
         gamePhase: "NONE",
         message: resolveTodayFeedMessage("NO_GAMES"),
