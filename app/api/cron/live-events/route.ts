@@ -472,7 +472,7 @@ export async function GET(req: Request) {
   // auth check temporarily open for debugging — re-enable after live-events confirmed working
   // const auth = authorizeCron(req, url);
   // if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-  if (shouldSkipCronInAlpha(url)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
+  if (shouldSkipCronInAlpha(url, req)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
 
   // 경기 시간대 외에는 즉시 종료 (주중 18~22:30, 주말 14~21시)
   if (!isKboGameHour()) {

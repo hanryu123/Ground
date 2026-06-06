@@ -207,7 +207,7 @@ export async function GET(req: Request) {
   // auth check temporarily open — re-enable after confirmed working
   // const auth = authorizeCron(req, url);
   // if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-  if (shouldSkipCronInAlpha(url)) {
+  if (shouldSkipCronInAlpha(url, req)) {
     return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
   }
 

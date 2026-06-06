@@ -68,7 +68,7 @@ export async function GET(req: Request) {
   if (!isAuthorized(req, url)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  if (shouldSkipCronInAlpha(url)) {
+  if (shouldSkipCronInAlpha(url, req)) {
     return NextResponse.json({
       ok: true,
       skipped: "ALPHA_ENV_CRON_DISABLED",

@@ -111,6 +111,8 @@ npx web-push generate-vapid-keys
 중요:
 - 서버는 중복 실행을 DB advisory lock으로 막는다. (동일 시점 겹침 실행 자동 스킵)
 - 월요일/무경기/전체취소 상황은 조기 종료되어 불필요한 LLM/푸시 호출을 하지 않는다.
+- alpha 환경 cron은 `CRON_SECRET` 인증이 통과하면 실행된다. `force=1`은 시간 조건까지 우회하는 수동 테스트용이므로 cron-job.org 정기 URL에는 붙이지 않는다.
+- cron-job.org 정기 URL 예시: `/api/cron/preview?secret=<CRON_SECRET>`, `/api/cron/game-start?secret=<CRON_SECRET>`, `/api/cron/postgame?secret=<CRON_SECRET>`, `/api/cron/check-highlight?secret=<CRON_SECRET>`.
 
 ## 디버그 쿼리
 

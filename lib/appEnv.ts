@@ -15,8 +15,16 @@ export function isAlphaServerEnv(): boolean {
   return resolveServerAppEnv() === "alpha";
 }
 
-export function shouldSkipCronInAlpha(url: URL): boolean {
+function hasValidCronAuth(url: URL, req?: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const auth = req?.headers.get("authorization");
+  return auth === `Bearer ${secret}` || url.searchParams.get("secret") === secret;
+}
+
+export function shouldSkipCronInAlpha(url: URL, req?: Request): boolean {
   if (!isAlphaServerEnv()) return false;
   const force = (url.searchParams.get("force") ?? "").toLowerCase();
-  return !(force === "1" || force === "true" || force === "yes");
+  if (force === "1" || force === "true" || force === "yes") return false;
+  return !hasValidCronAuth(url, req);
 }
