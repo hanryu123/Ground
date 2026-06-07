@@ -5,6 +5,11 @@ import {
   fetchTeamMomentum,
   type TeamMomentum,
 } from "@/lib/teamMomentum";
+import {
+  buildCopyStyleBrief,
+  buildVariedPregameFallback,
+  sanitizeBoringFanCopy,
+} from "@/lib/fanCopyVariety";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL =
@@ -131,18 +136,19 @@ function buildFallback(input: PregamePreviewInput, momentum: TeamMomentum): Preg
   const team = findTeam(input.teamId).short;
   const opp = findTeam(input.opponentTeamId).short;
   const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
-  const streakLine =
-    momentum.streak && momentum.streak.count >= 3
-      ? `${team}, 지금 ${momentum.streak.label} 흐름까지 안고 들어가는 경기입니다.`
-      : `${team} 최근 흐름은 ${momentum.summary}`;
+  const varied = buildVariedPregameFallback({
+    seed: `${input.date}:${input.game.id}:${input.teamId}`,
+    team,
+    opp,
+    starter,
+    time: input.game.time,
+    momentumSummary: momentum.summary,
+    streakLabel: momentum.streak?.label ?? null,
+    lastGameLine: momentum.lastGameLine,
+  });
   return {
-    title: "🎙️ 오늘의 캐스터 관전 포인트",
-    lines: [
-      streakLine,
-      `오늘 선발 ${starter} 투수, 이 흐름을 바꿀 첫 공부터 중요합니다!`,
-      `${opp} 상대로 ${input.game.time} 시작, ${team} 팬 여러분 오늘도 함께 응원합시다!`,
-      `타선도 불방망이 예열 완료! ${team}, 오늘 꼭 잡겠습니다!`,
-    ].map((line) => clip(line)),
+    title: varied.title,
+    lines: varied.lines.map((line) => clip(line)),
     context: {
       recentForm: momentum.recentForm,
       recentRecord: momentum.recentRecord,
@@ -187,6 +193,12 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
   const opp = findTeam(input.opponentTeamId).short;
   const newsBlock = input.newsContext.slice(0, 5).join(" | ") || "없음";
   const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
+  const styleBrief = buildCopyStyleBrief({
+    surface: "preview",
+    seed: `${input.date}:${input.game.id}:${input.teamId}:${momentum.recentForm}`,
+    teamShort: team,
+    opponentShort: opp,
+  });
 
   const system = `너는 ${team} 열성팬이야. 오늘 경기가 인생 전부인 것처럼 생사가 걸려있어. 딱 하나 — 직업이 KBO 캐스터라 존댓말은 나온다. 팬 95%, 캐스터 5%.
 우리 팀 기대와 흥분이 문장 전체를 지배해야 해. 완전 중립 금지. 냉정한 척 금지. 오직 우리 팀 편.
@@ -206,6 +218,9 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 - 3연승/3연패 이상이면 반드시 언급. 8연패 이상이면 프리뷰의 핵심 서사로 삼아라
 - 최근 5경기가 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지. "최근 5경기 4승 1패지만 직전 패배"처럼 균형 있게 써라
 - 특정 스코어는 필요할 때만 한 번 자연스럽게 사용하고, 숫자 나열식 브리핑은 금지
+- "타선 폭발 예감", "함께 응원합시다", "오늘 우리 팀 할 수 있습니다" 같은 앱 템플릿 느낌 문구 금지
+- 각 line은 서로 다른 시작 방식으로 써라. 4개 line 중 같은 첫 단어 반복 금지
+${styleBrief}
 
 ⚾ 야구 용어 절대 해석 규칙:
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
@@ -258,7 +273,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
       const parsed = parseStructuredResponse(text);
       const title = clip(parsed?.title ?? "", 42);
       const lines = (parsed?.lines ?? [])
-        .map((line) => clip(line))
+        .map((line, idx) => clip(sanitizeBoringFanCopy(line, `${input.date}:${input.game.id}:${input.teamId}:line${idx}`)))
         .filter((line) => line.length > 0)
         .slice(0, 4);
       if (!title || lines.length < 3) return null;

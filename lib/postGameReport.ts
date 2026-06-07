@@ -1,5 +1,10 @@
 import { findTeam, TEAMS } from "@/lib/teams";
 import { fetchTeamMomentum, type TeamMomentum } from "@/lib/teamMomentum";
+import {
+  buildCopyStyleBrief,
+  buildVariedPostgameFallback,
+  sanitizeBoringFanCopy,
+} from "@/lib/fanCopyVariety";
 
 const NAVER_BASE = "https://api-gw.sports.naver.com";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -441,85 +446,28 @@ async function fetchPostGameRelay(gameId: string): Promise<unknown | null> {
 
 function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { headline: string; content: string } {
   const { facts, tone } = input;
-  const seedBase = `${facts.externalId}:${facts.myTeam}:${facts.myScore}:${facts.oppScore}`;
-  const gap = facts.myScore - facts.oppScore;
-  const scoreLine = `${facts.myScore}:${facts.oppScore}`;
-  const momentumLine =
-    facts.recentMomentum?.streak && facts.recentMomentum.streak.count >= 3
-      ? `최근 흐름까지 보면 ${facts.recentMomentum.streak.label}, 이 숫자는 절대 가볍게 넘길 수 없습니다.`
-      : facts.recentMomentum?.summary
-        ? `최근 흐름은 ${facts.recentMomentum.summary}`
-        : "";
-
-  const winHeads = [
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 거의 흠잡을 데가 없었습니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 승부처에서 전혀 흔들리지 않았습니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘 완성도가 한 수 위였습니다.`,
-  ] as const;
-  const lossHeads = [
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이건 솔직히 변명이 없는 경기였습니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 패배해야 마땅한 흐름이었습니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이 결과 누구도 억울하다 할 수 없습니다.`,
-  ] as const;
-  const drawHeads = [
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 이길 경기를 결국 가져오지 못했습니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 비겼지만 속은 편하지 않은 1점입니다.`,
-    `🎙️ [캐스터 한줄평] ${facts.myTeam}, 결정적 순간 결정력이 끝내 터지지 않았습니다.`,
-  ] as const;
-
-  if (tone === "win") {
-    const headline = pickBySeed(`${seedBase}:win:head`, winHeads);
-    const opener = gap >= 5
-      ? `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 완파했습니다.`
-      : `${facts.myTeam}가 ${facts.oppTeam}를 ${scoreLine}으로 잡아냈습니다.`;
-    const heroPart = facts.clutchHit && facts.winningPitcher
-      ? `결승타 장면 — "${clip(facts.clutchHit, 40)}" — 여기에 ${facts.winningPitcher}의 승리 투구까지 붙으니 설명이 끝납니다.`
-      : facts.clutchHit
-        ? `결승타 장면 — "${clip(facts.clutchHit, 40)}" — 이 한 방이 경기를 결정지었습니다.`
-        : facts.winningPitcher
-          ? `오늘의 핵심은 ${facts.winningPitcher}, 마운드에서 흐름을 완전히 주도했습니다.`
-          : `승부처마다 ${facts.myTeam}가 먼저 치고 나갔고, 상대는 끝내 따라오지 못했습니다.`;
-    const closerPart = facts.savePitcher
-      ? `${facts.savePitcher}가 뒷문을 철저히 잠갔습니다.`
-      : facts.clutchHit && facts.winningPitcher
-        ? `결승타 장면, "${clip(facts.clutchHit, 36)}" — 이것만으로 오늘 경기가 설명됩니다.`
-        : `다음 경기도 이 흐름 그대로 가져가야 합니다.`;
-    return {
-      headline,
-      content: `${opener} ${momentumLine ? `${momentumLine} ` : ""}${heroPart} ${closerPart} 다음 경기도 기대가 됩니다.`,
-    };
-  }
-
-  if (tone === "draw") {
-    const headline = pickBySeed(`${seedBase}:draw:head`, drawHeads);
-    const bodyPart = facts.losingPitcher
-      ? `${facts.losingPitcher}에게 패전이 붙지 않은 게 그나마 다행이지만, 내용은 좋지 않았습니다.`
-      : facts.clutchHit
-        ? `"${clip(facts.clutchHit, 36)}" — 이 장면 하나를 막지 못한 게 오늘의 핵심입니다.`
-        : `결정적인 순간마다 ${facts.myTeam} 쪽이 한 발씩 느렸습니다.`;
-    return {
-      headline,
-      content: `${facts.myTeam}와 ${facts.oppTeam}가 ${scoreLine}으로 나눴지만, 이 결과가 딱히 반갑지만은 않습니다. ${momentumLine ? `${momentumLine} ` : ""}${bodyPart} 승리를 손에 쥘 수 있었던 경기였는데, 결국 1점으로 마무리됐습니다.`,
-    };
-  }
-
-  // loss
-  const headline = pickBySeed(`${seedBase}:loss:head`, lossHeads);
-  const opener = gap <= -8
-    ? `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 완패했습니다.`
-    : `${facts.myTeam}가 ${facts.oppTeam}에 ${scoreLine}으로 졌습니다.`;
-  const corePart = facts.clutchHit
-    ? `"${clip(facts.clutchHit, 36)}" — 이 장면이 오늘 경기를 결정지었습니다.`
-    : facts.losingPitcher
-      ? `${facts.losingPitcher}가 패전 투수로 이름을 남겼지만, 한 명의 문제가 아니었습니다.`
-      : `승부처에서 번번이 무너지는 패턴이 오늘도 반복됐습니다.`;
-  const tailPart = facts.losingPitcher && facts.clutchHit
-    ? `${facts.losingPitcher}를 포함해 팀 전체가 복기해야 할 경기입니다.`
-    : `다음 경기, 반드시 되갚아야 합니다.`;
-  return {
-    headline,
-    content: `${opener} ${momentumLine ? `${momentumLine} ` : ""}${corePart} ${tailPart} 팬들도 오늘만큼은 할 말이 없습니다.`,
-  };
+  return buildVariedPostgameFallback({
+    seed: facts.externalId,
+    tone,
+    myTeam: facts.myTeam,
+    oppTeam: facts.oppTeam,
+    myScore: facts.myScore,
+    oppScore: facts.oppScore,
+    winningPitcher: facts.winningPitcher,
+    losingPitcher: facts.losingPitcher,
+    savePitcher: facts.savePitcher,
+    clutchHit: facts.clutchHit,
+    homeRun: facts.homeRun,
+    error: facts.error,
+    myHits: facts.myHits,
+    oppHits: facts.oppHits,
+    myErrors: facts.myErrors,
+    oppErrors: facts.oppErrors,
+    myHomeRuns: facts.myHomeRuns,
+    oppHomeRuns: facts.oppHomeRuns,
+    notable: facts.notable,
+    wasRainSuspended: facts.wasRainSuspended,
+  });
 }
 
 function parseJsonBlock(text: string): { headline?: string; content?: string } | null {
@@ -648,6 +596,12 @@ export async function generatePostGameReport(input: {
     ? `경기장: ${stadium} (${input.mySide === "home" ? "홈" : "원정"} 경기)`
     : `경기: ${input.mySide === "home" ? "홈" : "원정"} 경기`;
   const gameTimeLine = resolveGameTimeInstruction(input.facts.gameTime);
+  const styleBrief = buildCopyStyleBrief({
+    surface: "postgame",
+    seed: `${input.facts.externalId}:${input.teamId}:${input.tone}:${input.facts.myScore}:${input.facts.oppScore}`,
+    teamShort: team,
+    opponentShort: input.facts.oppTeam,
+  });
 
   const system = `너는 ${team} 전담 편파 캐스터야. 직업적 품격(존댓말, 방송 어체)은 지키지만, 감정은 완전히 ${team} 편이야.
 경기 직후 단 하나의 한줄평을 날리는 순간이야 — 통계 브리핑이 아니라, 이 경기를 하나의 문장으로 정의하는 거야.
@@ -662,6 +616,8 @@ export async function generatePostGameReport(input: {
 - 최근 흐름은 반드시 최근 5경기, 직전 경기, 연승/연패 스트릭을 구분해서 해석
 - 3연승/3연패 이상이면 문맥상 자연스럽게 언급. 8연패 이상이면 반드시 한줄평의 핵심 서사로 삼아라
 - 최근 5경기 성적이 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지
+- "다음 경기", "기대가 됩니다", "팬들도 할 말이 없습니다", "반드시 되갚아야 합니다", "승부처에서 번번이" 같은 템플릿 결론 금지
+- 매일 같은 문장 구조 금지. 오늘 경기는 오늘의 한 장면, 한 감정, 한 비유만 선택
 
 반드시 JSON만 출력:
 {"headline":"🎙️ [캐스터 한줄평] ...","content":"3~4문장 단락"}
@@ -684,7 +640,8 @@ export async function generatePostGameReport(input: {
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)
 - 볼넷: 볼 4개로 출루 (투수 실책)
 - 병살타: 타구 하나로 2명 아웃 (공격팀 최악)
-- 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님`;
+- 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님
+${styleBrief}`;
   const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
   const narrativeLines = [
     input.facts.winningPitcher ? `승리투수: ${input.facts.winningPitcher}` : null,
@@ -749,8 +706,8 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
           .map((item) => item.text ?? "")
           .join("\n") ?? "";
       const parsed = parseJsonBlock(text);
-      const headline = clip(parsed?.headline ?? "", 62);
-      const content = clip(parsed?.content ?? "", 320);
+      const headline = clip(sanitizeBoringFanCopy(parsed?.headline ?? "", `${input.facts.externalId}:head`), 62);
+      const content = clip(sanitizeBoringFanCopy(parsed?.content ?? "", `${input.facts.externalId}:content`), 320);
       if (!headline || !content) return null;
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
       if (isNonNightGame(input.facts.gameTime) && hasNightExpression(`${headline} ${content}`)) return null;

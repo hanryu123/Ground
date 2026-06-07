@@ -4,6 +4,7 @@ import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
 import { generateLiveEventCopy, stripLlmHeaderPrefix } from "@/lib/pushLlm";
+import { buildLiveFallbackCopy } from "@/lib/fanCopyVariety";
 import { isKboGameHour } from "@/lib/cronGuard";
 import { prisma } from "@/lib/prisma";
 
@@ -403,68 +404,16 @@ function buildLiveEventCopy(
   myScore?: number | null,
   oppScore?: number | null,
 ): { title: string; body: string } {
-  const inning = inningLabel ? `[${inningLabel}] ` : "";
-  const name = playerName ?? null;
-  const resolvedPitching = isPitching;
-
-  if (kind === "homeRun") {
-    if (resolvedPitching === false) {
-      const title = name ? `💥 ${name} 홈런!` : `💥 홈런!`;
-      const body = name
-        ? `${inning}${name}!! ${myTeamShort} 홈런 작렬! 점수 추가됐습니다!`
-        : `${inning}${myTeamShort} 홈런 작렬!! 점수 추가됐습니다!`;
-      return { title, body };
-    }
-    if (resolvedPitching === true) {
-      const title = name ? `💥 ${name} 홈런 허용` : `💥 홈런 허용`;
-      const body = name
-        ? `${inning}${oppTeamShort} ${name}에게 홈런 맞았습니다... 빨리 따라잡아야 합니다!`
-        : `${inning}${myTeamShort} 홈런 맞았습니다... 빨리 따라잡아야 합니다!`;
-      return { title, body };
-    }
-    const title = name ? `💥 ${name} 홈런` : `💥 홈런 발생`;
-    const body = name
-      ? `${inning}${name} 홈런! ${myTeamShort}-${oppTeamShort}전 경기 흐름이 바뀝니다!`
-      : `${inning}${myTeamShort}-${oppTeamShort}전 홈런 발생.`;
-    return { title, body };
-  }
-
-  if (kind === "strikeout") {
-    if (resolvedPitching === true) {
-      return {
-        title: "⚡ 탈삼진!",
-        body: `${inning}${myTeamShort} 투수 삼진 잡았습니다! 이 기세 그대로 가야죠!`,
-      };
-    }
-    if (resolvedPitching === false) {
-      return {
-        title: "⚡ 삼진 아웃",
-        body: `${inning}${myTeamShort} 타자 삼진 아웃... 다음 타자가 살려줘야 합니다.`,
-      };
-    }
-    return {
-      title: "⚡ 라이브 경기 상황",
-      body: `${inning}${myTeamShort}-${oppTeamShort}전 삼진 발생.`,
-    };
-  }
-
-  // pitcherChange
-  if (resolvedPitching === true) {
-    return {
-      title: "🎯 투수 교체",
-      body: `${inning}${myTeamShort} 투수 교체. 이 위기 막아야 합니다!`,
-    };
-  }
-  if (resolvedPitching === false) {
-    return {
-      title: "🎯 상대 투수 교체",
-      body: `${inning}상대가 투수 교체했습니다. ${myTeamShort}, 지금이 찬스입니다!`,
-    };
-  }
-  return {
-    title: "🎯 라이브 경기 상황",
-    body: `${inning}${myTeamShort}-${oppTeamShort}전 투수 교체 발생.`,
-  };
+  return buildLiveFallbackCopy({
+    kind,
+    myTeamShort,
+    oppTeamShort,
+    isPitching,
+    inningLabel,
+    playerName,
+    myCurrentScore: myScore ?? undefined,
+    oppCurrentScore: oppScore ?? undefined,
+  });
 }
 
 export async function GET(req: Request) {

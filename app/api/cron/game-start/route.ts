@@ -3,32 +3,11 @@ import { fetchKboSchedule, todayKstDate } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, minutesUntil, sendTeamTopicNotification, toKstDateTime } from "@/services/notificationService";
+import { buildGameStartCopy } from "@/lib/fanCopyVariety";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-const TEMPLATES = [
-  "15분 뒤 {상대팀}전 플레이볼! 치킨 세팅하셨죠? 오늘 꼭 잡겠습니다!",
-  "칼퇴 성공하셨습니까? 15분 뒤 {상대팀}전! 지금 바로 켜시죠!",
-  "15분 뒤 {상대팀}전 시작! 오늘 우리 팀 믿습니다. 함께 가시죠!",
-  "잠시 후 플레이볼! {상대팀} 상대로 오늘 기대 큽니다. 켜세요!",
-  "15분 뒤 {상대팀}전. 오늘 이 경기, 꼭 잡겠습니다!",
-  "야구 시작 15분 전! {상대팀}전 오늘 우리 팀 할 수 있습니다!",
-  "곧 플레이볼! {상대팀} 상대로 오늘 신나는 경기 기대됩니다!",
-  "15분 뒤 {상대팀}전. 오늘 타선 폭발 예감! 지금 켜세요!",
-  "15분 뒤 {상대팀}전 시작합니다. 오늘 분위기 좋습니다, 가봅시다!",
-  "15분 뒤 {상대팀}전. 오늘은 우리 팀 날입니다! 함께 응원해요!",
-] as const;
-
-function pickTemplate(seed: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return TEMPLATES[(hash >>> 0) % TEMPLATES.length] ?? TEMPLATES[0];
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -62,7 +41,11 @@ export async function GET(req: Request) {
       }
       const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
       const opponent = findTeam(opponentTeamId).short;
-      const body = pickTemplate(`${date}:${game.id}:${teamId}`).replaceAll("{상대팀}", opponent);
+      const body = buildGameStartCopy({
+        seed: `${date}:${game.id}:${teamId}`,
+        opponent,
+        team: findTeam(teamId).short,
+      });
       const result = await sendTeamTopicNotification({
         teamId,
         topicKey: "preGame",

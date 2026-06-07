@@ -9,33 +9,12 @@ import {
 import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
 import type { LiveScoreGame } from "@/lib/score/types";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
+import { buildHighlightCopy } from "@/lib/fanCopyVariety";
+import { findTeam } from "@/lib/teams";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-const LOSE_MESSAGES = [
-  "오늘 야구 기억 삭제하고 싶지만... 그래도 봐야겠다면 여기 클릭.",
-  "오늘 경기는 액땜입니다. 대인배의 마음으로 하이라이트 슥- 훑어주고 내일 준비하죠.",
-  "오늘 야구는 우천 취소된 겁니다. 아무튼 그런 겁니다. 그래도... 하이라이트는 여기.",
-  "오늘 자 우리 팀 경기 결과는 유해 매체로 지정되었습니다. 시청 주의.",
-] as const;
-
-const WIN_MESSAGES = [
-  "오늘 역대급 명경기! 안 본 사람 없게 해라. 지금 바로 확인!",
-  "이게 야구고 이게 내 팀입니다! 짜릿하다 못해 지려버린 오늘 경기 요약 배달 완료.",
-  "승리의 스멜 가득한 명경기 하이라이트 보면서 꿀잠 주무세요.",
-  "오늘 하이라이트는 우리가 독식합니다. 정주행 렛츠고",
-  "오늘 야구 왜 이렇게 재밌냐? 타 팀 팬들도 부러워서 훔쳐본다는 우리 팀 찢어버린 경기 하이라이트",
-] as const;
-
-const DRAW_MESSAGES = [
-  "비겼지만 핵심 장면은 다시 봐야 한다. 요약 영상 확인.",
-] as const;
-
-function pickRandomMessage(messages: readonly string[]): string {
-  return messages[Math.floor(Math.random() * messages.length)] ?? messages[0] ?? "";
-}
 
 function buildHighlightMessage(input: {
   homeTeam: string;
@@ -47,22 +26,14 @@ function buildHighlightMessage(input: {
   const isHomeFan = input.fanTeamId === input.homeTeam;
   const myScore = isHomeFan ? input.homeScore : input.awayScore;
   const oppScore = isHomeFan ? input.awayScore : input.homeScore;
-  if (myScore > oppScore) {
-    return {
-      title: "🔥 [승리 요약]",
-      body: pickRandomMessage(WIN_MESSAGES),
-    };
-  }
-  if (myScore < oppScore) {
-    return {
-      title: "😱 [하이라이트]",
-      body: pickRandomMessage(LOSE_MESSAGES),
-    };
-  }
-  return {
-    title: "🎬 [하이라이트]",
-    body: pickRandomMessage(DRAW_MESSAGES),
-  };
+  return buildHighlightCopy({
+    seed: `${input.homeTeam}:${input.awayTeam}:${input.homeScore}:${input.awayScore}:${input.fanTeamId}`,
+    tone: myScore > oppScore ? "win" : myScore < oppScore ? "loss" : "draw",
+    myTeam: findTeam(input.fanTeamId).short,
+    oppTeam: findTeam(isHomeFan ? input.awayTeam : input.homeTeam).short,
+    myScore,
+    oppScore,
+  });
 }
 
 type HighlightCandidate = {
