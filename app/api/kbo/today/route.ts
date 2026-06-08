@@ -5,7 +5,6 @@ import {
   resolveTodayFeedMessage,
   resolveTodayFeedStatus,
   todayKstDate,
-  type LiveGame,
 } from "@/lib/kbo";
 import { generateTodayStatusMessageWithLlm } from "@/lib/todayStatusLlm";
 import { prisma } from "@/lib/prisma";
@@ -62,18 +61,6 @@ function isPostGameWindowActive(gameDate: Date, now = new Date()): boolean {
  * withStandings=0 이면 standings 계산을 생략해 로딩 지연을 줄인다.
  * 월요일/우천취소 상태 문구는 LLM 우선 생성 후, 실패 시 즉시 폴백 문구를 반환한다.
  */
-/** 오늘 경기 static 폴백 — Naver API 완전 장애 시 */
-async function todayFallbackGames(): Promise<LiveGame[]> {
-  const { TODAY_GAMES } = await import("@/lib/games");
-  return TODAY_GAMES.map((g) => ({
-    ...g,
-    status: g.result ? ("RESULT" as const) : ("BEFORE" as const),
-    cancelReason: null as null,
-    homeLineup: null,
-    awayLineup: null,
-  }));
-}
-
 export async function GET(req: Request) {
   const date = todayKstDate();
   const search = new URL(req.url).searchParams;
@@ -84,7 +71,7 @@ export async function GET(req: Request) {
     // 기존: fetchKboSchedule(date) → D-7~D+6 14일치 fetch + enrichStarters 70건+
     // 개선: fetchKboTodayGames(date) → 오늘 경기(최대 5건) + 병렬 실행
     const [games, standings] = await Promise.all([
-      fetchKboTodayGames(date).then((g) => (g.length > 0 ? g : todayFallbackGames())),
+      fetchKboTodayGames(date),
       withStandings ? fetchKboStandings() : Promise.resolve([] as import("@/config/standings").StandingRow[]),
     ]);
     const teamGame = teamId
