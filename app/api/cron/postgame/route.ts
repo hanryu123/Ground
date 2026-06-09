@@ -246,7 +246,7 @@ export async function GET(req: Request) {
       eventKey: `${date}:${job.externalId}:postgame`,
       gameExternalId: job.externalId,
     });
-    if (!lock && !force) {
+    if (!lock) {
       skipped += 1;
       return;
     }

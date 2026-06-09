@@ -483,7 +483,12 @@ function pickPostgameScene(facts: PostgameFallbackInput): string | null {
   if (facts.savePitcher) return `${facts.savePitcher}가 마지막 문을 닫아낸 장면이 컸습니다`;
   if (facts.losingPitcher) return `${facts.losingPitcher}에게 패전이 붙었지만, 문제는 한 사람으로 끝나지 않습니다`;
   if (facts.error) return `실책 장면 "${clip(facts.error, 42)}"이 오래 남습니다`;
-  const notable = facts.notable?.find((line) => line.length > 0);
+  const notable = facts.notable?.find((line) =>
+    line.length > 0 &&
+    /[가-힣A-Za-z0-9]/.test(line) &&
+    !/[=_\-━─]{5,}/.test(line) &&
+    !/^[=\-_\s|:;,.·•~━─]+$/.test(line)
+  );
   return notable ? `기억할 장면은 "${clip(notable, 44)}"입니다` : null;
 }
 

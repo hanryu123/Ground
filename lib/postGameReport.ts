@@ -79,7 +79,20 @@ function sanitizeTextValue(v: string | null | undefined): string | null {
   const t = compact(v);
   if (!t) return null;
   if (/^(확인\s*중|tbd|미정|unknown|null|n\/a|-|없음|home|away|draw)$/i.test(t)) return null;
+  if (!isUsableNarrativeLine(t)) return null;
   return t;
+}
+
+function isUsableNarrativeLine(text: string | null | undefined): text is string {
+  if (!text) return false;
+  const t = compact(text);
+  if (t.length < 4) return false;
+  // Naver relay/detail payloads can contain visual dividers. They must never
+  // become "the memorable scene" in a fallback report.
+  if (/^[=\-_\s|:;,.·•~━─]+$/.test(t)) return false;
+  if (/[=_\-━─]{5,}/.test(t)) return false;
+  if (!/[가-힣A-Za-z0-9]/.test(t)) return false;
+  return true;
 }
 
 function hashSeed(seed: string): number {
@@ -492,6 +505,9 @@ function hasVerifiedComebackFact(facts: PostGameFacts): boolean {
 
 function isSafePostGameCopy(input: { headline: string; content: string; facts: PostGameFacts }): boolean {
   const text = `${input.headline} ${input.content}`;
+  if (/[=_\-━─]{5,}/.test(text)) {
+    return false;
+  }
   if (/직전\s*경기|어제|어젯밤|전날|최근\s*\d*\s*경기|연승|연패|설욕|복수|즉각\s*반격|반등/.test(text)) {
     return false;
   }
@@ -523,7 +539,10 @@ export async function fetchPostGameFacts(input: {
         })
       : Promise.resolve(null),
   ]);
-  const texts = [...collectTexts(detail), ...collectTexts(relay)].map((line) => clip(line, 100));
+  const texts = [...collectTexts(detail), ...collectTexts(relay)]
+    .filter(isUsableNarrativeLine)
+    .map((line) => clip(line, 100))
+    .filter(isUsableNarrativeLine);
   const side: Side = input.mySide;
   const stats = parseBoxStats(box);
   const pitching = parsePitchingResult(box);
@@ -567,7 +586,7 @@ export async function fetchPostGameFacts(input: {
     clutchHit: etc.clutchHit ?? firstByKeyword(texts, /(결승타|역전타|적시타|결정타)/),
     homeRun: etc.homeRun ?? firstByKeyword(texts, /(홈런|솔로포|투런|스리런)/),
     error: firstByKeyword(texts, /(실책|에러|E\d)/i),
-    notable: [...etc.notable, ...texts].slice(0, 5),
+    notable: [...etc.notable, ...texts].filter(isUsableNarrativeLine).slice(0, 5),
     myPlayers,
     oppPlayers,
     recentMomentum,
