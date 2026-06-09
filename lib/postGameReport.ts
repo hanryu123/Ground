@@ -459,7 +459,7 @@ async function fetchPostGameRelay(gameId: string): Promise<unknown | null> {
 
 function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { headline: string; content: string } {
   const { facts, tone } = input;
-  return buildVariedPostgameFallback({
+  const report = buildVariedPostgameFallback({
     seed: facts.externalId,
     tone,
     myTeam: facts.myTeam,
@@ -481,6 +481,7 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
     notable: facts.notable,
     wasRainSuspended: facts.wasRainSuspended,
   });
+  return sanitizePostGameReport(report, facts);
 }
 
 function parseJsonBlock(text: string): { headline?: string; content?: string } | null {
@@ -503,17 +504,92 @@ function hasVerifiedComebackFact(facts: PostGameFacts): boolean {
   ].some((line) => typeof line === "string" && /역전/.test(line));
 }
 
+function postGameEvidenceText(facts: PostGameFacts): string {
+  return compact([
+    facts.clutchHit,
+    facts.homeRun,
+    facts.error,
+    ...(facts.notable ?? []),
+  ].filter(Boolean).join(" "));
+}
+
+function hasVerifiedFactTerm(facts: PostGameFacts, pattern: RegExp): boolean {
+  return pattern.test(postGameEvidenceText(facts));
+}
+
+function sanitizePostGameReport(
+  report: { headline: string; content: string },
+  facts: PostGameFacts,
+): { headline: string; content: string } {
+  let headline = compact(report.headline);
+  let content = compact(report.content);
+  const replaceBoth = (from: RegExp | string, to: string) => {
+    headline = headline.replace(from, to);
+    content = content.replace(from, to);
+  };
+  replaceBoth(/단어의 방향을 바꾸다/g, "분위기를 반전시키다");
+  replaceBoth(/실책을 놓치지 않고 점수를 쌓아 올린/g, "상대의 자멸을 틈타 무섭게 집중력을 발휘한");
+  replaceBoth(/실책을 놓치지 않은 집중력/g, "상대의 자멸을 틈탄 집중력");
+  replaceBoth(/1연승/g, "직전 경기 승리");
+  replaceBoth(/1연패/g, "직전 경기 패배");
+  if (facts.myScore <= facts.oppScore) replaceBoth(/리드/g, "점수차");
+  if (facts.oppScore !== 0) replaceBoth(/영봉승/g, "승리");
+  if (!hasVerifiedFactTerm(facts, /쐐기|결승타|결승\s*타점/)) {
+    replaceBoth(/쐐기(?:점|타)?/g, "결정적인 득점");
+    replaceBoth(/결승\s*타점|결승타/g, "결정적인 장면");
+  }
+  if (!hasVerifiedFactTerm(facts, /적시타|안타|타점|홈인|득점/)) {
+    replaceBoth(/적시타/g, "득점 장면");
+  }
+  if (!hasVerifiedFactTerm(facts, /그랜드\s*슬램|만루\s*홈런|만루포/)) {
+    replaceBoth(/그랜드\s*슬램|만루\s*홈런|만루포/g, "홈런");
+  }
+  return { headline, content };
+}
+
+function hasAllowedStreakMention(text: string, facts: PostGameFacts): boolean {
+  if (!/연승|연패/.test(text)) return true;
+  if (/1\s*연승|1\s*연패/.test(text)) return false;
+  const streak = facts.recentMomentum?.streak;
+  if (!streak || streak.count < 2) return false;
+  if (/연승/.test(text) && streak.result !== "W") return false;
+  if (/연패/.test(text) && streak.result !== "L") return false;
+  const explicit = text.match(/(\d+)\s*연(승|패)/);
+  if (explicit) {
+    const n = Number.parseInt(explicit[1], 10);
+    if (Number.isFinite(n) && n !== streak.count) return false;
+  }
+  return true;
+}
+
 function isSafePostGameCopy(input: { headline: string; content: string; facts: PostGameFacts }): boolean {
   const text = `${input.headline} ${input.content}`;
   if (/[=_\-━─]{5,}/.test(text)) {
     return false;
   }
-  if (/직전\s*경기|어제|어젯밤|전날|최근\s*\d*\s*경기|연승|연패|설욕|복수|즉각\s*반격|반등/.test(text)) {
+  if (/단어의 방향을 바꾸다|점수를 쌓아 올린|승부의 핵심/.test(text)) {
     return false;
   }
+  const mentionsRecentContext = /직전\s*경기|어제|어젯밤|전날|최근\s*\d*\s*경기|최근\s*5경기/.test(text);
+  if (mentionsRecentContext && !input.facts.recentMomentum) return false;
+  if (/어제|어젯밤|전날/.test(text) && !input.facts.recentMomentum?.lastGameWasYesterday) return false;
+  if (!hasAllowedStreakMention(text, input.facts)) return false;
+  if (/설욕|복수|즉각\s*반격|반등/.test(text)) return false;
+  if (input.facts.myScore <= input.facts.oppScore && /리드/.test(text)) return false;
+  if (input.facts.myScore - input.facts.oppScore !== 1 && /(?:1|한)\s*점\s*차\s*리드/.test(text)) return false;
+  if (input.facts.myScore - input.facts.oppScore === 1 && /(안전|안정)[^.!?。]{0,12}리드/.test(text)) return false;
   if (!hasVerifiedComebackFact(input.facts) && /역전패|역전승|역전극|대역전/.test(text)) {
     return false;
   }
+  if (/추격점|추격의\s*불씨|추가점|쐐기(?:점|타)?|동점타|역전타|빅이닝|선취점|선제점/.test(text) &&
+      !hasVerifiedFactTerm(input.facts, /추격점|추격의\s*불씨|추가점|쐐기|동점타|역전타|빅이닝|선취점|선제점/)) {
+    return false;
+  }
+  if (/적시타/.test(text) && !hasVerifiedFactTerm(input.facts, /적시타|안타|타점|홈인|득점/)) return false;
+  if (/결승\s*타점|결승타/.test(text) && !hasVerifiedFactTerm(input.facts, /결승\s*타점|결승타/)) return false;
+  if (/그랜드\s*슬램|만루\s*홈런|만루포/.test(text) && !hasVerifiedFactTerm(input.facts, /그랜드\s*슬램|만루\s*홈런|만루포/)) return false;
+  if (/퀄리티\s*스타트|QS|완투승/.test(text) && !hasVerifiedFactTerm(input.facts, /퀄리티\s*스타트|QS|완투승/)) return false;
+  if (/영봉승/.test(text) && input.facts.oppScore !== 0) return false;
   return true;
 }
 
@@ -633,10 +709,13 @@ export async function generatePostGameReport(input: {
 - 이 경기를 단 하나의 각도(영웅/패인/장면)로 날카롭게 잘라라
 - 칭찬할 때는 아낌없이, 비판할 때는 직설적으로 — "아쉽다" 한마디로 때우는 결론 금지
 - 최근 흐름은 반드시 최근 5경기, 직전 경기, 연승/연패 스트릭을 구분해서 해석
+- 2연승/2연패 이상일 때만 연승/연패 표현 허용. 1승/1패는 절대 "1연승/1연패"라고 쓰지 말고 "직전 경기 승리/패배"로만 써라
 - 3연승/3연패 이상이면 문맥상 자연스럽게 언급. 8연패 이상이면 반드시 한줄평의 핵심 서사로 삼아라
 - 최근 5경기 성적이 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지
 - "다음 경기", "기대가 됩니다", "팬들도 할 말이 없습니다", "반드시 되갚아야 합니다", "승부처에서 번번이" 같은 템플릿 결론 금지
 - 매일 같은 문장 구조 금지. 오늘 경기는 오늘의 한 장면, 한 감정, 한 비유만 선택
+- 기계 번역투 금지: "단어의 방향을 바꾸다", "점수를 쌓아 올린", "승부의 핵심이었다" 같은 문장 금지
+- 커뮤니티에서 찐 팬이 바로 반응하는 현장감으로 써라. 단, 팬 말투를 이유로 데이터에 없는 야구 용어를 꾸며내면 실패
 
 반드시 JSON만 출력:
 {"headline":"🎙️ [캐스터 한줄평] ...","content":"3~4문장 단락"}
@@ -646,7 +725,7 @@ export async function generatePostGameReport(input: {
 - content: 3~4문장 한 단락(줄바꿈 없이, 문장마다 어휘를 다르게), 존댓말
 - 우리 팀 관점 고정, 상대팀과 똑같은 내용 재사용 금지
 - "먹히다/먹힌다" 절대 금지
-- 제공된 오늘 경기 데이터 안에 없는 맥락 금지: 직전 경기, 어제/전날, 최근 N경기, 연승/연패, 설욕, 복수, 반등, 즉각 반격 언급 금지
+- 최근 흐름은 아래 "최근 팀 흐름"에 제공된 값만 사용. 제공되지 않은 직전 경기, 어제/전날, 최근 N경기, 연승/연패, 설욕, 복수, 반등, 즉각 반격 언급 금지
 - 주요 장면에 "역전"이 명시되지 않았으면 역전승/역전패/역전극 언급 금지
 - 아래 금칙어 금지: "확인 중", "정보 없음", "탓할 수 없는"
 - 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용
@@ -654,6 +733,16 @@ export async function generatePostGameReport(input: {
 - 선수 소속 절대 오인 금지. 상대 선수 명단에 있는 이름을 ${team} 선수, ${team} 중심타자, ${team} 주인공처럼 쓰면 실패다
 - 상대 선수 기록은 "${input.facts.oppTeam} 타자/상대 타자/상대 중심타선"으로만 다뤄라
 - 상대 선수 이름을 단독 주어로 세우지 마라. 반드시 "${input.facts.oppTeam}의 OOO" 또는 "상대 타자 OOO"처럼 소속을 붙여라
+
+⚠️ 데이터 매칭 하드룰:
+- "리드": 최종 스코어가 우리팀 > 상대팀일 때만 사용. 패배/무승부 문맥에서 리드 표현 금지
+- "1점차 리드": 우리팀 점수 - 상대팀 점수 == 1일 때만 사용. 이 경우 "안전/안정적" 수식 금지
+- "추격점/추격의 불씨/추가점/쐐기/쐐기타/동점타/역전타/빅이닝/선취점/선제점": 아래 주요 장면에 그 단어 또는 조건이 명시된 경우에만 사용
+- "적시타": 안타와 홈인/타점/득점이 함께 확인될 때만 사용
+- "결승타/결승 타점": 경기 종료 후라도 아래 핵심 내러티브에 결승 장면이 있을 때만 사용
+- "그랜드슬램/만루홈런": 만루 + 홈런 + 4득점이 확인될 때만 사용
+- "퀄리티 스타트/QS/완투승": 투구 이닝과 자책점 또는 완투 기록이 확인될 때만 사용
+- "영봉승": 상대 최종 점수가 0일 때만 사용
 
 ⚾ 야구 용어 절대 해석 규칙:
 - 탈삼진: 투수가 타자를 삼진 아웃시킨 것 (투수의 성공)

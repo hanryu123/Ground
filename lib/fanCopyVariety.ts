@@ -291,6 +291,13 @@ export function sanitizeBoringFanCopy(text: string, seed: string): string {
     ["이 기세 그대로 가야죠", "이 장면을 그냥 흘려보내면 안 됩니다"],
     ["다음 타자가 살려줘야 합니다", "벤치가 바로 다음 답을 꺼내야 합니다"],
     ["멘탈 잡고 반격해야 합니다", "흔들릴 시간 없이 바로 다시 붙어야 합니다"],
+    ["단어의 방향을 바꾸다", "분위기를 반전시키다"],
+    ["단어의 방향을 직접 바꿔야 합니다", "분위기를 직접 반전시켜야 합니다"],
+    ["실책을 놓치지 않고 점수를 쌓아 올린", "상대의 자멸을 틈타 무섭게 집중력을 발휘한"],
+    ["실책을 놓치지 않은 집중력", "상대의 자멸을 틈탄 집중력"],
+    ["승부의 핵심이었습니다", "승부를 흔든 장면이었습니다"],
+    ["1연승", "직전 경기 승리"],
+    ["1연패", "직전 경기 패배"],
   ] as const;
   for (const [from, to] of replacements) {
     out = out.replaceAll(from, to);
@@ -335,7 +342,7 @@ export function buildScoreFallbackCopy(input: ScoreFallbackInput): string {
   ] as const;
   const leadAgainst = [
     `${score}. 한 점 내줬지만 아직 우리 쪽 공기가 더 뜨겁습니다.`,
-    `${score}. 실점은 실점인데, 이 리드는 흔들릴 리드가 아닙니다.`,
+    `${score}. 아직 앞서 있지만, 이 점수는 편하게 볼 점수가 아닙니다.`,
     `${score}. ${image} 한 번 조용해졌지만 판은 아직 우리가 잡고 있습니다.`,
     `${score}. 여기서 답 하나만 바로 내면 됩니다, 오래 끌 일 아닙니다.`,
     `${score}. 괜히 불씨 키우지 말고 바로 꺼야 합니다.`,
@@ -505,7 +512,7 @@ export function buildVariedPostgameFallback(input: PostgameFallbackInput): { hea
       return `실책 ${input.myErrors}개는 그냥 지나가기 어려운 상처입니다`;
     }
     if (input.oppErrors != null && input.oppErrors >= 2) {
-      return `${input.oppTeam}의 실책을 놓치지 않은 집중력도 오늘 승부의 일부였습니다`;
+      return `${input.oppTeam}의 자멸을 틈탄 집중력도 오늘 승부의 일부였습니다`;
     }
     if (input.myHomeRuns != null && input.myHomeRuns > 0) {
       return `담장을 넘긴 한 방이 팬들 목소리를 다시 키웠습니다`;
@@ -621,7 +628,7 @@ export function buildVariedPregameFallback(input: PregameFallbackInput): { title
       ], "pv-starter")
     : `${input.team} 마운드가 초반부터 경기 공기를 잡아야 합니다.`;
   const momentumLine = input.streakLabel && /연승|연패/.test(input.streakLabel)
-    ? `${input.team}, 현재 ${input.streakLabel} 흐름입니다. 오늘은 그 단어의 방향을 직접 바꿔야 합니다.`
+    ? `${input.team}, 현재 ${input.streakLabel} 흐름입니다. 오늘은 분위기를 직접 반전시켜야 합니다.`
     : `${input.team} 최근 체감은 이렇습니다. ${input.momentumSummary}`;
   const matchupLine = pickOffset(seed, [
     `${input.opp}전은 첫 득점이 커 보이는 매치업입니다.`,
