@@ -494,12 +494,12 @@ export async function GET(req: Request) {
           homeDelta > 0 ? "말" :
           awayDelta > 0 ? "초" :
           null;
-        const inningNum = relayResult?.inn ?? null;
+        const inningNum = relayResult?.inn ?? game.currentInning ?? null;
         // 득점 정보로 초/말을 확정하고, 이닝 번호는 relay에서 가져옴
         const correctedLabel: string | null =
           inningNum != null && scoringHalf
             ? `${inningNum}회${scoringHalf}`
-            : relayResult?.inningLabel ?? null;
+            : relayResult?.inningLabel ?? game.currentInningLabel ?? null;
 
         // latestPlayText 앞의 이닝 레이블을 교정된 값으로 교체
         let latestPlayText: string;

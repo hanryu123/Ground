@@ -36,6 +36,10 @@ type NaverScheduleGameRaw = {
   /** 네이버는 취소 경기를 statusCode:"BEFORE" 유지하면서 cancel:true 로 별도 표기함 */
   cancel?: boolean;
   statusInfo?: string;
+  currentInning?: string | number;
+  currentInningSub?: string | number;
+  inning?: string | number;
+  inningSub?: string | number;
 };
 
 function normalizeStatus(code: string | undefined): LiveScoreStatus {
@@ -89,6 +93,48 @@ function inferCancelReason(raw: NaverScheduleGameRaw, status: LiveScoreStatus): 
   return "OTHER";
 }
 
+function parseInningNum(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const n = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseInningHalf(value: unknown): "초" | "말" | null {
+  if (value === 1 || value === "1") return "초";
+  if (value === 2 || value === "2") return "말";
+  if (typeof value !== "string") return null;
+  const raw = value.trim().toLowerCase();
+  if (raw === "초" || raw === "top" || raw === "t") return "초";
+  if (raw === "말" || raw === "bottom" || raw === "bot" || raw === "b") return "말";
+  return null;
+}
+
+function parseCurrentInning(raw: NaverScheduleGameRaw): {
+  currentInning: number | null;
+  currentInningHalf: "초" | "말" | null;
+  currentInningLabel: string | null;
+} {
+  const info = raw.statusInfo ?? "";
+  const infoMatch = info.match(/(\d{1,2})\s*회\s*(초|말)?/);
+  const fromInfo = infoMatch ? Number.parseInt(infoMatch[1], 10) : null;
+  const directInning = [raw.currentInning, raw.inning]
+    .map(parseInningNum)
+    .find((value): value is number => value != null);
+  const currentInning =
+    directInning ??
+    (Number.isFinite(fromInfo) ? fromInfo : null);
+  const currentInningHalf =
+    parseInningHalf(raw.currentInningSub) ??
+    parseInningHalf(raw.inningSub) ??
+    (infoMatch?.[2] === "초" || infoMatch?.[2] === "말" ? infoMatch[2] : null);
+  const currentInningLabel =
+    currentInning != null
+      ? `${currentInning}회${currentInningHalf ?? ""}`
+      : null;
+  return { currentInning, currentInningHalf, currentInningLabel };
+}
+
 /**
  * 네이버는 취소 경기도 statusCode:"BEFORE" 를 유지하면서
  * cancel:true 또는 statusInfo:"경기취소"/"우천취소" 를 병행 사용한다.
@@ -137,17 +183,21 @@ export async function fetchLiveScoreSnapshot(date: string = todayKstDate()): Pro
   };
   const games = json?.result?.games ?? [];
   return games
-    .map((g) => {
+    .map((g): LiveScoreGame | null => {
       const homeTeam = NAVER_TEAM_MAP[(g.homeTeamCode ?? "").toUpperCase()];
       const awayTeam = NAVER_TEAM_MAP[(g.awayTeamCode ?? "").toUpperCase()];
       if (!homeTeam || !awayTeam || !g.gameId) return null;
       const status = resolveStatus(g);
+      const inning = parseCurrentInning(g);
       return {
         externalId: g.gameId,
         homeTeam,
         awayTeam,
         homeScore: typeof g.homeTeamScore === "number" ? g.homeTeamScore : 0,
         awayScore: typeof g.awayTeamScore === "number" ? g.awayTeamScore : 0,
+        currentInning: inning.currentInning,
+        currentInningHalf: inning.currentInningHalf,
+        currentInningLabel: inning.currentInningLabel,
         status,
         cancelReason: inferCancelReason(g, status),
         gameDate: parseGameDate(g.gameDate, g.gameDateTime),
