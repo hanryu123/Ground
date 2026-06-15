@@ -10,6 +10,7 @@ import CronTrigger from "./CronTrigger";
 import UserCleanup from "./UserCleanup";
 import PendingNotificationsSection from "./PendingNotificationsSection";
 import { fetchRecentAdminAuditLogs, type AdminAuditLogRow } from "@/lib/adminAudit";
+import { TOPIC_KEYS, isTopicEnabled, type TopicKey } from "@/lib/notifications/topics";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,11 @@ function startOfTodayKst(now = new Date()): Date {
 
 function formatNumber(n: number): string {
   return new Intl.NumberFormat("ko-KR").format(n);
+}
+
+function formatPercent(n: number): string {
+  if (!Number.isFinite(n)) return "0.0%";
+  return `${n.toFixed(1)}%`;
 }
 
 function formatDateTimeKst(date: Date): string {
@@ -103,6 +109,42 @@ type DbTodayGameRow = Omit<TodayGameRow, "syncSource" | "lastSyncedAt" | "update
   updatedAt: Date;
 };
 
+type WebPushKpiRow = {
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  lastSeenAt: Date | null;
+  topics: unknown;
+  user: { favoriteTeam: string | null };
+};
+
+type NativePushKpiRow = {
+  userId: string;
+  platform: string;
+  favoriteTeam: string | null;
+  appEnv: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lastSeenAt: Date | null;
+  topics: unknown;
+  user: { favoriteTeam: string | null };
+};
+
+type TopicKpiRow = {
+  key: TopicKey;
+  label: string;
+  users: number;
+  channels: number;
+  ratio: number;
+};
+
+type PlatformKpiRow = {
+  key: string;
+  label: string;
+  count: number;
+  ratio: number;
+};
+
 async function fetchRecentCronRuns(db: any, limit = 12): Promise<CronRunRow[]> {
   try {
     return await db.$queryRawUnsafe(
@@ -132,6 +174,20 @@ function statusTone(status: string): string {
   if (status === "partial" || status === "blocked" || status === "LIVE" || status === "PENDING" || status === "SUSPENDED") return "text-amber-300 bg-amber-950/40 border-amber-500/20";
   if (status === "error" || status === "FAILED" || status === "CANCEL") return "text-red-300 bg-red-950/40 border-red-500/20";
   return "text-slate-300 bg-slate-800/70 border-white/10";
+}
+
+function topicLabel(key: TopicKey): string {
+  const labels: Record<TopicKey, string> = {
+    pitcher: "투수/라인업",
+    preGame: "프리뷰",
+    postGame: "경기 종료",
+    highlight: "하이라이트",
+    score: "스코어",
+    livePitcherChange: "투수 교체",
+    liveStrikeout: "삼진",
+    liveHomeRun: "홈런",
+  };
+  return labels[key];
 }
 
 async function fetchTodayScoreSnapshotSafe(date: string): Promise<LiveScoreGame[]> {
@@ -199,12 +255,18 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   const [
+    totalRegisteredUsers,
     totalUsers,
     recentUsers,
+    newUsersToday,
     webPushCount,
     nativePushCount,
-    teamRows,
+    webPushRows,
+    nativePushRows,
+    newWebPushToday,
+    newNativePushToday,
     todaysTriggers,
+    todayReadNotifications,
     todayNotifications,
     recentMarketingPushes,
     todayGames,
@@ -217,42 +279,82 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     readyPostgameCount,
     auditLogs,
   ] = await Promise.all([
+    db.user.count(),
     db.user.count({
       where: {
-        pushSubscriptions: { some: { enabled: true } },
+        OR: [
+          { pushSubscriptions: { some: { enabled: true } } },
+          { nativePushTokens: { some: { enabled: true } } },
+        ],
       },
     }),
-    // 최근 30일 내 lastSeenAt 또는 createdAt 기준 실제 활성 구독자
     db.user.count({
       where: {
-        pushSubscriptions: {
-          some: {
-            enabled: true,
-            OR: [
-              { lastSeenAt: { gte: thirtyDaysAgo } },
-              { createdAt: { gte: thirtyDaysAgo } },
-            ],
+        OR: [
+          {
+            pushSubscriptions: {
+              some: {
+                enabled: true,
+                OR: [
+                  { lastSeenAt: { gte: thirtyDaysAgo } },
+                  { createdAt: { gte: thirtyDaysAgo } },
+                ],
+              },
+            },
           },
-        },
+          {
+            nativePushTokens: {
+              some: {
+                enabled: true,
+                OR: [
+                  { lastSeenAt: { gte: thirtyDaysAgo } },
+                  { createdAt: { gte: thirtyDaysAgo } },
+                ],
+              },
+            },
+          },
+        ],
       },
     }),
+    db.user.count({ where: { createdAt: { gte: todayStart } } }),
     db.pushSubscription.count({ where: { enabled: true } }),
     db.nativePushToken.count({ where: { enabled: true } }),
-    db.user.groupBy({
-      by: ["favoriteTeam"],
-      where: {
-        favoriteTeam: { not: null },
-        pushSubscriptions: {
-          some: { enabled: true },
-        },
+    db.pushSubscription.findMany({
+      where: { enabled: true },
+      select: {
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+        lastSeenAt: true,
+        topics: true,
+        user: { select: { favoriteTeam: true } },
       },
-      _count: { _all: true },
-      orderBy: { _count: { favoriteTeam: "desc" } },
-      take: 10,
+    }),
+    db.nativePushToken.findMany({
+      where: { enabled: true },
+      select: {
+        userId: true,
+        platform: true,
+        favoriteTeam: true,
+        appEnv: true,
+        createdAt: true,
+        updatedAt: true,
+        lastSeenAt: true,
+        topics: true,
+        user: { select: { favoriteTeam: true } },
+      },
+    }),
+    db.pushSubscription.count({ where: { enabled: true, createdAt: { gte: todayStart } } }),
+    db.nativePushToken.count({ where: { enabled: true, createdAt: { gte: todayStart } } }),
+    db.notification.count({
+      where: {
+        sentAt: { gte: todayStart },
+      },
     }),
     db.notification.count({
       where: {
         sentAt: { gte: todayStart },
+        isRead: true,
       },
     }),
     db.notification.findMany({
@@ -340,11 +442,56 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     fetchRecentAdminAuditLogs(18),
   ]);
 
-  const maxCount = teamRows[0]?._count._all ?? 1;
-  const ranking: RankingRow[] = teamRows.map((row: any, idx: number): RankingRow => {
-    const teamId = row.favoriteTeam ?? "unknown";
+  const webRows = webPushRows as WebPushKpiRow[];
+  const nativeRows = nativePushRows as NativePushKpiRow[];
+  const activePushUserIds = new Set<string>();
+  const nativePushUserIds = new Set<string>();
+  const teamUserSets = new Map<string, Set<string>>();
+  const topicUserSets = new Map<TopicKey, Set<string>>();
+  const topicChannelCounts = new Map<TopicKey, number>();
+  const platformCounts = new Map<string, number>();
+  for (const key of TOPIC_KEYS) {
+    topicUserSets.set(key, new Set<string>());
+    topicChannelCounts.set(key, 0);
+  }
+
+  for (const row of webRows) {
+    activePushUserIds.add(row.userId);
+    platformCounts.set("web", (platformCounts.get("web") ?? 0) + 1);
+    const teamId = row.user.favoriteTeam ?? "unknown";
+    if (!teamUserSets.has(teamId)) teamUserSets.set(teamId, new Set<string>());
+    teamUserSets.get(teamId)!.add(row.userId);
+    for (const key of TOPIC_KEYS) {
+      if (!isTopicEnabled(row.topics, key)) continue;
+      topicUserSets.get(key)!.add(row.userId);
+      topicChannelCounts.set(key, (topicChannelCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  for (const row of nativeRows) {
+    activePushUserIds.add(row.userId);
+    nativePushUserIds.add(row.userId);
+    const platform = row.platform?.toLowerCase() || "native";
+    platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
+    const teamId = row.favoriteTeam ?? row.user.favoriteTeam ?? "unknown";
+    if (!teamUserSets.has(teamId)) teamUserSets.set(teamId, new Set<string>());
+    teamUserSets.get(teamId)!.add(row.userId);
+    for (const key of TOPIC_KEYS) {
+      if (!isTopicEnabled(row.topics, key)) continue;
+      topicUserSets.get(key)!.add(row.userId);
+      topicChannelCounts.set(key, (topicChannelCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  const teamRows = Array.from(teamUserSets.entries())
+    .map(([teamId, users]) => ({ teamId, count: users.size }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+  const maxCount = teamRows[0]?.count ?? 1;
+  const ranking: RankingRow[] = teamRows.map((row, idx): RankingRow => {
+    const teamId = row.teamId;
     const team = teamId === "unknown" ? null : findTeam(teamId);
-    const count = row._count._all;
+    const count = row.count;
     const ratio = Math.max(6, Math.round((count / maxCount) * 100));
     return {
       rank: idx + 1,
@@ -356,6 +503,26 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
       ratio,
     };
   });
+  const activePushUsers = activePushUserIds.size;
+  const nativePushUsers = nativePushUserIds.size;
+  const pushOptInRate = totalRegisteredUsers > 0 ? (activePushUsers / totalRegisteredUsers) * 100 : 0;
+  const nativeUserShare = activePushUsers > 0 ? (nativePushUsers / activePushUsers) * 100 : 0;
+  const todayReadRate = todaysTriggers > 0 ? (todayReadNotifications / todaysTriggers) * 100 : 0;
+  const topicRows: TopicKpiRow[] = TOPIC_KEYS.map((key) => ({
+    key,
+    label: topicLabel(key),
+    users: topicUserSets.get(key)?.size ?? 0,
+    channels: topicChannelCounts.get(key) ?? 0,
+    ratio: activePushUsers > 0 ? ((topicUserSets.get(key)?.size ?? 0) / activePushUsers) * 100 : 0,
+  })).sort((a, b) => b.users - a.users);
+  const platformRows: PlatformKpiRow[] = Array.from(platformCounts.entries())
+    .map(([key, count]) => ({
+      key,
+      label: key === "web" ? "Web PWA" : key.toUpperCase(),
+      count,
+      ratio: totalPushChannels > 0 ? (count / totalPushChannels) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
 
   const grouped = new Map<
     string,
@@ -468,6 +635,26 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           failedPostgameCount={failedPostgameCount}
           pendingPreviewCount={pendingPreviewCount}
           readyPostgameCount={readyPostgameCount}
+        />
+
+        <AppLaunchKpiSection
+          totalRegisteredUsers={totalRegisteredUsers}
+          newUsersToday={newUsersToday}
+          activePushUsers={activePushUsers}
+          recentUsers={recentUsers}
+          pushOptInRate={pushOptInRate}
+          totalPushChannels={totalPushChannels}
+          webPushCount={webPushCount}
+          nativePushCount={nativePushCount}
+          nativePushUsers={nativePushUsers}
+          nativeUserShare={nativeUserShare}
+          newWebPushToday={newWebPushToday}
+          newNativePushToday={newNativePushToday}
+          todaysTriggers={todaysTriggers}
+          todayReadNotifications={todayReadNotifications}
+          todayReadRate={todayReadRate}
+          platformRows={platformRows}
+          topicRows={topicRows}
         />
 
         <GameControlSection games={gameRows} />
@@ -683,6 +870,146 @@ function OperationalOverview({
         hint={`최근 크론 실패 ${failedCronRuns} · 한줄평 실패 ${failedPostgameCount} · 프리뷰 대기 ${pendingPreviewCount} · 한줄평 완료 ${readyPostgameCount}${latestCron ? ` · 최근 ${latestCron.name}` : ""}`}
         tone={failedCronRuns > 0 || failedPostgameCount > 0 ? "bad" : pendingPreviewCount > 0 ? "warn" : "good"}
       />
+    </div>
+  );
+}
+
+function AppLaunchKpiSection({
+  totalRegisteredUsers,
+  newUsersToday,
+  activePushUsers,
+  recentUsers,
+  pushOptInRate,
+  totalPushChannels,
+  webPushCount,
+  nativePushCount,
+  nativePushUsers,
+  nativeUserShare,
+  newWebPushToday,
+  newNativePushToday,
+  todaysTriggers,
+  todayReadNotifications,
+  todayReadRate,
+  platformRows,
+  topicRows,
+}: {
+  totalRegisteredUsers: number;
+  newUsersToday: number;
+  activePushUsers: number;
+  recentUsers: number;
+  pushOptInRate: number;
+  totalPushChannels: number;
+  webPushCount: number;
+  nativePushCount: number;
+  nativePushUsers: number;
+  nativeUserShare: number;
+  newWebPushToday: number;
+  newNativePushToday: number;
+  todaysTriggers: number;
+  todayReadNotifications: number;
+  todayReadRate: number;
+  platformRows: PlatformKpiRow[];
+  topicRows: TopicKpiRow[];
+}) {
+  const topTopics = topicRows.slice(0, 5);
+  return (
+    <div className="mt-8 rounded-2xl border border-sky-400/15 bg-slate-900/70 p-5 shadow-[0_18px_60px_rgba(2,6,23,0.35)]">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-sky-300/80">Launch Analytics</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">앱 출시 KPI</h2>
+          <p className="mt-1 text-xs text-slate-400">
+            App Store 유입은 App Store Connect, 실제 앱 운영은 여기서 봅니다.
+          </p>
+        </div>
+        <a
+          href="https://appstoreconnect.apple.com/analytics"
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-sky-300/20 bg-sky-950/30 px-3 py-1.5 text-xs font-bold text-sky-200 hover:bg-sky-900/40"
+        >
+          App Store Connect 열기
+        </a>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Registered Users"
+          value={formatNumber(totalRegisteredUsers)}
+          hint={`오늘 신규 ${formatNumber(newUsersToday)} · 푸시 유저 ${formatNumber(activePushUsers)}`}
+          tone="neutral"
+        />
+        <MetricCard
+          label="Push Opt-in"
+          value={formatPercent(pushOptInRate)}
+          hint={`30일 활성 ${formatNumber(recentUsers)}명 · 채널 ${formatNumber(totalPushChannels)}개`}
+          tone={pushOptInRate >= 60 ? "good" : pushOptInRate >= 30 ? "warn" : "bad"}
+        />
+        <MetricCard
+          label="Native App"
+          value={formatNumber(nativePushUsers)}
+          hint={`Native 채널 ${formatNumber(nativePushCount)} · 유저 기준 ${formatPercent(nativeUserShare)}`}
+          tone={nativePushUsers > 0 ? "good" : "warn"}
+        />
+        <MetricCard
+          label="Today Alert Read"
+          value={formatPercent(todayReadRate)}
+          hint={`발송 ${formatNumber(todaysTriggers)} · 읽음 ${formatNumber(todayReadNotifications)}`}
+          tone={todaysTriggers === 0 ? "neutral" : todayReadRate >= 20 ? "good" : "warn"}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <div className="rounded-xl border border-white/5 bg-slate-950/55 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white">채널 구성</h3>
+            <span className="text-xs text-slate-400">
+              오늘 신규 Web {formatNumber(newWebPushToday)} · Native {formatNumber(newNativePushToday)}
+            </span>
+          </div>
+          {platformRows.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">아직 푸시 채널이 없습니다.</p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {platformRows.map((row) => (
+                <li key={row.key}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="font-semibold text-slate-200">{row.label}</span>
+                    <span className="text-slate-400">{formatNumber(row.count)} · {formatPercent(row.ratio)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.max(4, row.ratio)}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-slate-950/55 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white">알림 토픽 허용</h3>
+            <span className="text-xs text-slate-400">유저 기준 Top 5</span>
+          </div>
+          {topTopics.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">아직 토픽 데이터가 없습니다.</p>
+          ) : (
+            <ul className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {topTopics.map((row) => (
+                <li key={row.key} className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-white">{row.label}</span>
+                    <span className="text-xs text-slate-400">{formatPercent(row.ratio)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {formatNumber(row.users)}명 · 채널 {formatNumber(row.channels)}개
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
