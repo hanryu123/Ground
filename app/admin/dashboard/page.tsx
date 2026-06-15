@@ -68,6 +68,12 @@ function resolveTeamLabel(teamId: string | null): string {
   return team ? team.name : teamId.toUpperCase();
 }
 
+function normalizeTeamId(value: string | null | undefined): string {
+  const teamId = value?.trim().toLowerCase();
+  if (!teamId) return "unknown";
+  return TEAMS.some((team) => team.id === teamId) ? teamId : "unknown";
+}
+
 type RankingRow = {
   rank: number;
   teamId: string;
@@ -201,6 +207,19 @@ async function fetchTodayScoreSnapshotSafe(date: string): Promise<LiveScoreGame[
   }
 }
 
+async function safeDashboardQuery<T>(
+  label: string,
+  query: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  try {
+    return await query();
+  } catch (error) {
+    console.warn(`[admin/dashboard] ${label} failed`, error);
+    return fallback;
+  }
+}
+
 function mergeTodayGameRows(
   dbGames: DbTodayGameRow[],
   naverGames: LiveScoreGame[]
@@ -279,84 +298,109 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     readyPostgameCount,
     auditLogs,
   ] = await Promise.all([
-    db.user.count(),
-    db.user.count({
-      where: {
-        OR: [
-          { pushSubscriptions: { some: { enabled: true } } },
-          { nativePushTokens: { some: { enabled: true } } },
-        ],
-      },
-    }),
-    db.user.count({
-      where: {
-        OR: [
-          {
-            pushSubscriptions: {
-              some: {
-                enabled: true,
-                OR: [
-                  { lastSeenAt: { gte: thirtyDaysAgo } },
-                  { createdAt: { gte: thirtyDaysAgo } },
-                ],
-              },
-            },
+    safeDashboardQuery("registered user count", () => db.user.count(), 0),
+    safeDashboardQuery(
+      "active push user count",
+      () =>
+        db.user.count({
+          where: {
+            OR: [
+              { pushSubscriptions: { some: { enabled: true } } },
+              { nativePushTokens: { some: { enabled: true } } },
+            ],
           },
-          {
-            nativePushTokens: {
-              some: {
-                enabled: true,
-                OR: [
-                  { lastSeenAt: { gte: thirtyDaysAgo } },
-                  { createdAt: { gte: thirtyDaysAgo } },
-                ],
+        }),
+      0
+    ),
+    safeDashboardQuery(
+      "recent active user count",
+      () =>
+        db.user.count({
+          where: {
+            OR: [
+              {
+                pushSubscriptions: {
+                  some: {
+                    enabled: true,
+                    OR: [
+                      { lastSeenAt: { gte: thirtyDaysAgo } },
+                      { createdAt: { gte: thirtyDaysAgo } },
+                    ],
+                  },
+                },
               },
-            },
+              {
+                nativePushTokens: {
+                  some: {
+                    enabled: true,
+                    OR: [
+                      { lastSeenAt: { gte: thirtyDaysAgo } },
+                      { createdAt: { gte: thirtyDaysAgo } },
+                    ],
+                  },
+                },
+              },
+            ],
           },
-        ],
-      },
-    }),
-    db.user.count({ where: { createdAt: { gte: todayStart } } }),
+        }),
+      0
+    ),
+    safeDashboardQuery("new user count today", () => db.user.count({ where: { createdAt: { gte: todayStart } } }), 0),
     db.pushSubscription.count({ where: { enabled: true } }),
-    db.nativePushToken.count({ where: { enabled: true } }),
-    db.pushSubscription.findMany({
-      where: { enabled: true },
-      select: {
-        userId: true,
-        createdAt: true,
-        updatedAt: true,
-        lastSeenAt: true,
-        topics: true,
-        user: { select: { favoriteTeam: true } },
-      },
-    }),
-    db.nativePushToken.findMany({
-      where: { enabled: true },
-      select: {
-        userId: true,
-        platform: true,
-        favoriteTeam: true,
-        appEnv: true,
-        createdAt: true,
-        updatedAt: true,
-        lastSeenAt: true,
-        topics: true,
-        user: { select: { favoriteTeam: true } },
-      },
-    }),
-    db.pushSubscription.count({ where: { enabled: true, createdAt: { gte: todayStart } } }),
-    db.nativePushToken.count({ where: { enabled: true, createdAt: { gte: todayStart } } }),
+    safeDashboardQuery("native push channel count", () => db.nativePushToken.count({ where: { enabled: true } }), 0),
+    safeDashboardQuery<WebPushKpiRow[]>(
+      "web push KPI rows",
+      () =>
+        db.pushSubscription.findMany({
+          where: { enabled: true },
+          select: {
+            userId: true,
+            createdAt: true,
+            updatedAt: true,
+            lastSeenAt: true,
+            topics: true,
+            user: { select: { favoriteTeam: true } },
+          },
+        }),
+      []
+    ),
+    safeDashboardQuery<NativePushKpiRow[]>(
+      "native push KPI rows",
+      () =>
+        db.nativePushToken.findMany({
+          where: { enabled: true },
+          select: {
+            userId: true,
+            platform: true,
+            favoriteTeam: true,
+            appEnv: true,
+            createdAt: true,
+            updatedAt: true,
+            lastSeenAt: true,
+            topics: true,
+            user: { select: { favoriteTeam: true } },
+          },
+        }),
+      []
+    ),
+    safeDashboardQuery("new web push channels today", () => db.pushSubscription.count({ where: { enabled: true, createdAt: { gte: todayStart } } }), 0),
+    safeDashboardQuery("new native push channels today", () => db.nativePushToken.count({ where: { enabled: true, createdAt: { gte: todayStart } } }), 0),
     db.notification.count({
       where: {
         sentAt: { gte: todayStart },
       },
     }),
-    db.notification.count({
-      where: {
-        sentAt: { gte: todayStart },
-        isRead: true,
-      },
-    }),
+    safeDashboardQuery(
+      "read notification count today",
+      () =>
+        db.notification.count({
+          where: {
+            sentAt: { gte: todayStart },
+            isRead: true,
+          },
+        }),
+      0
+    ),
     db.notification.findMany({
       where: {
         sentAt: { gte: todayStart },
@@ -458,7 +502,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   for (const row of webRows) {
     activePushUserIds.add(row.userId);
     platformCounts.set("web", (platformCounts.get("web") ?? 0) + 1);
-    const teamId = row.user.favoriteTeam ?? "unknown";
+    const teamId = normalizeTeamId(row.user.favoriteTeam);
     if (!teamUserSets.has(teamId)) teamUserSets.set(teamId, new Set<string>());
     teamUserSets.get(teamId)!.add(row.userId);
     for (const key of TOPIC_KEYS) {
@@ -473,7 +517,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     nativePushUserIds.add(row.userId);
     const platform = row.platform?.toLowerCase() || "native";
     platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
-    const teamId = row.favoriteTeam ?? row.user.favoriteTeam ?? "unknown";
+    const teamId = normalizeTeamId(row.favoriteTeam ?? row.user.favoriteTeam);
     if (!teamUserSets.has(teamId)) teamUserSets.set(teamId, new Set<string>());
     teamUserSets.get(teamId)!.add(row.userId);
     for (const key of TOPIC_KEYS) {
@@ -508,6 +552,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const pushOptInRate = totalRegisteredUsers > 0 ? (activePushUsers / totalRegisteredUsers) * 100 : 0;
   const nativeUserShare = activePushUsers > 0 ? (nativePushUsers / activePushUsers) * 100 : 0;
   const todayReadRate = todaysTriggers > 0 ? (todayReadNotifications / todaysTriggers) * 100 : 0;
+  const totalPushChannels = webPushCount + nativePushCount;
   const topicRows: TopicKpiRow[] = TOPIC_KEYS.map((key) => ({
     key,
     label: topicLabel(key),
@@ -605,7 +650,6 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     ...item,
     createdAt: item.createdAt.toISOString(),
   }));
-  const totalPushChannels = webPushCount + nativePushCount;
 
   return (
     <main className="min-h-dvh bg-slate-950 text-slate-100">
