@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { ensureNotifyUser, resolveNotifyUserId } from "@/lib/notifyIdentity";
 import { resolveServerAppEnv } from "@/lib/appEnv";
@@ -49,13 +50,20 @@ function normalizeTopics(input: NativeSubscribeBody["topics"]): PushTopicFlags {
   };
 }
 
+function isAnonymousUserId(userId: string): boolean {
+  return userId === "anonymous" || userId === "anonymous-web";
+}
+
+function nativeTokenUserId(token: string): string {
+  const hash = createHash("sha256").update(token).digest("hex").slice(0, 24);
+  return `native-${hash}`;
+}
+
 /**
  * POST /api/notifications/subscribe/native
  * Capacitor 네이티브 앱에서 FCM/APNs 토큰을 서버에 등록.
  */
 export async function POST(req: Request) {
-  const userId = resolveNotifyUserId(req.headers.get("x-ground-user-id"));
-
   let body: NativeSubscribeBody;
   try {
     body = (await req.json()) as NativeSubscribeBody;
@@ -68,6 +76,9 @@ export async function POST(req: Request) {
   if (!token) {
     return NextResponse.json({ ok: false, error: "missing_token" }, { status: 400 });
   }
+
+  const headerUserId = resolveNotifyUserId(req.headers.get("x-ground-user-id"));
+  const userId = isAnonymousUserId(headerUserId) ? nativeTokenUserId(token) : headerUserId;
 
   await ensureNotifyUser(userId, { favoriteTeam: body.favoriteTeam ?? null });
 

@@ -74,6 +74,10 @@ function normalizeTeamId(value: string | null | undefined): string {
   return TEAMS.some((team) => team.id === teamId) ? teamId : "unknown";
 }
 
+function isAnonymousNotifyUserId(userId: string): boolean {
+  return userId === "anonymous" || userId === "anonymous-web";
+}
+
 type RankingRow = {
   rank: number;
   teamId: string;
@@ -125,6 +129,7 @@ type WebPushKpiRow = {
 };
 
 type NativePushKpiRow = {
+  id: string;
   userId: string;
   platform: string;
   favoriteTeam: string | null;
@@ -370,6 +375,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         db.nativePushToken.findMany({
           where: { enabled: true },
           select: {
+            id: true,
             userId: true,
             platform: true,
             favoriteTeam: true,
@@ -513,16 +519,17 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   }
 
   for (const row of nativeRows) {
-    activePushUserIds.add(row.userId);
-    nativePushUserIds.add(row.userId);
+    const identityKey = isAnonymousNotifyUserId(row.userId) ? `legacy-native:${row.id}` : row.userId;
+    activePushUserIds.add(identityKey);
+    nativePushUserIds.add(identityKey);
     const platform = row.platform?.toLowerCase() || "native";
     platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
     const teamId = normalizeTeamId(row.favoriteTeam ?? row.user.favoriteTeam);
     if (!teamUserSets.has(teamId)) teamUserSets.set(teamId, new Set<string>());
-    teamUserSets.get(teamId)!.add(row.userId);
+    teamUserSets.get(teamId)!.add(identityKey);
     for (const key of TOPIC_KEYS) {
       if (!isTopicEnabled(row.topics, key)) continue;
-      topicUserSets.get(key)!.add(row.userId);
+      topicUserSets.get(key)!.add(identityKey);
       topicChannelCounts.set(key, (topicChannelCounts.get(key) ?? 0) + 1);
     }
   }
@@ -549,6 +556,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   });
   const activePushUsers = activePushUserIds.size;
   const nativePushUsers = nativePushUserIds.size;
+  const anonymousNativeChannels = nativeRows.filter((row) => isAnonymousNotifyUserId(row.userId)).length;
   const pushOptInRate = totalRegisteredUsers > 0 ? (activePushUsers / totalRegisteredUsers) * 100 : 0;
   const nativeUserShare = activePushUsers > 0 ? (nativePushUsers / activePushUsers) * 100 : 0;
   const todayReadRate = todaysTriggers > 0 ? (todayReadNotifications / todaysTriggers) * 100 : 0;
@@ -691,6 +699,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           webPushCount={webPushCount}
           nativePushCount={nativePushCount}
           nativePushUsers={nativePushUsers}
+          anonymousNativeChannels={anonymousNativeChannels}
           nativeUserShare={nativeUserShare}
           newWebPushToday={newWebPushToday}
           newNativePushToday={newNativePushToday}
@@ -928,6 +937,7 @@ function AppLaunchKpiSection({
   webPushCount,
   nativePushCount,
   nativePushUsers,
+  anonymousNativeChannels,
   nativeUserShare,
   newWebPushToday,
   newNativePushToday,
@@ -946,6 +956,7 @@ function AppLaunchKpiSection({
   webPushCount: number;
   nativePushCount: number;
   nativePushUsers: number;
+  anonymousNativeChannels: number;
   nativeUserShare: number;
   newWebPushToday: number;
   newNativePushToday: number;
@@ -990,9 +1001,13 @@ function AppLaunchKpiSection({
           tone={pushOptInRate >= 60 ? "good" : pushOptInRate >= 30 ? "warn" : "bad"}
         />
         <MetricCard
-          label="Native Channels"
-          value={formatNumber(nativePushCount)}
-          hint={`고유 ID ${formatNumber(nativePushUsers)}명 · 유저 기준 ${formatPercent(nativeUserShare)}`}
+          label="Native App Users"
+          value={formatNumber(nativePushUsers)}
+          hint={
+            anonymousNativeChannels > 0
+              ? `iOS 채널 ${formatNumber(nativePushCount)}개 · 기존 anonymous ${formatNumber(anonymousNativeChannels)}개 기기별 집계`
+              : `iOS 채널 ${formatNumber(nativePushCount)}개 · 유저 기준 ${formatPercent(nativeUserShare)}`
+          }
           tone={nativePushUsers > 0 ? "good" : "warn"}
         />
         <MetricCard
