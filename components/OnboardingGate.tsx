@@ -7,6 +7,7 @@ import OnboardingFlow from "./OnboardingFlow";
 import OnboardingTutorial, { TUTORIAL_SEEN_KEY } from "./OnboardingTutorial";
 import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
 import { registerNativePush } from "@/lib/nativePush";
+import { getOrCreateNotifyUserId } from "@/lib/webPushClient";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -67,7 +68,7 @@ export default function OnboardingGate({
     const unlocked = Boolean(teamId) && isOnboardingDone;
     if (!unlocked || !teamId) return;
     try {
-      const userId = localStorage.getItem("ground-user-id") ?? "anonymous";
+      const userId = getOrCreateNotifyUserId();
       void registerNativePush({ userId, favoriteTeam: teamId });
     } catch {
       // 웹 환경에서는 무시

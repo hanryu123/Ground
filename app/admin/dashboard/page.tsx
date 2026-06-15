@@ -990,9 +990,9 @@ function AppLaunchKpiSection({
           tone={pushOptInRate >= 60 ? "good" : pushOptInRate >= 30 ? "warn" : "bad"}
         />
         <MetricCard
-          label="Native App"
-          value={formatNumber(nativePushUsers)}
-          hint={`Native 채널 ${formatNumber(nativePushCount)} · 유저 기준 ${formatPercent(nativeUserShare)}`}
+          label="Native Channels"
+          value={formatNumber(nativePushCount)}
+          hint={`고유 ID ${formatNumber(nativePushUsers)}명 · 유저 기준 ${formatPercent(nativeUserShare)}`}
           tone={nativePushUsers > 0 ? "good" : "warn"}
         />
         <MetricCard
