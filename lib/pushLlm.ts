@@ -1216,7 +1216,9 @@ export async function generateScorePushCopyWithOptions(
   input: GenerateScorePushInput,
   options: GenerateScorePushOptions
 ): Promise<{ title: string; body: string }> {
-  const apiKey = options.apiKeyOverride?.trim() || process.env.ANTHROPIC_API_KEY;
+  const apiKey = options.apiKeyOverride !== undefined
+    ? options.apiKeyOverride.trim()
+    : process.env.ANTHROPIC_API_KEY?.trim();
   const inningTag = extractInningTag(input.latestPlayText);
   const myTeamShort = findTeam(input.favoriteTeam).short;
   const oppTeamShort = findTeam(input.opponentTeam).short;

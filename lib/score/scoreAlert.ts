@@ -183,6 +183,7 @@ export async function dispatchScoreAlertsForGame(input: {
     const myTeam = findTeam(favoriteTeam);
     const oppTeamId = isHomeFan ? input.game.awayTeam : input.game.homeTeam;
     const oppTeam = findTeam(oppTeamId);
+    const teamRecentBodies = recentBodies.get(favoriteTeam) ?? [];
     const fallback = buildBiasedScoreCopy({
       teamShort: myTeam.short,
       oppShort: oppTeam.short,
@@ -190,6 +191,8 @@ export async function dispatchScoreAlertsForGame(input: {
       oppScore,
       tone,
       state,
+      latestPlayText: input.latestPlayText,
+      recentBodies: teamRecentBodies,
     });
 
     const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${input.latestPlayText}`;
@@ -205,7 +208,7 @@ export async function dispatchScoreAlertsForGame(input: {
         latestPlayText: input.latestPlayText,
         fallbackTitle: fallback.title,
         fallbackBody: fallback.body,
-        recentBodies: recentBodies.get(favoriteTeam) ?? [],
+        recentBodies: teamRecentBodies,
         prevMyScore,
         prevOppScore,
       };
