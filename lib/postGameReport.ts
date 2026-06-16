@@ -202,6 +202,11 @@ type ParsedPlayerLists = {
   awayPlayers: string[];
 };
 
+type TeamBattingHighlights = {
+  homeRun: string | null;
+  notable: string[];
+};
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   return v as Record<string, unknown>;
@@ -273,6 +278,80 @@ function parsePlayerLists(recordResponse: unknown): ParsedPlayerLists {
   };
 }
 
+function playerMentioned(text: string | null | undefined, players: string[] | undefined): boolean {
+  if (!text) return false;
+  return (players ?? []).some((name) => name.length >= 2 && text.includes(name));
+}
+
+function teamOnlyLine(
+  line: string | null | undefined,
+  myPlayers: string[],
+  oppPlayers: string[]
+): string | null {
+  const text = sanitizeTextValue(line);
+  if (!text) return null;
+  const mentionsMy = playerMentioned(text, myPlayers);
+  const mentionsOpp = playerMentioned(text, oppPlayers);
+  if (mentionsOpp) return null;
+  if (myPlayers.length > 0 && !mentionsMy) return null;
+  return text;
+}
+
+function safeTeamNarrativeLine(
+  line: string | null | undefined,
+  myPlayers: string[],
+  oppPlayers: string[]
+): string | null {
+  const text = sanitizeTextValue(line);
+  if (!text) return null;
+  if (playerMentioned(text, oppPlayers)) return null;
+  return text;
+}
+
+function uniqueUsableLines(lines: Array<string | null | undefined>, limit: number): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const text = sanitizeTextValue(line);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function parseTeamBattingHighlights(recordResponse: unknown, side: Side): TeamBattingHighlights {
+  const result = asRecord(recordResponse)?.result;
+  const recordData = asRecord(result)?.recordData;
+  const battersBoxscore = asRecord(recordData && asRecord(recordData)?.battersBoxscore);
+  const rows = battersBoxscore?.[side];
+  if (!Array.isArray(rows)) return { homeRun: null, notable: [] };
+
+  const homeRuns: string[] = [];
+  const notable: string[] = [];
+  for (const item of rows) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const name = sanitizeTextValue(readString(row.name));
+    if (!name) continue;
+    const hr = readNumber(row.hr) ?? 0;
+    const hit = readNumber(row.hit) ?? 0;
+    const rbi = readNumber(row.rbi) ?? 0;
+    if (hr > 0) {
+      homeRuns.push(`${name} ${hr}홈런${rbi > 0 ? ` ${rbi}타점` : ""}`);
+      continue;
+    }
+    if (rbi >= 2) notable.push(`${name} ${rbi}타점`);
+    else if (hit >= 3) notable.push(`${name} ${hit}안타`);
+  }
+
+  return {
+    homeRun: homeRuns.length > 0 ? homeRuns.join(", ") : null,
+    notable: notable.slice(0, 3),
+  };
+}
+
 function resolveGameTimeInstruction(gameTime?: string | null): string | null {
   if (!gameTime) return null;
   const hour = Number.parseInt(gameTime.slice(0, 2), 10);
@@ -306,16 +385,21 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function hasExplicitOpponentLabel(text: string, index: number, oppTeam: string): boolean {
+  const before = compact(text.slice(Math.max(0, index - 28), index));
+  const team = escapeRegExp(oppTeam);
+  return new RegExp(
+    `(?:${team}(?:의|\\s*타자|\\s*선수)?|상대(?:팀)?(?:\\s*타자|\\s*선수)?|상대\\s*중심타선)\\s*$`
+  ).test(before);
+}
+
 function hasUnlabeledOpponentPlayerMention(text: string, oppTeam: string, oppPlayers: string[] | undefined): boolean {
   const names = (oppPlayers ?? []).filter((name) => name.length >= 2);
   for (const name of names) {
     const regex = new RegExp(escapeRegExp(name), "g");
     let match: RegExpExecArray | null;
     while ((match = regex.exec(text)) != null) {
-      const start = Math.max(0, match.index - 14);
-      const end = Math.min(text.length, match.index + name.length + 14);
-      const context = text.slice(start, end);
-      if (!context.includes(oppTeam) && !/(상대|타자|타선|중심타선)/.test(context)) {
+      if (!hasExplicitOpponentLabel(text, match.index, oppTeam)) {
         return true;
       }
     }
@@ -481,7 +565,22 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
     notable: facts.notable,
     wasRainSuspended: facts.wasRainSuspended,
   });
-  return sanitizePostGameReport(report, facts);
+  const sanitized = sanitizePostGameReport(report, facts);
+  if (!hasUnlabeledOpponentPlayerMention(`${sanitized.headline} ${sanitized.content}`, facts.oppTeam, facts.oppPlayers)) {
+    return sanitized;
+  }
+
+  const score = `${facts.myScore}:${facts.oppScore}`;
+  const content =
+    tone === "win"
+      ? `${score} 승리, 오늘 ${facts.myTeam}는 필요한 순간마다 흐름을 우리 쪽으로 끌어왔습니다. 스코어가 말해주듯 마지막까지 무너지지 않은 쪽이 ${facts.myTeam}였습니다. 팬들 입장에서는 결과도 과정도 오래 곱씹을 만한 경기입니다.`
+      : tone === "loss"
+        ? `${score} 패배, 오늘 ${facts.myTeam}는 결정적인 순간을 붙잡지 못했습니다. 복기할 장면은 분명하고, 다음 답은 결국 ${facts.myTeam} 안에서 찾아야 합니다. 팬이라면 그냥 넘기기 어려운 경기입니다.`
+        : `${score} 무승부, 오늘 ${facts.myTeam}는 끝내 한 끗을 넘지 못했습니다. 이겼다고 웃기도, 졌다고 접기도 애매한 경기였습니다. 남는 건 점수보다 놓친 타이밍입니다.`;
+  return {
+    headline: `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 점수판이 먼저 말합니다.`,
+    content,
+  };
 }
 
 function parseJsonBlock(text: string): { headline?: string; content?: string } | null {
@@ -590,6 +689,7 @@ function isSafePostGameCopy(input: { headline: string; content: string; facts: P
   if (/그랜드\s*슬램|만루\s*홈런|만루포/.test(text) && !hasVerifiedFactTerm(input.facts, /그랜드\s*슬램|만루\s*홈런|만루포/)) return false;
   if (/퀄리티\s*스타트|QS|완투승/.test(text) && !hasVerifiedFactTerm(input.facts, /퀄리티\s*스타트|QS|완투승/)) return false;
   if (/영봉승/.test(text) && input.facts.oppScore !== 0) return false;
+  if (hasUnlabeledOpponentPlayerMention(text, input.facts.oppTeam, input.facts.oppPlayers)) return false;
   return true;
 }
 
@@ -637,6 +737,31 @@ export async function fetchPostGameFacts(input: {
     countTeamKeyword(texts, findTeam(input.opponentTeamId).short, /(홈런|솔로포|투런|스리런)/);
   const myPlayers = side === "home" ? playerLists.homePlayers : playerLists.awayPlayers;
   const oppPlayers = side === "home" ? playerLists.awayPlayers : playerLists.homePlayers;
+  const myBattingHighlights = parseTeamBattingHighlights(box, side);
+  const safeTexts = texts
+    .map((line) => safeTeamNarrativeLine(line, myPlayers, oppPlayers))
+    .filter((line): line is string => Boolean(line));
+  const rawWinningPitcher =
+    pitching.winningPitcher ??
+    sanitizeTextValue(extractPitcherName(detail, ["winningpitcher", "winning_pitcher", "winpitcher", "win_pitcher"]));
+  const rawLosingPitcher =
+    pitching.losingPitcher ??
+    sanitizeTextValue(extractPitcherName(detail, ["losingpitcher", "losing_pitcher", "losepitcher", "lose_pitcher"]));
+  const rawSavePitcher =
+    pitching.savePitcher ??
+    sanitizeTextValue(extractPitcherName(detail, ["savepitcher", "save_pitcher"]));
+  const myWon = input.myScore > input.oppScore;
+  const myLost = input.myScore < input.oppScore;
+  const clutchHit = teamOnlyLine(etc.clutchHit, myPlayers, oppPlayers) ??
+    teamOnlyLine(firstByKeyword(safeTexts, /(결승타|역전타|적시타|결정타)/), myPlayers, oppPlayers);
+  const homeRun = myBattingHighlights.homeRun ??
+    teamOnlyLine(etc.homeRun, myPlayers, oppPlayers) ??
+    teamOnlyLine(firstByKeyword(safeTexts, /(홈런|솔로포|투런|스리런)/), myPlayers, oppPlayers);
+  const notable = uniqueUsableLines([
+    ...myBattingHighlights.notable,
+    ...etc.notable.map((line) => teamOnlyLine(line, myPlayers, oppPlayers)),
+    ...safeTexts,
+  ], 5);
 
   return {
     externalId: input.externalId,
@@ -650,19 +775,13 @@ export async function fetchPostGameFacts(input: {
     oppErrors,
     myHomeRuns,
     oppHomeRuns,
-    winningPitcher:
-      pitching.winningPitcher ??
-      sanitizeTextValue(extractPitcherName(detail, ["winningpitcher", "winning_pitcher", "winpitcher", "win_pitcher"])),
-    losingPitcher:
-      pitching.losingPitcher ??
-      sanitizeTextValue(extractPitcherName(detail, ["losingpitcher", "losing_pitcher", "losepitcher", "lose_pitcher"])),
-    savePitcher:
-      pitching.savePitcher ??
-      sanitizeTextValue(extractPitcherName(detail, ["savepitcher", "save_pitcher"])),
-    clutchHit: etc.clutchHit ?? firstByKeyword(texts, /(결승타|역전타|적시타|결정타)/),
-    homeRun: etc.homeRun ?? firstByKeyword(texts, /(홈런|솔로포|투런|스리런)/),
-    error: firstByKeyword(texts, /(실책|에러|E\d)/i),
-    notable: [...etc.notable, ...texts].filter(isUsableNarrativeLine).slice(0, 5),
+    winningPitcher: myWon ? rawWinningPitcher : null,
+    losingPitcher: myLost ? rawLosingPitcher : null,
+    savePitcher: myWon ? rawSavePitcher : null,
+    clutchHit,
+    homeRun,
+    error: firstByKeyword(safeTexts, /(실책|에러|E\d)/i),
+    notable,
     myPlayers,
     oppPlayers,
     recentMomentum,
@@ -752,11 +871,11 @@ export async function generatePostGameReport(input: {
 ${styleBrief}`;
   const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
   const narrativeLines = [
-    input.facts.winningPitcher ? `승리투수: ${input.facts.winningPitcher}` : null,
-    input.facts.losingPitcher ? `패전투수: ${input.facts.losingPitcher}` : null,
-    input.facts.savePitcher ? `세이브: ${input.facts.savePitcher}` : null,
-    input.facts.clutchHit ? `결승타 장면: ${input.facts.clutchHit}` : null,
-    input.facts.homeRun && !input.facts.clutchHit ? `홈런 장면: ${input.facts.homeRun}` : null,
+    input.facts.winningPitcher ? `우리 승리투수: ${input.facts.winningPitcher}` : null,
+    input.facts.losingPitcher ? `우리 패전투수: ${input.facts.losingPitcher}` : null,
+    input.facts.savePitcher ? `우리 세이브: ${input.facts.savePitcher}` : null,
+    input.facts.clutchHit ? `우리 결승타 장면: ${input.facts.clutchHit}` : null,
+    input.facts.homeRun && !input.facts.clutchHit ? `우리 홈런 장면: ${input.facts.homeRun}` : null,
   ].filter(Boolean).join("\n");
   const prompt = `팀:${input.facts.myTeam}
 상대:${input.facts.oppTeam}
@@ -818,8 +937,9 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
       const content = clip(sanitizeBoringFanCopy(parsed?.content ?? "", `${input.facts.externalId}:content`), 320);
       if (!headline || !content) return null;
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
-      if (isNonNightGame(input.facts.gameTime) && hasNightExpression(`${headline} ${content}`)) return null;
-      if (hasUnlabeledOpponentPlayerMention(content, input.facts.oppTeam, input.facts.oppPlayers)) return null;
+      const outputText = `${headline} ${content}`;
+      if (isNonNightGame(input.facts.gameTime) && hasNightExpression(outputText)) return null;
+      if (hasUnlabeledOpponentPlayerMention(outputText, input.facts.oppTeam, input.facts.oppPlayers)) return null;
       if (!isSafePostGameCopy({ headline, content, facts: input.facts })) {
         console.warn("[postgame-llm] rejected unsafe copy", { headline, content });
         return null;
