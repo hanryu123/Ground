@@ -6,6 +6,33 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 import { writeAdminAuditLog } from "@/lib/adminAudit";
 
+async function readActionResponse(res: Response): Promise<{ parsed: unknown; text: string }> {
+  const text = await res.text().catch(() => "");
+  if (!text.trim()) return { parsed: null, text: "" };
+  try {
+    return { parsed: JSON.parse(text), text };
+  } catch {
+    return { parsed: null, text };
+  }
+}
+
+function summarizeActionError(path: string, status: number, body: { parsed: unknown; text: string }): string {
+  const parsed = body.parsed;
+  if (parsed && typeof parsed === "object") {
+    const error = (parsed as Record<string, unknown>).error;
+    if (typeof error === "string" && error.trim()) {
+      return `cron:${path} HTTP ${status} · ${error.slice(0, 260)}`;
+    }
+    return `cron:${path} HTTP ${status} · ${JSON.stringify(parsed).slice(0, 260)}`;
+  }
+  const snippet = body.text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 260);
+  return `cron:${path} HTTP ${status}${snippet ? ` · ${snippet}` : " · empty response"}`;
+}
+
 export async function testClaude(): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) {
@@ -140,17 +167,22 @@ export async function forceCron(
     headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {},
     cache: "no-store",
   });
-  const json = await res.json().catch(() => ({}));
+  const responseBody = await readActionResponse(res);
+  const result = responseBody.parsed ?? {
+    nonJson: true,
+    body: responseBody.text.slice(0, 1000),
+  };
+  const error = res.ok ? null : summarizeActionError(path, res.status, responseBody);
   await writeAdminAuditLog({
     action: `force-cron:${path}`,
     targetType: "cron",
     targetId: path,
-    payload: { teamId: teamId ?? null, status: res.status, result: json },
+    payload: { teamId: teamId ?? null, status: res.status, result },
     result: res.ok ? "success" : "error",
-    error: res.ok ? null : JSON.stringify(json).slice(0, 300),
+    error,
   });
-  if (!res.ok) return { ok: false, error: JSON.stringify(json) };
-  return { ok: true, result: json };
+  if (!res.ok) return { ok: false, error: error ?? `cron:${path} HTTP ${res.status}` };
+  return { ok: true, result };
 }
 
 export type SendPushResult =

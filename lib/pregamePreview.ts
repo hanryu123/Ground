@@ -28,6 +28,8 @@ export type PregamePreviewInput = {
   opponentTeamId: string;
   recentGames: LiveGame[];
   newsContext: string[];
+  llmTimeoutMs?: number;
+  llmRetryTimeoutMs?: number | null;
 };
 
 export type PregamePreviewOutput = {
@@ -173,6 +175,12 @@ function parseStructuredResponse(text: string): { title?: string; lines?: string
   }
 }
 
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export async function generatePregamePreview(input: PregamePreviewInput): Promise<PregamePreviewOutput> {
   const localMomentum = buildTeamMomentumFromLiveGames({
     teamId: input.teamId,
@@ -286,8 +294,17 @@ ${styleBrief}
     }
   };
 
-  const first = await callLlm(8000);
-  const second = first ? null : await callLlm(12000);
+  const firstTimeoutMs =
+    input.llmTimeoutMs ??
+    parsePositiveInt(process.env.PREGAME_LLM_TIMEOUT_MS) ??
+    4500;
+  const retryTimeoutMs =
+    input.llmRetryTimeoutMs !== undefined
+      ? input.llmRetryTimeoutMs
+      : parsePositiveInt(process.env.PREGAME_LLM_RETRY_TIMEOUT_MS);
+
+  const first = await callLlm(firstTimeoutMs);
+  const second = first || !retryTimeoutMs ? null : await callLlm(retryTimeoutMs);
   const best = first ?? second;
   if (!best) return fallback;
   return {

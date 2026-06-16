@@ -16,6 +16,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+const PREVIEW_CRON_SOFT_DEADLINE_MS = 52_000;
 
 /**
  * 경기 프리뷰 cron
@@ -54,6 +55,18 @@ function buildGameCancelCopy(input: {
 }
 
 export async function GET(req: Request) {
+  try {
+    return await runPreviewCron(req);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[cron/preview] unhandled_error", message);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+async function runPreviewCron(req: Request) {
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + PREVIEW_CRON_SOFT_DEADLINE_MS;
   const url = new URL(req.url);
   const auth = authorizeCron(req, url);
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
@@ -96,40 +109,73 @@ export async function GET(req: Request) {
   let previewSent = 0;
   let previewSkipped = 0;
   let previewFailed = 0;
+  let previewDeadlineSkipped = 0;
   let cancelSent = 0;
   let cancelSkipped = 0;
+  let cancelFailed = 0;
 
   await mapWithConcurrency(cancelJobs, 4, async ({ game, teamId }) => {
-    const lock = await markDispatchOnce({
-      alertKind: "cancel",
-      teamScope: teamId,
-      eventKey: `${date}:${game.id}:cancel`,
-      gameExternalId: game.id,
-    });
-    if (!lock) {
-      cancelSkipped += 1;
-      return;
-    }
-    const copy = buildGameCancelCopy({ game, fanTeamId: teamId });
-    const result = await sendTeamTopicNotification({
-      teamId,
-      topicKey: "pitcher",
-      title: copy.title,
-      body: copy.body,
-      url: "/today",
-      payload: {
-        kind: "game-cancel",
+    try {
+      const lock = await markDispatchOnce({
+        alertKind: "cancel",
+        teamScope: teamId,
+        eventKey: `${date}:${game.id}:cancel`,
+        gameExternalId: game.id,
+      });
+      if (!lock) {
+        cancelSkipped += 1;
+        return;
+      }
+      const copy = buildGameCancelCopy({ game, fanTeamId: teamId });
+      const result = await sendTeamTopicNotification({
+        teamId,
+        topicKey: "pitcher",
+        title: copy.title,
+        body: copy.body,
+        url: "/today",
+        payload: {
+          kind: "game-cancel",
+          gameId: game.id,
+          teamId,
+          cancelReason: game.cancelReason ?? "OTHER",
+        },
+        type: "SYSTEM",
+        origin: url.origin,
+      });
+      cancelSent += result.sent;
+    } catch (error) {
+      cancelFailed += 1;
+      console.error("[cron/preview] cancel_job_failed", {
         gameId: game.id,
         teamId,
-        cancelReason: game.cancelReason ?? "OTHER",
-      },
-      type: "SYSTEM",
-      origin: url.origin,
-    });
-    cancelSent += result.sent;
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
+  const heavyBatch = jobs.length > 4;
+
   await mapWithConcurrency(jobs, 2, async ({ game, teamId, opponentTeamId }) => {
+    const eventKey = `${date}:${game.id}:preview`;
+    if (Date.now() >= deadlineAt) {
+      previewSkipped += 1;
+      previewDeadlineSkipped += 1;
+      return;
+    }
+
+    const alreadyDispatched = await prisma.notificationDispatchState.findFirst({
+      where: {
+        alertKind: "preview",
+        teamScope: teamId,
+        eventKey,
+      },
+      select: { id: true },
+    });
+    if (alreadyDispatched) {
+      previewSkipped += 1;
+      return;
+    }
+
     await prisma.pregamePreview.upsert({
       where: { date_teamId: { date, teamId } },
       update: {
@@ -168,6 +214,8 @@ export async function GET(req: Request) {
         opponentTeamId,
         recentGames,
         newsContext,
+        llmTimeoutMs: heavyBatch ? 3500 : 4500,
+        llmRetryTimeoutMs: heavyBatch ? null : 3500,
       });
       await prisma.pregamePreview.update({
         where: { date_teamId: { date, teamId } },
@@ -185,8 +233,13 @@ export async function GET(req: Request) {
         where: { date_teamId: { date, teamId } },
         data: {
           status: "FAILED",
-          error: (error as Error).message.slice(0, 400),
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 400),
         },
+      });
+      console.error("[cron/preview] preview_job_failed", {
+        gameId: game.id,
+        teamId,
+        error: error instanceof Error ? error.message : String(error),
       });
       previewFailed += 1;
       return;
@@ -196,7 +249,7 @@ export async function GET(req: Request) {
     const lock = await markDispatchOnce({
       alertKind: "preview",
       teamScope: teamId,
-      eventKey: `${date}:${game.id}:preview`,
+      eventKey,
       gameExternalId: game.id,
     });
     if (!lock) {
@@ -232,7 +285,12 @@ export async function GET(req: Request) {
     previewSent,
     previewSkipped,
     previewFailed,
+    previewDeadlineSkipped,
     cancelSent,
     cancelSkipped,
+    cancelFailed,
+    jobs: jobs.length,
+    cancelJobs: cancelJobs.length,
+    durationMs: Date.now() - startedAt,
   });
 }
