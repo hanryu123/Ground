@@ -181,6 +181,21 @@ type NaverScheduleGame = {
   savePitcherName?: string;
 };
 
+type KboFetchCacheMode = "cached" | "live";
+
+function naverFetchOptions(cacheMode: KboFetchCacheMode = "cached") {
+  return {
+    headers: {
+      "user-agent": UA,
+      accept: "application/json",
+      referer: "https://m.sports.naver.com/",
+    },
+    ...(cacheMode === "live"
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: 60 } }),
+  };
+}
+
 function resolveGameStatus(raw: NaverScheduleGame): LiveStatus {
   const base = normalizeStatus(raw.statusCode);
   if (base === "CANCEL") return "CANCEL";
@@ -268,7 +283,8 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
  */
 async function fetchKboGamesRange(
   fromDate: string,
-  toDate: string
+  toDate: string,
+  options?: { cacheMode?: KboFetchCacheMode }
 ): Promise<LiveGame[]> {
   // size 미지정 시 Naver 가 10건만 페이지네이션해서 돌려준다 (gameTotalCount 와 별개).
   // 9일치(D-7~D+1) ≈ 최대 45경기라 size=200 으로 한 번에 전부 수신.
@@ -277,14 +293,7 @@ async function fetchKboGamesRange(
     `?fields=basic,statusInfo,homeStarter,awayStarter,winningPitcher,losingPitcher` +
     `&upperCategoryId=kbaseball&categoryId=kbo` +
     `&fromDate=${fromDate}&toDate=${toDate}&size=200`;
-  const res = await fetch(url, {
-    headers: {
-      "user-agent": UA,
-      accept: "application/json",
-      referer: "https://m.sports.naver.com/",
-    },
-    next: { revalidate: 60 },
-  });
+  const res = await fetch(url, naverFetchOptions(options?.cacheMode));
   if (!res.ok) throw new Error(`naver schedule HTTP ${res.status}`);
   const json = (await res.json()) as {
     result?: { games?: NaverScheduleGame[] };
@@ -317,17 +326,11 @@ type NaverGameDetail = {
 };
 
 async function fetchGameStarters(
-  gameId: string
+  gameId: string,
+  cacheMode: KboFetchCacheMode = "cached"
 ): Promise<{ home: string | null; away: string | null }> {
   try {
-    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}`, {
-      headers: {
-        "user-agent": UA,
-        accept: "application/json",
-        referer: "https://m.sports.naver.com/",
-      },
-      next: { revalidate: 60 },
-    });
+    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}`, naverFetchOptions(cacheMode));
     if (!res.ok) return { home: null, away: null };
     const j = (await res.json()) as NaverGameDetail;
     const g = j?.result?.game;
@@ -465,17 +468,11 @@ function parseLineupFromNode(node: unknown, side: "home" | "away"): LineupItem[]
 }
 
 async function fetchGameLineups(
-  gameId: string
+  gameId: string,
+  cacheMode: KboFetchCacheMode = "cached"
 ): Promise<{ homeLineup: LineupItem[] | null; awayLineup: LineupItem[] | null }> {
   try {
-    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/lineup`, {
-      headers: {
-        "user-agent": UA,
-        accept: "application/json",
-        referer: "https://m.sports.naver.com/",
-      },
-      next: { revalidate: 60 },
-    });
+    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/lineup`, naverFetchOptions(cacheMode));
     if (!res.ok) return { homeLineup: null, awayLineup: null };
     const j = (await res.json()) as NaverLineupResponse;
     const lineUpData = j?.result?.lineUpData;
@@ -501,13 +498,16 @@ async function fetchGameLineups(
  *  - 호출 비용 절약: starter 가 이미 채워진 game 은 스킵.
  *  - 병렬 fetch (Promise.all) — 보통 동시 5건 이내.
  */
-async function enrichStarters(games: LiveGame[]): Promise<LiveGame[]> {
+async function enrichStarters(
+  games: LiveGame[],
+  cacheMode: KboFetchCacheMode = "cached"
+): Promise<LiveGame[]> {
   const need = games.filter(
     (g) => g.homePitcher === "미정" || g.awayPitcher === "미정"
   );
   if (need.length === 0) return games;
   const results = await Promise.all(
-    need.map(async (g) => [g.id, await fetchGameStarters(g.id)] as const)
+    need.map(async (g) => [g.id, await fetchGameStarters(g.id, cacheMode)] as const)
   );
   const map = new Map(results);
   return games.map((g) => {
@@ -521,10 +521,17 @@ async function enrichStarters(games: LiveGame[]): Promise<LiveGame[]> {
   });
 }
 
-async function enrichLineups(games: LiveGame[]): Promise<LiveGame[]> {
+async function enrichLineups(
+  games: LiveGame[],
+  options?: { cacheMode?: KboFetchCacheMode; teamId?: string | null }
+): Promise<LiveGame[]> {
   if (games.length === 0) return games;
+  const targets = options?.teamId
+    ? games.filter((g) => g.homeId === options.teamId || g.awayId === options.teamId)
+    : games;
+  if (targets.length === 0) return games;
   const results = await Promise.all(
-    games.map(async (g) => [g.id, await fetchGameLineups(g.id)] as const)
+    targets.map(async (g) => [g.id, await fetchGameLineups(g.id, options?.cacheMode)] as const)
   );
   const map = new Map(results);
   return games.map((g) => {
@@ -543,15 +550,27 @@ async function enrichLineups(games: LiveGame[]): Promise<LiveGame[]> {
  *  - 1차: 네이버 schedule API + 단일 game endpoint 로 선발 보강
  *  - 실패 시: 빈 배열 반환 (Today 탭에 잘못된 목업 경기 노출 방지)
  */
-export async function fetchKboTodayGames(date?: string): Promise<LiveGame[]> {
+export async function fetchKboTodayGames(
+  date?: string,
+  options?: {
+    cacheMode?: KboFetchCacheMode;
+    includeLineups?: boolean;
+    lineupTeamId?: string | null;
+  }
+): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
   if (isKboRegularOffDay(target)) {
     return [];
   }
   try {
-    const games = await fetchKboGamesRange(target, target);
-    const withStarters = await enrichStarters(games);
-    return await enrichLineups(withStarters);
+    const cacheMode = options?.cacheMode ?? "cached";
+    const games = await fetchKboGamesRange(target, target, { cacheMode });
+    const withStarters = await enrichStarters(games, cacheMode);
+    if (options?.includeLineups === false) return withStarters;
+    return await enrichLineups(withStarters, {
+      cacheMode,
+      teamId: options?.lineupTeamId,
+    });
   } catch (err) {
     console.warn(
       `[kbo] live games fetch failed (${(err as Error).message}); returning empty today games`

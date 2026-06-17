@@ -70,8 +70,13 @@ export async function GET(req: Request) {
     // ── 핵심 최적화: 오늘 경기만 가져오기 + standings 병렬 실행 ──────────────
     // 기존: fetchKboSchedule(date) → D-7~D+6 14일치 fetch + enrichStarters 70건+
     // 개선: fetchKboTodayGames(date) → 오늘 경기(최대 5건) + 병렬 실행
+    // 실시간 스코어는 서버 내부 캐시도 타면 안 된다. 라인업은 선택팀 경기만 보강해 로딩을 줄인다.
     const [games, standings] = await Promise.all([
-      fetchKboTodayGames(date),
+      fetchKboTodayGames(date, {
+        cacheMode: "live",
+        includeLineups: Boolean(teamId),
+        lineupTeamId: teamId,
+      }),
       withStandings ? fetchKboStandings() : Promise.resolve([] as import("@/config/standings").StandingRow[]),
     ]);
     const teamGame = teamId

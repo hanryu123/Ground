@@ -49,6 +49,8 @@ export function useKboToday(
   const phase = data?.gamePhase ?? null;
   const requestKey = `${teamId ?? ""}:${withStandings ? "standings" : "lite"}`;
   const latestRequestKey = useRef(requestKey);
+  const requestSeq = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     latestRequestKey.current = requestKey;
@@ -57,6 +59,11 @@ export function useKboToday(
 
   const load = useCallback(async () => {
     const key = requestKey;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    activeController.current?.abort();
+    const controller = new AbortController();
+    activeController.current = controller;
     try {
       const params = new URLSearchParams();
       if (teamId) params.set("teamId", teamId);
@@ -69,12 +76,16 @@ export function useKboToday(
           "cache-control": "no-cache",
           pragma: "no-cache",
         },
+        signal: controller.signal,
       });
       if (!r.ok) return;
       const j = (await r.json()) as KboTodayPayload;
-      if (latestRequestKey.current === key) setData(j);
-    } catch {
+      if (latestRequestKey.current === key && requestSeq.current === seq) setData(j);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       // 네트워크 일시 장애는 조용히 다음 주기로 넘김
+    } finally {
+      if (activeController.current === controller) activeController.current = null;
     }
   }, [requestKey, teamId, withStandings]);
 
@@ -83,7 +94,11 @@ export function useKboToday(
   }, [load]);
 
   useEffect(() => {
-    const intervalMs = phase === "LIVE" ? 12_000 : phase === "PRE" ? 30_000 : 60_000;
+    return () => activeController.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const intervalMs = phase === "LIVE" ? 5_000 : phase === "PRE" ? 20_000 : 45_000;
     const tick = () => {
       if (document.visibilityState !== "hidden") void load();
     };
