@@ -23,6 +23,37 @@ let _listenersRegistered = false;
 let _latestOptions: NativePushOptions | null = null;
 let _lastToken: { value: string; platform: string } | null = null;
 
+function resolvePushTarget(rawUrl: string | undefined): { url: string; internal: boolean } {
+  const fallback = "/today";
+  const value = rawUrl?.trim() || fallback;
+  if (!value.startsWith("http")) {
+    return { url: value.startsWith("/") ? value : `/${value}`, internal: true };
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.origin === window.location.origin) {
+      const path = parsed.pathname === "/" ? fallback : parsed.pathname || fallback;
+      return {
+        url: `${path}${parsed.search}${parsed.hash}` || fallback,
+        internal: true,
+      };
+    }
+    return { url: value, internal: false };
+  } catch {
+    return { url: fallback, internal: true };
+  }
+}
+
+function navigateInNativeApp(rawUrl: string | undefined): void {
+  const target = resolvePushTarget(rawUrl);
+  if (!target.internal) {
+    window.location.href = target.url;
+    return;
+  }
+  window.location.href = target.url;
+}
+
 async function registerTokenWithServer(
   token: string,
   platform: string,
@@ -116,12 +147,7 @@ export async function registerNativePush(options: NativePushOptions): Promise<vo
       "pushNotificationActionPerformed",
       (action: ActionPerformed) => {
         const url: string = (action.notification.data as Record<string, string>)?.url ?? "/";
-        // 딥링크: Today 탭 or 지정 경로로 이동
-        if (url.startsWith("http")) {
-          window.location.href = url;
-        } else {
-          window.location.pathname = url;
-        }
+        navigateInNativeApp(url);
       }
     );
   } else if (_lastToken) {

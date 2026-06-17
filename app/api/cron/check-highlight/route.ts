@@ -273,7 +273,7 @@ export async function GET(req: Request) {
         topicKey: "highlight",
         title: copy.title,
         body: copy.body,
-        url: `${url.origin}/`,
+        url: "/today",
         payload: {
           kind: "highlight",
           gameExternalId: game.externalId,

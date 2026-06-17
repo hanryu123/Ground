@@ -37,11 +37,18 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const rawUrl = event.notification.data?.url || "/today";
-  // 상대 경로면 절대 URL로 변환
-  const targetUrl =
-    rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
-      ? rawUrl
-      : self.location.origin + (rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl);
+  let targetUrl = self.location.origin + "/today";
+  try {
+    const parsed = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+      ? new URL(rawUrl)
+      : new URL(rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname === "/") {
+      parsed.pathname = "/today";
+    }
+    targetUrl = parsed.toString();
+  } catch {
+    targetUrl = self.location.origin + "/today";
+  }
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
