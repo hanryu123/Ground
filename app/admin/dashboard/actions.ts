@@ -194,6 +194,7 @@ export type SendPushResult =
 export async function estimateMarketingPushTargets(input: {
   targetTeamId: string | null;
   testOnly: boolean;
+  testNativeTokenId?: string | null;
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   try {
     const appEnv = resolveServerAppEnv();
@@ -205,16 +206,18 @@ export async function estimateMarketingPushTargets(input: {
               where: { enabled: true, user: { email: adminEmail } },
             })
           : Promise.resolve(0),
-        prisma.nativePushToken.count({
-          where: {
-            enabled: true,
-            platform: "ios",
-            appEnv,
-            ...(input.targetTeamId ? { favoriteTeam: input.targetTeamId } : {}),
-          },
-        }),
+        input.testNativeTokenId
+          ? prisma.nativePushToken.count({
+              where: {
+                id: input.testNativeTokenId,
+                enabled: true,
+                platform: "ios",
+                appEnv,
+              },
+            })
+          : Promise.resolve(0),
       ]);
-      return { ok: true, count: webCount + Math.min(nativeCount, 1) };
+      return { ok: true, count: webCount + nativeCount };
     }
 
     const [webCount, nativeCount] = await Promise.all([
@@ -244,6 +247,7 @@ export async function sendMarketingPush(input: {
   url: string;
   targetTeamId: string | null;
   testOnly: boolean;
+  testNativeTokenId?: string | null;
 }): Promise<SendPushResult> {
   const secret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD;
   if (!secret) return { ok: false, error: "서버 설정 오류: ADMIN 키 미설정" };
@@ -278,15 +282,11 @@ export async function sendMarketingPush(input: {
         : Promise.resolve([]),
       prisma.nativePushToken.findFirst({
         where: {
+          id: input.testNativeTokenId ?? "__missing_test_native_token_id__",
           enabled: true,
           platform: "ios",
           appEnv,
-          ...(targetTeamId ? { favoriteTeam: targetTeamId } : {}),
         },
-        orderBy: [
-          { lastSeenAt: "desc" },
-          { updatedAt: "desc" },
-        ],
         select: { token: true, userId: true, platform: true },
       }),
     ]);

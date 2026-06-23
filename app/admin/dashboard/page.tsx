@@ -683,6 +683,24 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     ...item,
     createdAt: item.createdAt.toISOString(),
   }));
+  const pushTestDevices = nativeRows
+    .filter((row) => row.platform.toLowerCase() === "ios")
+    .sort((a, b) => {
+      const aTime = (a.lastSeenAt ?? a.updatedAt).getTime();
+      const bTime = (b.lastSeenAt ?? b.updatedAt).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, 12)
+    .map((row, index) => {
+      const teamId = normalizeTeamId(row.favoriteTeam ?? row.user.favoriteTeam);
+      const team = teamId === "unknown" ? null : findTeam(teamId);
+      const seenAt = row.lastSeenAt ?? row.updatedAt;
+      return {
+        id: row.id,
+        label: `${index === 0 ? "최근 iPhone" : `iPhone ${index + 1}`} · ${team?.short ?? "팀 미지정"} · ${formatDateTimeKst(seenAt)}`,
+        detail: `${row.appEnv ?? "env?"} · user ${row.userId.slice(0, 14)} · tokenId ${row.id.slice(0, 10)}`,
+      };
+    });
 
   return (
     <main className="min-h-dvh bg-slate-950 text-slate-100">
@@ -800,6 +818,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
           <PushSenderForm
             adminKey={key!}
             teams={TEAMS.map((t) => ({ id: t.id, name: t.name, short: t.short }))}
+            testDevices={pushTestDevices}
           />
         </div>
 

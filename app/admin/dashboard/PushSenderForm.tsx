@@ -4,19 +4,26 @@ import { useState, useTransition } from "react";
 import { estimateMarketingPushTargets, sendMarketingPush } from "./actions";
 
 type Team = { id: string; name: string; short: string };
+type TestDevice = {
+  id: string;
+  label: string;
+  detail: string;
+};
 
 type Props = {
   adminKey: string;
   teams: Team[];
+  testDevices: TestDevice[];
 };
 
 type SendState = "idle" | "sending" | "done" | "error";
 
-export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
+export default function PushSenderForm({ adminKey: _adminKey, teams, testDevices }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [url, setUrl] = useState("/today");
   const [targetTeamId, setTargetTeamId] = useState<string>("");
+  const [testNativeTokenId, setTestNativeTokenId] = useState(testDevices[0]?.id ?? "");
   const [state, setState] = useState<SendState>("idle");
   const [testState, setTestState] = useState<SendState>("idle");
   const [result, setResult] = useState<{ sentCount?: number; error?: string } | null>(null);
@@ -31,6 +38,7 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
       const res = await estimateMarketingPushTargets({
         targetTeamId: targetTeamId || null,
         testOnly,
+        testNativeTokenId: testOnly ? testNativeTokenId || null : null,
       });
       if (res.ok) setEstimate({ count: res.count, loading: false });
       else setEstimate({ error: res.error, loading: false });
@@ -49,6 +57,7 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
         url: url.trim() || "/today",
         targetTeamId: targetTeamId || null,
         testOnly,
+        testNativeTokenId: testOnly ? testNativeTokenId || null : null,
       });
 
       if (res.ok) {
@@ -73,6 +82,7 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
     ? (teams.find((t) => t.id === targetTeamId)?.name ?? targetTeamId)
     : "전체 유저";
   const realSendDisabled = !isValid || state === "sending" || !testConfirmed || !realSendConfirmed;
+  const testSendDisabled = !isValid || testState === "sending" || !testNativeTokenId;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
@@ -157,6 +167,36 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
             ))}
           </select>
         </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+            테스트 디바이스
+          </label>
+          <select
+            value={testNativeTokenId}
+            onChange={(e) => {
+              setTestNativeTokenId(e.target.value);
+              setTestConfirmed(false);
+              setRealSendConfirmed(false);
+              setEstimate({ loading: false });
+            }}
+            className="w-full rounded-lg border border-white/10 bg-slate-800 px-3.5 py-2.5 text-sm text-white outline-none focus:border-white/25 focus:ring-1 focus:ring-white/15"
+          >
+            {testDevices.length === 0 ? (
+              <option value="">등록된 iOS 디바이스 없음</option>
+            ) : (
+              testDevices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.label}
+                </option>
+              ))
+            )}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {testDevices.find((device) => device.id === testNativeTokenId)?.detail
+              ?? "폰에서 앱을 열면 테스트 디바이스가 등록됩니다."}
+          </p>
+        </div>
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -240,10 +280,16 @@ export default function PushSenderForm({ adminKey: _adminKey, teams }: Props) {
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           onClick={() => send(true)}
-          disabled={!isValid || testState === "sending"}
+          disabled={testSendDisabled}
           className="flex-1 rounded-lg border border-white/15 bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {testState === "sending" ? "발송 중…" : testState === "done" ? "✓ 전송됨" : "📱 내 폰으로 테스트"}
+          {testState === "sending"
+            ? "발송 중…"
+            : testState === "done"
+              ? "✓ 전송됨"
+              : testNativeTokenId
+                ? "📱 선택한 폰으로 테스트"
+                : "테스트 디바이스 없음"}
         </button>
         <button
           onClick={() => send(false)}
