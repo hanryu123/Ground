@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApnsConfigStatus, sendApnsDebug } from "@/lib/apns";
 import { isAlphaServerEnv, resolveServerAppEnv } from "@/lib/appEnv";
+import { databaseConnectionStatus, resolveDatabaseUrl } from "@/lib/databaseUrl";
 import { prisma } from "@/lib/prisma";
 import {
   isTopicEnabled,
@@ -44,27 +45,9 @@ function diagnosticServerStatus() {
   return {
     appEnv: resolveServerAppEnv(),
     alpha: isAlphaServerEnv(),
-    hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+    hasDatabaseUrl: Boolean(resolveDatabaseUrl()),
     database: databaseConnectionStatus(),
   };
-}
-
-function databaseConnectionStatus() {
-  const connectionString = process.env.DATABASE_URL?.trim();
-  if (!connectionString) return null;
-
-  try {
-    const url = new URL(connectionString);
-    return {
-      host: url.hostname,
-      name: url.pathname.replace(/^\//, "") || null,
-    };
-  } catch {
-    return {
-      host: null,
-      name: null,
-    };
-  }
 }
 
 function errorMessage(error: unknown): string {

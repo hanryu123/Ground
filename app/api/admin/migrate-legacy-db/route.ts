@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { NextResponse } from "next/server";
+import { resolveDatabaseUrl } from "@/lib/databaseUrl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ function sourceCandidates(): Array<{ key: string; value: string }> {
 }
 
 function resolveConnections() {
-  const target = process.env.DATABASE_URL?.trim() || null;
+  const target = resolveDatabaseUrl()?.trim() || null;
   const targetHost = parseHost(target);
   const source = sourceCandidates().find((candidate) => parseHost(candidate.value) !== targetHost) ?? null;
   return {

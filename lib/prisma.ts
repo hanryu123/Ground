@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { resolveDatabaseUrl } from "@/lib/databaseUrl";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -8,8 +9,13 @@ declare global {
 }
 
 function createClient(): PrismaClient {
+  const connectionString = resolveDatabaseUrl();
+  if (!connectionString) {
+    throw new Error("Database connection string is not configured");
+  }
+
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL!,
+    connectionString,
     max: process.env.NODE_ENV === "production" ? 10 : 5,
   });
   return new PrismaClient({
@@ -22,7 +28,7 @@ function createClient(): PrismaClient {
  * Lazy Proxy: 모듈 평가(import) 시점에 PrismaClient를 생성하지 않고
  * 첫 번째 실제 사용 시점에 생성한다.
  *
- * - 빌드 타임(DATABASE_URL 미설정)에 module evaluation 오류 방지
+ * - 빌드 타임(DB URL 미설정)에 module evaluation 오류 방지
  * - Prisma 7 + @prisma/adapter-pg 조합에서 engineType "client" 에러 방지
  */
 export const prisma = new Proxy({} as PrismaClient, {
