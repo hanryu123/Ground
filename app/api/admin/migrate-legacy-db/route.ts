@@ -34,6 +34,7 @@ function authSecrets(): string[] {
     process.env.ADMIN_SECRET,
     process.env.ADMIN_PASSWORD,
     process.env.CRON_SECRET,
+    process.env.MIGRATION_SECRET,
   ].filter((value): value is string => Boolean(value));
 }
 
