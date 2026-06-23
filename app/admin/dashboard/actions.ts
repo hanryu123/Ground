@@ -1,10 +1,12 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { sendApnsMulticast } from "@/lib/apns";
 import { sendWebPush } from "@/lib/webPushServer";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 import { writeAdminAuditLog } from "@/lib/adminAudit";
+import { resolveServerAppEnv } from "@/lib/appEnv";
 
 async function readActionResponse(res: Response): Promise<{ parsed: unknown; text: string }> {
   const text = await res.text().catch(() => "");
@@ -194,22 +196,43 @@ export async function estimateMarketingPushTargets(input: {
   testOnly: boolean;
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   try {
+    const appEnv = resolveServerAppEnv();
     if (input.testOnly) {
       const adminEmail = process.env.ADMIN_TEST_EMAIL;
-      if (!adminEmail) return { ok: false, error: "ADMIN_TEST_EMAIL 미설정" };
-      const count = await prisma.pushSubscription.count({
-        where: { enabled: true, user: { email: adminEmail } },
-      });
-      return { ok: true, count };
+      const [webCount, nativeCount] = await Promise.all([
+        adminEmail
+          ? prisma.pushSubscription.count({
+              where: { enabled: true, user: { email: adminEmail } },
+            })
+          : Promise.resolve(0),
+        prisma.nativePushToken.count({
+          where: {
+            enabled: true,
+            platform: "ios",
+            appEnv,
+            ...(input.targetTeamId ? { favoriteTeam: input.targetTeamId } : {}),
+          },
+        }),
+      ]);
+      return { ok: true, count: webCount + Math.min(nativeCount, 1) };
     }
 
-    const count = await prisma.pushSubscription.count({
-      where: {
-        enabled: true,
-        ...(input.targetTeamId ? { user: { favoriteTeam: input.targetTeamId } } : {}),
-      },
-    });
-    return { ok: true, count };
+    const [webCount, nativeCount] = await Promise.all([
+      prisma.pushSubscription.count({
+        where: {
+          enabled: true,
+          ...(input.targetTeamId ? { user: { favoriteTeam: input.targetTeamId } } : {}),
+        },
+      }),
+      prisma.nativePushToken.count({
+        where: {
+          enabled: true,
+          appEnv,
+          ...(input.targetTeamId ? { favoriteTeam: input.targetTeamId } : {}),
+        },
+      }),
+    ]);
+    return { ok: true, count: webCount + nativeCount };
   } catch (e) {
     return { ok: false, error: String(e).slice(0, 200) };
   }
@@ -239,30 +262,57 @@ export async function sendMarketingPush(input: {
   const proto = host.includes("localhost") ? "http" : "https";
   const origin = `${proto}://${host}`;
   const clickUrl = `${origin}/api/push/click?n=${record.id}&u=${encodeURIComponent(url)}`;
+  const appEnv = resolveServerAppEnv();
 
   let subs: Array<{ endpoint: string; p256dh: string; auth: string; userId: string }> = [];
+  let nativeTokens: Array<{ token: string; userId: string; platform: string }> = [];
 
   if (testOnly) {
     const adminEmail = process.env.ADMIN_TEST_EMAIL;
-    if (!adminEmail) {
-      await prisma.marketingPush.delete({ where: { id: record.id } });
-      return { ok: false, error: "ADMIN_TEST_EMAIL 미설정" };
-    }
-    subs = await prisma.pushSubscription.findMany({
-      where: { enabled: true, user: { email: adminEmail } },
-      select: { endpoint: true, p256dh: true, auth: true, userId: true },
-    });
+    const [webTargets, nativeTarget] = await Promise.all([
+      adminEmail
+        ? prisma.pushSubscription.findMany({
+            where: { enabled: true, user: { email: adminEmail } },
+            select: { endpoint: true, p256dh: true, auth: true, userId: true },
+          })
+        : Promise.resolve([]),
+      prisma.nativePushToken.findFirst({
+        where: {
+          enabled: true,
+          platform: "ios",
+          appEnv,
+          ...(targetTeamId ? { favoriteTeam: targetTeamId } : {}),
+        },
+        orderBy: [
+          { lastSeenAt: "desc" },
+          { updatedAt: "desc" },
+        ],
+        select: { token: true, userId: true, platform: true },
+      }),
+    ]);
+    subs = webTargets;
+    nativeTokens = nativeTarget ? [nativeTarget] : [];
   } else {
-    subs = await prisma.pushSubscription.findMany({
-      where: {
-        enabled: true,
-        ...(targetTeamId ? { user: { favoriteTeam: targetTeamId } } : {}),
-      },
-      select: { endpoint: true, p256dh: true, auth: true, userId: true },
-    });
+    [subs, nativeTokens] = await Promise.all([
+      prisma.pushSubscription.findMany({
+        where: {
+          enabled: true,
+          ...(targetTeamId ? { user: { favoriteTeam: targetTeamId } } : {}),
+        },
+        select: { endpoint: true, p256dh: true, auth: true, userId: true },
+      }),
+      prisma.nativePushToken.findMany({
+        where: {
+          enabled: true,
+          appEnv,
+          ...(targetTeamId ? { favoriteTeam: targetTeamId } : {}),
+        },
+        select: { token: true, userId: true, platform: true },
+      }),
+    ]);
   }
 
-  if (subs.length === 0) {
+  if (subs.length === 0 && nativeTokens.length === 0) {
     await prisma.marketingPush.delete({ where: { id: record.id } });
     await writeAdminAuditLog({
       action: testOnly ? "send-test-marketing-push" : "send-marketing-push",
@@ -275,23 +325,47 @@ export async function sendMarketingPush(input: {
     return { ok: false, error: "해당 구독자 없음" };
   }
 
-  const results = await mapWithConcurrency(subs, 12, (sub) =>
-    sendWebPush(
-      { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-      { title, body: msgBody, url: clickUrl, teamId: targetTeamId ?? "all" },
-      { favoriteTeam: targetTeamId ?? undefined, origin }
-    )
-  );
+  const results = subs.length > 0
+    ? await mapWithConcurrency(subs, 12, (sub) =>
+        sendWebPush(
+          { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+          { title, body: msgBody, url: clickUrl, teamId: targetTeamId ?? "all" },
+          { favoriteTeam: targetTeamId ?? undefined, origin }
+        )
+      )
+    : [];
 
-  const sentCount = results.filter((r) => r.ok).length;
+  let nativeSentCount = 0;
+  const iosTokens = nativeTokens.filter((row) => row.platform.toLowerCase() === "ios");
+  if (iosTokens.length > 0) {
+    const apnsResult = await sendApnsMulticast({
+      tokens: iosTokens.map((row) => row.token),
+      title,
+      body: msgBody,
+      url: clickUrl,
+      data: { teamId: targetTeamId ?? "all", source: "admin-marketing-push" },
+    });
+    nativeSentCount += apnsResult.ok;
+
+    if (apnsResult.failed.length > 0) {
+      await prisma.nativePushToken.updateMany({
+        where: { token: { in: apnsResult.failed } },
+        data: { enabled: false },
+      });
+    }
+  }
+
+  const webSentCount = results.filter((r) => r.ok).length;
+  const sentCount = webSentCount + nativeSentCount;
+  const total = subs.length + nativeTokens.length;
   await prisma.marketingPush.update({ where: { id: record.id }, data: { sentCount } });
   await writeAdminAuditLog({
     action: testOnly ? "send-test-marketing-push" : "send-marketing-push",
     targetType: "marketingPush",
     targetId: record.id,
-    payload: { title, body: msgBody, url, targetTeamId, testOnly, total: subs.length },
+    payload: { title, body: msgBody, url, targetTeamId, testOnly, total, web: subs.length, native: nativeTokens.length },
     result: "success",
   });
 
-  return { ok: true, id: record.id, sentCount, total: subs.length };
+  return { ok: true, id: record.id, sentCount, total };
 }
