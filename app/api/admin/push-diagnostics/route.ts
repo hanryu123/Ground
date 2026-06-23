@@ -40,6 +40,18 @@ function isAuthorized(req: Request, url: URL): boolean {
   return authSecrets().some((secret) => auth === `Bearer ${secret}` || querySecret === secret);
 }
 
+function diagnosticServerStatus() {
+  return {
+    appEnv: resolveServerAppEnv(),
+    alpha: isAlphaServerEnv(),
+    hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function parseTopic(raw: string | null): TopicKey {
   const topic = raw?.trim() as TopicKey | undefined;
   return topic && TOPIC_KEYS.includes(topic) ? topic : "score";
@@ -207,22 +219,35 @@ export async function GET(req: Request) {
     });
   }
 
-  const rows = await latestNativeRows(teamId);
-  const [nativeTotal, nativeEnabled, iosEnabled, webEnabled] = await Promise.all([
-    prisma.nativePushToken.count(),
-    prisma.nativePushToken.count({ where: { enabled: true } }),
-    prisma.nativePushToken.count({ where: { enabled: true, platform: "ios" } }),
-    prisma.pushSubscription.count({ where: { enabled: true } }),
-  ]);
+  let rows: NativeTokenRow[];
+  let nativeTotal: number;
+  let nativeEnabled: number;
+  let iosEnabled: number;
+  let webEnabled: number;
+  try {
+    rows = await latestNativeRows(teamId);
+    [nativeTotal, nativeEnabled, iosEnabled, webEnabled] = await Promise.all([
+      prisma.nativePushToken.count(),
+      prisma.nativePushToken.count({ where: { enabled: true } }),
+      prisma.nativePushToken.count({ where: { enabled: true, platform: "ios" } }),
+      prisma.pushSubscription.count({ where: { enabled: true } }),
+    ]);
+  } catch (error) {
+    return NextResponse.json({
+      ok: false,
+      error: "database_unavailable",
+      message: errorMessage(error),
+      server: diagnosticServerStatus(),
+      apns: getApnsConfigStatus(),
+      query: { teamId, topic },
+    }, { status: 503 });
+  }
 
   const described = rows.map((row) => describeToken(row, topic));
 
   return NextResponse.json({
     ok: true,
-    server: {
-      appEnv: resolveServerAppEnv(),
-      alpha: isAlphaServerEnv(),
-    },
+    server: diagnosticServerStatus(),
     apns: getApnsConfigStatus(),
     query: { teamId, topic },
     counts: {
