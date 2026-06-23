@@ -412,7 +412,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         }),
       0
     ),
-    safeDashboardQuery(
+    safeDashboardQuery<any[]>(
       "today notification rows",
       () =>
         db.notification.findMany({
@@ -440,7 +440,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         }),
       []
     ),
-    safeDashboardQuery(
+    safeDashboardQuery<any[]>(
       "recent marketing pushes",
       () =>
         db.marketingPush.findMany({
@@ -459,7 +459,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         }),
       []
     ),
-    safeDashboardQuery(
+    safeDashboardQuery<DbTodayGameRow[]>(
       "today game rows",
       () =>
         db.game.findMany({
@@ -488,7 +488,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
       []
     ),
     fetchTodayScoreSnapshotSafe(todayDate),
-    safeDashboardQuery(
+    safeDashboardQuery<any[]>(
       "pending push notifications",
       () =>
         db.pendingPushNotification.findMany({
