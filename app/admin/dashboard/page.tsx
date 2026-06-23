@@ -351,7 +351,7 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
       0
     ),
     safeDashboardQuery("new user count today", () => db.user.count({ where: { createdAt: { gte: todayStart } } }), 0),
-    db.pushSubscription.count({ where: { enabled: true } }),
+    safeDashboardQuery("web push channel count", () => db.pushSubscription.count({ where: { enabled: true } }), 0),
     safeDashboardQuery("native push channel count", () => db.nativePushToken.count({ where: { enabled: true } }), 0),
     safeDashboardQuery<WebPushKpiRow[]>(
       "web push KPI rows",
@@ -391,11 +391,16 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
     ),
     safeDashboardQuery("new web push channels today", () => db.pushSubscription.count({ where: { enabled: true, createdAt: { gte: todayStart } } }), 0),
     safeDashboardQuery("new native push channels today", () => db.nativePushToken.count({ where: { enabled: true, createdAt: { gte: todayStart } } }), 0),
-    db.notification.count({
-      where: {
-        sentAt: { gte: todayStart },
-      },
-    }),
+    safeDashboardQuery(
+      "today notification count",
+      () =>
+        db.notification.count({
+          where: {
+            sentAt: { gte: todayStart },
+          },
+        }),
+      0
+    ),
     safeDashboardQuery(
       "read notification count today",
       () =>
@@ -407,88 +412,108 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
         }),
       0
     ),
-    db.notification.findMany({
-      where: {
-        sentAt: { gte: todayStart },
-      },
-      orderBy: {
-        sentAt: "desc",
-      },
-      select: {
-        id: true,
-        userId: true,
-        type: true,
-        title: true,
-        body: true,
-        sentAt: true,
-        createdAt: true,
-        user: {
-          select: {
-            favoriteTeam: true,
+    safeDashboardQuery(
+      "today notification rows",
+      () =>
+        db.notification.findMany({
+          where: {
+            sentAt: { gte: todayStart },
           },
-        },
-      },
-      take: 3000,
-    }),
-    db.marketingPush.findMany({
-      orderBy: { sentAt: "desc" },
-      take: 30,
-      select: {
-        id: true,
-        title: true,
-        body: true,
-        targetTeamId: true,
-        sentCount: true,
-        clickCount: true,
-        testOnly: true,
-        sentAt: true,
-      },
-    }),
-    db.game.findMany({
-      where: {
-        OR: [
-          { gameDate: { gte: todayStart, lt: todayEnd } },
-          { updatedAt: { gte: todayStart } },
-        ],
-      },
-      orderBy: [{ gameDate: "asc" }, { updatedAt: "desc" }],
-      take: 20,
-      select: {
-        id: true,
-        externalId: true,
-        homeTeam: true,
-        awayTeam: true,
-        homeScore: true,
-        awayScore: true,
-        status: true,
-        gameDate: true,
-        lastSyncedAt: true,
-        updatedAt: true,
-        highlightVideoUrl: true,
-      },
-    }),
+          orderBy: {
+            sentAt: "desc",
+          },
+          select: {
+            id: true,
+            userId: true,
+            type: true,
+            title: true,
+            body: true,
+            sentAt: true,
+            createdAt: true,
+            user: {
+              select: {
+                favoriteTeam: true,
+              },
+            },
+          },
+          take: 3000,
+        }),
+      []
+    ),
+    safeDashboardQuery(
+      "recent marketing pushes",
+      () =>
+        db.marketingPush.findMany({
+          orderBy: { sentAt: "desc" },
+          take: 30,
+          select: {
+            id: true,
+            title: true,
+            body: true,
+            targetTeamId: true,
+            sentCount: true,
+            clickCount: true,
+            testOnly: true,
+            sentAt: true,
+          },
+        }),
+      []
+    ),
+    safeDashboardQuery(
+      "today game rows",
+      () =>
+        db.game.findMany({
+          where: {
+            OR: [
+              { gameDate: { gte: todayStart, lt: todayEnd } },
+              { updatedAt: { gte: todayStart } },
+            ],
+          },
+          orderBy: [{ gameDate: "asc" }, { updatedAt: "desc" }],
+          take: 20,
+          select: {
+            id: true,
+            externalId: true,
+            homeTeam: true,
+            awayTeam: true,
+            homeScore: true,
+            awayScore: true,
+            status: true,
+            gameDate: true,
+            lastSyncedAt: true,
+            updatedAt: true,
+            highlightVideoUrl: true,
+          },
+        }),
+      []
+    ),
     fetchTodayScoreSnapshotSafe(todayDate),
-    db.pendingPushNotification.findMany({
-      where: { status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: {
-        id: true,
-        teamId: true,
-        topicKey: true,
-        title: true,
-        body: true,
-        url: true,
-        type: true,
-        status: true,
-        createdAt: true,
-      },
-    }),
+    safeDashboardQuery(
+      "pending push notifications",
+      () =>
+        db.pendingPushNotification.findMany({
+          where: { status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            teamId: true,
+            topicKey: true,
+            title: true,
+            body: true,
+            url: true,
+            type: true,
+            status: true,
+            createdAt: true,
+          },
+        }),
+      []
+    ),
     fetchRecentCronRuns(db),
-    db.notificationDispatchState.count({ where: { createdAt: { gte: todayStart } } }),
-    db.postGameReport.count({ where: { status: "FAILED", updatedAt: { gte: todayStart } } }),
-    db.pregamePreview.count({ where: { status: "PENDING", updatedAt: { gte: todayStart } } }),
-    db.postGameReport.count({ where: { status: "READY", updatedAt: { gte: todayStart } } }),
+    safeDashboardQuery("today dispatch lock count", () => db.notificationDispatchState.count({ where: { createdAt: { gte: todayStart } } }), 0),
+    safeDashboardQuery("failed postgame count", () => db.postGameReport.count({ where: { status: "FAILED", updatedAt: { gte: todayStart } } }), 0),
+    safeDashboardQuery("pending preview count", () => db.pregamePreview.count({ where: { status: "PENDING", updatedAt: { gte: todayStart } } }), 0),
+    safeDashboardQuery("ready postgame count", () => db.postGameReport.count({ where: { status: "READY", updatedAt: { gte: todayStart } } }), 0),
     fetchRecentAdminAuditLogs(18),
   ]);
 
