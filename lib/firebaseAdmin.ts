@@ -65,7 +65,7 @@ export async function sendFcmNotification(input: {
         payload: {
           aps: {
             sound: "default",
-            badge: 1,
+            badge: 0,
           },
         },
       },
@@ -112,7 +112,7 @@ export async function sendFcmMulticast(input: {
       tokens: batch,
       notification: { title: input.title, body: input.body },
       data: { url: input.url ?? "/", ...(input.data ?? {}) },
-      apns: { payload: { aps: { sound: "default", badge: 1 } } },
+      apns: { payload: { aps: { sound: "default", badge: 0 } } },
       android: { priority: "high" },
     });
     totalOk += response.successCount;

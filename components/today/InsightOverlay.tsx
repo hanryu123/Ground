@@ -230,13 +230,13 @@ function PostGameContent({
       {report?.status === "READY" ? (
         <>
           <p
-            className="mt-4 text-[19px] font-bold leading-snug text-white drop-shadow-md"
+            className="mt-4 text-[18px] font-bold leading-snug text-white drop-shadow-md"
             style={{ textShadow: "0 2px 10px rgba(0,0,0,0.55)" }}
           >
             {report.headline ?? "🔥 [한줄평] 오늘 경기 매운맛 복기"}
           </p>
           <p
-            className="mt-3 text-[14.5px] font-medium leading-relaxed text-white/95"
+            className="mx-auto mt-4 max-w-[36rem] text-left text-[14px] font-medium leading-[1.72] text-white/[0.92]"
             style={{ textShadow: "0 1px 4px rgba(0,0,0,0.35)" }}
           >
             {report.content ?? "경기 내용을 분석 중이야. 곧 매운맛 리포트로 업데이트할게."}

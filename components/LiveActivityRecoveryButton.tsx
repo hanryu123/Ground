@@ -35,7 +35,7 @@ function recoveryMessage(action: string, reason?: string): Status {
     return { tone: "ok", text: "잠금화면 라이브 스코어를 다시 켰어요." };
   }
   if (action === "ended") {
-    return { tone: "ok", text: "오늘 경기가 끝나 종료 상태로 정리했어요." };
+    return { tone: "warn", text: "경기 종료 후에는 새 라이브 스코어를 켜지 않아요." };
   }
   if (reason === "no_payload") {
     return { tone: "warn", text: "오늘 이 팀의 진행 중인 경기가 아직 없어요." };
@@ -55,16 +55,16 @@ export default function LiveActivityRecoveryButton({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({
     tone: "idle",
-    text: "잠금화면 위젯이 꺼졌을 때 즉시 복구합니다.",
+    text: "꺼졌을 때 다시 연결합니다.",
   });
   const theme = getKboTeamThemeByTeamId(teamId);
   const resolvedAccent = theme?.secondary ?? accent;
 
   const containerClass = useMemo(() => {
     if (variant === "settings") {
-      return "rounded-[24px] border border-white/[0.08] bg-black/25 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]";
+      return "rounded-[24px] border border-white/[0.10] bg-[#070a12]/90 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl";
     }
-    return "rounded-[22px] border border-white/[0.12] bg-black/36 p-3 shadow-[0_14px_42px_rgba(0,0,0,0.34)] backdrop-blur-xl";
+    return "rounded-[22px] border border-white/[0.16] bg-[#070a12]/95 p-3 shadow-[0_18px_52px_rgba(0,0,0,0.38)] backdrop-blur-xl";
   }, [variant]);
 
   async function handleRecover() {
@@ -105,7 +105,7 @@ export default function LiveActivityRecoveryButton({
         onClick={handleRecover}
         disabled={busy}
         className="group flex w-full items-center gap-3 text-left transition active:scale-[0.99] disabled:opacity-70"
-        aria-label="오늘 경기 라이브 스코어 다시 켜기"
+        aria-label="잠금 화면에서도 스코어 보기"
       >
         <span
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
@@ -120,7 +120,7 @@ export default function LiveActivityRecoveryButton({
 
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-black tracking-tight text-white">
-            오늘 경기 라이브 스코어 다시 켜기
+            잠금 화면에서도 스코어 보기
           </span>
           <span className={`mt-1 block text-[11px] font-semibold ${statusClass(status.tone)}`}>
             {teamShort} · {status.text}

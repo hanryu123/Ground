@@ -573,10 +573,10 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
   const score = `${facts.myScore}:${facts.oppScore}`;
   const content =
     tone === "win"
-      ? `${score} 승리, 오늘 ${facts.myTeam}는 필요한 순간마다 흐름을 우리 쪽으로 끌어왔습니다. 스코어가 말해주듯 마지막까지 무너지지 않은 쪽이 ${facts.myTeam}였습니다. 팬들 입장에서는 결과도 과정도 오래 곱씹을 만한 경기입니다.`
+      ? `${score} 승리, 오늘 ${facts.myTeam}는 필요한 순간마다 흐름을 우리 쪽으로 끌어왔습니다. 초반의 작은 균열을 놓치지 않았고, 중반 이후에는 점수판을 우리 쪽 언어로 바꿔냈습니다. 스코어가 말해주듯 마지막까지 무너지지 않은 쪽이 ${facts.myTeam}였습니다. 팬들 입장에서는 결과도 과정도 오래 곱씹을 만한 경기입니다.`
       : tone === "loss"
-        ? `${score} 패배, 오늘 ${facts.myTeam}는 결정적인 순간을 붙잡지 못했습니다. 복기할 장면은 분명하고, 다음 답은 결국 ${facts.myTeam} 안에서 찾아야 합니다. 팬이라면 그냥 넘기기 어려운 경기입니다.`
-        : `${score} 무승부, 오늘 ${facts.myTeam}는 끝내 한 끗을 넘지 못했습니다. 이겼다고 웃기도, 졌다고 접기도 애매한 경기였습니다. 남는 건 점수보다 놓친 타이밍입니다.`;
+        ? `${score} 패배, 오늘 ${facts.myTeam}는 결정적인 순간을 붙잡지 못했습니다. 흐름을 되찾을 기회는 있었지만, 그때마다 점수판은 차갑게 반응했습니다. 복기할 장면은 분명하고, 답은 결국 ${facts.myTeam} 안에서 찾아야 합니다. 팬이라면 그냥 넘기기 어려운 경기입니다.`
+        : `${score} 무승부, 오늘 ${facts.myTeam}는 끝내 한 끗을 넘지 못했습니다. 이겼다고 웃기도, 졌다고 접기도 애매한 경기였습니다. 버틴 장면과 놓친 타이밍이 동시에 남았고, 그래서 더 오래 마음에 걸리는 경기입니다. 남는 건 점수보다 흐름을 끝까지 가져오지 못한 감각입니다.`;
   return {
     headline: `🎙️ [캐스터 한줄평] ${facts.myTeam}, 오늘은 점수판이 먼저 말합니다.`,
     content,
@@ -818,7 +818,7 @@ export async function generatePostGameReport(input: {
   });
 
   const system = `너는 ${team} 전담 편파 캐스터야. 직업적 품격(존댓말, 방송 어체)은 지키지만, 감정은 완전히 ${team} 편이야.
-경기 직후 단 하나의 한줄평을 날리는 순간이야 — 통계 브리핑이 아니라, 이 경기를 하나의 문장으로 정의하는 거야.
+경기 직후 한줄평과 짧은 리포트를 전하는 순간이야 — 통계 브리핑이 아니라, 이 경기를 하나의 감정선으로 정의하는 거야.
 중립 절대 금지. 오직 ${team} 팬의 눈으로 이 경기의 본질을 꿰뚫어라.
 
 작성 원칙:
@@ -837,11 +837,11 @@ export async function generatePostGameReport(input: {
 - 커뮤니티에서 찐 팬이 바로 반응하는 현장감으로 써라. 단, 팬 말투를 이유로 데이터에 없는 야구 용어를 꾸며내면 실패
 
 반드시 JSON만 출력:
-{"headline":"🎙️ [캐스터 한줄평] ...","content":"3~4문장 단락"}
+{"headline":"🎙️ [캐스터 한줄평] ...","content":"6~8문장 리포트"}
 
 규칙:
 - headline: 18~56자, 존댓말
-- content: 3~4문장 한 단락(줄바꿈 없이, 문장마다 어휘를 다르게), 존댓말
+- content: 6~8문장, 420~720자 안팎의 한 단락(줄바꿈 없이, 문장마다 어휘를 다르게), 존댓말
 - 우리 팀 관점 고정, 상대팀과 똑같은 내용 재사용 금지
 - "먹히다/먹힌다" 절대 금지
 - 최근 흐름은 아래 "최근 팀 흐름"에 제공된 값만 사용. 제공되지 않은 직전 경기, 어제/전날, 최근 N경기, 연승/연패, 설욕, 복수, 반등, 즉각 반격 언급 금지
@@ -914,7 +914,7 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
         },
         body: JSON.stringify({
           model: ANTHROPIC_MODEL,
-          max_tokens: 360,
+          max_tokens: 900,
           temperature: 0.98,
           system,
           messages: [{ role: "user", content: prompt }],
@@ -934,7 +934,7 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
           .join("\n") ?? "";
       const parsed = parseJsonBlock(text);
       const headline = clip(sanitizeBoringFanCopy(parsed?.headline ?? "", `${input.facts.externalId}:head`), 62);
-      const content = clip(sanitizeBoringFanCopy(parsed?.content ?? "", `${input.facts.externalId}:content`), 320);
+      const content = clip(sanitizeBoringFanCopy(parsed?.content ?? "", `${input.facts.externalId}:content`), 760);
       if (!headline || !content) return null;
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
       const outputText = `${headline} ${content}`;

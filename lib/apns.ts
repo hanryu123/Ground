@@ -258,7 +258,7 @@ export async function sendApnsMulticast(input: {
   const payload = Buffer.from(JSON.stringify({
     aps: {
       alert: { title: input.title, body: input.body },
-      badge: 1,
+      badge: 0,
       sound: "default",
     },
     url: input.url ?? "/",
@@ -424,7 +424,7 @@ export async function sendApnsDebug(input: {
   const payload = Buffer.from(JSON.stringify({
     aps: {
       alert: { title: input.title, body: input.body },
-      badge: 1,
+      badge: 0,
       sound: "default",
     },
     url: input.url ?? "/",

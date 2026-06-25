@@ -1,10 +1,8 @@
 "use client";
 
 import HeroCard from "@/components/HeroCard";
-import DirectorNav from "@/components/DirectorNav";
 import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
 import { useMyTeam } from "@/lib/useMyTeam";
-import { useDirectorMode } from "@/lib/director";
 
 /**
  * /today — 메인 화면 (HeroCard 단독 풀뷰포트).
@@ -20,7 +18,6 @@ import { useDirectorMode } from "@/lib/director";
  */
 export default function TodayPage() {
   const team = useMyTeam();
-  const directorOn = useDirectorMode();
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
@@ -34,7 +31,6 @@ export default function TodayPage() {
           />
         </div>
       </div>
-      {directorOn && <DirectorNav />}
     </div>
   );
 }
