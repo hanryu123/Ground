@@ -59,17 +59,18 @@ private struct ScoreColumn: View {
     let alignTrailing: Bool
 
     var body: some View {
-        VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 4) {
+        VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 3) {
             Text(team)
-                .font(.caption.weight(.bold))
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text("\(score)")
-                .font(.system(size: 46, weight: .black, design: .rounded))
+                .font(.system(size: 40, weight: .black, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
     }
@@ -82,7 +83,87 @@ struct GroundLiveActivityLockScreenView: View {
         let state = context.state
         let accent = context.attributes.accent
 
-        ZStack {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(accent)
+                    Text("G")
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(.black.opacity(0.82))
+                }
+                .frame(width: 22, height: 22)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("GROUND")
+                        .font(.caption2.weight(.black))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.88))
+                    Text(context.attributes.matchupText)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(state.phaseLabel)
+                        .font(.caption2.weight(.black))
+                        .tracking(0.8)
+                        .foregroundStyle(accent)
+                    Text(state.contextLabel)
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                ScoreColumn(team: context.attributes.homeTeam, score: state.homeScore, alignTrailing: false)
+
+                Text(":")
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.28))
+                    .padding(.bottom, 4)
+
+                ScoreColumn(team: context.attributes.awayTeam, score: state.awayScore, alignTrailing: true)
+            }
+
+            HStack(alignment: .center, spacing: 7) {
+                if state.isFinal {
+                    if let result = state.resultLabel {
+                        Text(result)
+                            .font(.caption2.weight(.black))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(accent.opacity(0.95)))
+                            .foregroundStyle(.black.opacity(0.82))
+                    }
+                    if let winningPitcher = state.winningPitcher {
+                        Text("승 \(winningPitcher)")
+                    }
+                    if let losingPitcher = state.losingPitcher {
+                        Text("패 \(losingPitcher)")
+                    }
+                } else if state.isPregame, let start = context.attributes.gameStartEpochMs {
+                    Text(Date(timeIntervalSince1970: start / 1000), style: .relative)
+                    Text("까지")
+                } else if let stadium = context.attributes.stadium, !stadium.isEmpty {
+                    Text(stadium)
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.62))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+        }
+        .padding(.leading, 17)
+        .padding(.trailing, 14)
+        .padding(.vertical, 12)
+        .background(
             LinearGradient(
                 colors: [
                     Color(red: 0.015, green: 0.017, blue: 0.026),
@@ -92,109 +173,20 @@ struct GroundLiveActivityLockScreenView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-
-            GeometryReader { proxy in
-                Circle()
-                    .fill(accent.opacity(0.26))
-                    .blur(radius: 34)
-                    .frame(width: proxy.size.width * 0.62, height: proxy.size.width * 0.62)
-                    .offset(x: proxy.size.width * 0.5, y: -proxy.size.width * 0.42)
-
-                Rectangle()
-                    .fill(accent.opacity(0.95))
-                    .frame(width: 5)
-                    .frame(maxHeight: .infinity)
-                    .offset(x: 0, y: 0)
-            }
-
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 9) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(accent)
-                        Text("G")
-                            .font(.caption.weight(.black))
-                            .foregroundStyle(.black.opacity(0.82))
-                    }
-                    .frame(width: 26, height: 26)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("GROUND")
-                            .font(.caption2.weight(.black))
-                            .tracking(1.4)
-                            .foregroundStyle(.white.opacity(0.88))
-                        Text(context.attributes.matchupText)
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text(state.phaseLabel)
-                            .font(.caption2.weight(.black))
-                            .tracking(1)
-                            .foregroundStyle(accent)
-                        Text(state.contextLabel)
-                            .font(.subheadline.weight(.heavy))
-                            .foregroundStyle(.white)
-                    }
-                }
-
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    ScoreColumn(team: context.attributes.homeTeam, score: state.homeScore, alignTrailing: false)
-
-                    Text(":")
-                        .font(.system(size: 34, weight: .black, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.28))
-                        .padding(.bottom, 4)
-
-                    ScoreColumn(team: context.attributes.awayTeam, score: state.awayScore, alignTrailing: true)
-                }
-
-                HStack(alignment: .center, spacing: 8) {
-                    if state.isFinal {
-                        if let result = state.resultLabel {
-                            Text(result)
-                                .font(.caption.weight(.black))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Capsule().fill(accent.opacity(0.95)))
-                                .foregroundStyle(.black.opacity(0.82))
-                        }
-                        if let winningPitcher = state.winningPitcher {
-                            Text("승 \(winningPitcher)")
-                        }
-                        if let losingPitcher = state.losingPitcher {
-                            Text("패 \(losingPitcher)")
-                        }
-                    } else if state.isPregame, let start = context.attributes.gameStartEpochMs {
-                        Text(Date(timeIntervalSince1970: start / 1000), style: .relative)
-                        Text("까지")
-                    } else if let stadium = context.attributes.stadium, !stadium.isEmpty {
-                        Text(stadium)
-                    }
-
-                    Spacer()
-
-                    Text(state.status)
-                        .font(.caption.weight(.black))
-                        .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(.white.opacity(0.08)))
-                        .overlay(Capsule().stroke(accent.opacity(0.42), lineWidth: 1))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.62))
-            }
-            .padding(.leading, 19)
-            .padding(.trailing, 16)
-            .padding(.vertical, 15)
+        )
+        .overlay(alignment: .topTrailing) {
+            Circle()
+                .fill(accent.opacity(0.22))
+                .blur(radius: 30)
+                .frame(width: 180, height: 180)
+                .offset(x: 66, y: -104)
         }
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(accent.opacity(0.95))
+                .frame(width: 5)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .activityBackgroundTint(Color(red: 0.015, green: 0.017, blue: 0.026))
         .activitySystemActionForegroundColor(accent)
         .widgetURL(URL(string: "https://ground-alpha.vercel.app/today"))
@@ -236,7 +228,7 @@ struct GroundLiveActivityWidget: Widget {
                             .font(.caption2.weight(.black))
                             .tracking(1)
                             .foregroundStyle(accent)
-                        Text(context.state.inning)
+                        Text(context.state.contextLabel)
                             .font(.caption.weight(.heavy))
                             .foregroundStyle(.white.opacity(0.82))
                     }
