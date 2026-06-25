@@ -7,6 +7,46 @@ private extension GroundGameAttributes {
         "\(awayTeam) @ \(homeTeam)"
     }
 
+    var myTeamShort: String {
+        switch teamId.lowercased() {
+        case "lg": return "LG"
+        case "kt": return "KT"
+        case "ssg": return "SSG"
+        case "nc": return "NC"
+        case "doosan": return "두산"
+        case "kia": return "KIA"
+        case "samsung": return "삼성"
+        case "lotte": return "롯데"
+        case "hanwha": return "한화"
+        case "kiwoom": return "키움"
+        default: return teamId.uppercased()
+        }
+    }
+
+    func displayScores(for state: GroundGameAttributes.ContentState) -> (leftTeam: String, leftScore: Int, rightTeam: String, rightScore: Int) {
+        if awayTeam.caseInsensitiveCompare(myTeamShort) == .orderedSame {
+            return (awayTeam, state.awayScore, homeTeam, state.homeScore)
+        }
+        if homeTeam.caseInsensitiveCompare(myTeamShort) == .orderedSame {
+            return (homeTeam, state.homeScore, awayTeam, state.awayScore)
+        }
+        return (homeTeam, state.homeScore, awayTeam, state.awayScore)
+    }
+
+    func resultSummary(for state: GroundGameAttributes.ContentState) -> String? {
+        guard state.isFinal, let result = state.resultLabel else { return nil }
+        switch result {
+        case "승":
+            return "\(myTeamShort) 승리"
+        case "패":
+            return "\(myTeamShort) 패배"
+        case "무":
+            return "무승부"
+        default:
+            return "\(myTeamShort) \(result)"
+        }
+    }
+
     var accent: Color {
         switch teamId.lowercased() {
         case "kia":
@@ -76,28 +116,33 @@ private struct ScoreColumn: View {
     }
 }
 
+private struct ScoreDivider: View {
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(" ")
+                .font(.caption2.weight(.bold))
+            Text(":")
+                .font(.system(size: 28, weight: .black, design: .rounded))
+                .foregroundStyle(.white.opacity(0.28))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 struct GroundLiveActivityLockScreenView: View {
     let context: ActivityViewContext<GroundGameAttributes>
 
     var body: some View {
         let state = context.state
         let accent = context.attributes.accent
+        let scores = context.attributes.displayScores(for: state)
 
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(accent)
-                    Text("G")
-                        .font(.caption2.weight(.black))
-                        .foregroundStyle(.black.opacity(0.82))
-                }
-                .frame(width: 22, height: 22)
-
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("GROUND")
                         .font(.caption2.weight(.black))
-                        .tracking(1.2)
+                        .tracking(1.6)
                         .foregroundStyle(.white.opacity(0.88))
                     Text(context.attributes.matchupText)
                         .font(.caption.weight(.bold))
@@ -111,7 +156,7 @@ struct GroundLiveActivityLockScreenView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(state.phaseLabel)
                         .font(.caption2.weight(.black))
-                        .tracking(0.8)
+                        .tracking(1.2)
                         .foregroundStyle(accent)
                     Text(state.contextLabel)
                         .font(.caption.weight(.heavy))
@@ -121,26 +166,19 @@ struct GroundLiveActivityLockScreenView: View {
                 }
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                ScoreColumn(team: context.attributes.homeTeam, score: state.homeScore, alignTrailing: false)
+            HStack(alignment: .center, spacing: 12) {
+                ScoreColumn(team: scores.leftTeam, score: scores.leftScore, alignTrailing: false)
 
-                Text(":")
-                    .font(.system(size: 28, weight: .black, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.28))
-                    .padding(.bottom, 4)
+                ScoreDivider()
 
-                ScoreColumn(team: context.attributes.awayTeam, score: state.awayScore, alignTrailing: true)
+                ScoreColumn(team: scores.rightTeam, score: scores.rightScore, alignTrailing: true)
             }
 
             HStack(alignment: .center, spacing: 7) {
                 if state.isFinal {
-                    if let result = state.resultLabel {
-                        Text(result)
-                            .font(.caption2.weight(.black))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(accent.opacity(0.95)))
-                            .foregroundStyle(.black.opacity(0.82))
+                    if let resultSummary = context.attributes.resultSummary(for: state) {
+                        Text(resultSummary)
+                            .foregroundStyle(accent)
                     }
                     if let winningPitcher = state.winningPitcher {
                         Text("승 \(winningPitcher)")
@@ -160,9 +198,10 @@ struct GroundLiveActivityLockScreenView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
         }
-        .padding(.leading, 17)
-        .padding(.trailing, 14)
-        .padding(.vertical, 12)
+        .padding(.leading, 18)
+        .padding(.trailing, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 13)
         .background(
             LinearGradient(
                 colors: [
@@ -199,13 +238,14 @@ struct GroundLiveActivityWidget: Widget {
             GroundLiveActivityLockScreenView(context: context)
         } dynamicIsland: { context in
             let accent = context.attributes.accent
+            let scores = context.attributes.displayScores(for: context.state)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(context.attributes.homeTeam)
+                        Text(scores.leftTeam)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white.opacity(0.55))
-                        Text("\(context.state.homeScore)")
+                        Text("\(scores.leftScore)")
                             .font(.title.weight(.black))
                             .monospacedDigit()
                             .foregroundStyle(.white)
@@ -213,10 +253,10 @@ struct GroundLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 3) {
-                        Text(context.attributes.awayTeam)
+                        Text(scores.rightTeam)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white.opacity(0.55))
-                        Text("\(context.state.awayScore)")
+                        Text("\(scores.rightScore)")
                             .font(.title.weight(.black))
                             .monospacedDigit()
                             .foregroundStyle(.white)
@@ -238,7 +278,7 @@ struct GroundLiveActivityWidget: Widget {
                         Capsule()
                             .fill(accent)
                             .frame(width: 24, height: 4)
-                        Text(context.attributes.homeTeam)
+                        Text(scores.leftTeam)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.58))
                         Text(context.attributes.matchupText)
@@ -251,15 +291,15 @@ struct GroundLiveActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                Text("\(context.state.homeScore)")
+                Text("\(scores.leftScore)")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.white)
             } compactTrailing: {
-                Text("\(context.state.awayScore)")
+                Text("\(scores.rightScore)")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(accent)
             } minimal: {
-                Text(context.state.isPregame ? "G" : context.state.scoreText)
+                Text(context.state.isPregame ? "G" : "\(scores.leftScore):\(scores.rightScore)")
                     .font(.caption2.weight(.black))
                     .foregroundStyle(accent)
             }
