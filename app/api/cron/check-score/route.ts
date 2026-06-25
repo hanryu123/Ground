@@ -16,7 +16,7 @@ import {
   sendClutchAlerts,
 } from "@/lib/score/clutchAlert";
 import { authorizeCron } from "@/services/notificationService";
-import { isKboGameHour } from "@/lib/cronGuard";
+import { isKboGameHour, isKboScoreHardQuietHour } from "@/lib/cronGuard";
 import type { LiveScoreGame } from "@/lib/score/types";
 
 export const runtime = "nodejs";
@@ -68,6 +68,7 @@ type RouteSummary = {
   deferredTasks: string[];
   skipped?: string;
   clearedGames?: number;
+  cacheUntil?: string;
 };
 
 const DEFAULT_RESPONSE_BUDGET_MS = 8500;
@@ -79,6 +80,17 @@ const MIN_RELAY_BUDGET_MS = 4600;
 const MIN_CLUTCH_BUDGET_MS = 5200;
 const SCORE_LLM_TIMEOUT_MS = 2200;
 const SCORE_PUSH_TIMEOUT_MS = 2200;
+const SUSPENDED_ALL_DONE_CACHE_MS = 5 * 60 * 1000;
+
+type ScoreCronCompletionCache = {
+  targetDate: string;
+  reason: "ALL_DONE" | "ALL_SUSPENDED_OR_DONE";
+  untilMs: number;
+  statuses: string[];
+  checkedAtMs: number;
+};
+
+let completionCache: ScoreCronCompletionCache | null = null;
 
 function isFastMode(url: URL): boolean {
   const raw = (url.searchParams.get("fast") ?? "").toLowerCase();
@@ -109,6 +121,66 @@ function hasBudget(deadlineAt: number, minMs: number): boolean {
 
 function deferOnce(summary: RouteSummary, task: string) {
   if (!summary.deferredTasks.includes(task)) summary.deferredTasks.push(task);
+}
+
+function kstEndOfScoreQuietWindow(date: string): Date {
+  return new Date(`${date}T13:00:00+09:00`);
+}
+
+function nextKstScoreResumeTime(now: Date): Date {
+  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
+  const kst = new Date(kstMs);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(kst.getUTCDate()).padStart(2, "0");
+  const currentDayResume = kstEndOfScoreQuietWindow(`${y}-${m}-${d}`);
+  if (now.getTime() < currentDayResume.getTime()) return currentDayResume;
+  const nextKstMidnightMs = Date.UTC(y, kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 60 * 60 * 1000;
+  const next = new Date(nextKstMidnightMs + 13 * 60 * 60 * 1000);
+  return next;
+}
+
+function gameStatuses(games: LiveScoreGame[]): string[] {
+  return games.map((game) => game.status);
+}
+
+function allGamesDoneOrPaused(games: LiveScoreGame[]): boolean {
+  return games.length > 0 && games.every((game) =>
+    game.status === "RESULT" || game.status === "CANCEL" || game.status === "SUSPENDED"
+  );
+}
+
+function rememberAllGamesDone(targetDate: string, games: LiveScoreGame[], nowMs = Date.now()) {
+  if (!allGamesDoneOrPaused(games)) {
+    if (completionCache?.targetDate === targetDate) completionCache = null;
+    return null;
+  }
+
+  const hasSuspended = games.some((game) => game.status === "SUSPENDED");
+  const until = hasSuspended
+    ? new Date(nowMs + SUSPENDED_ALL_DONE_CACHE_MS)
+    : nextKstScoreResumeTime(new Date(nowMs));
+  completionCache = {
+    targetDate,
+    reason: hasSuspended ? "ALL_SUSPENDED_OR_DONE" : "ALL_DONE",
+    untilMs: until.getTime(),
+    statuses: gameStatuses(games),
+    checkedAtMs: nowMs,
+  };
+  return completionCache;
+}
+
+function readFreshCompletionCache(targetDate: string, nowMs = Date.now()): ScoreCronCompletionCache | null {
+  if (!completionCache) return null;
+  if (completionCache.targetDate !== targetDate) {
+    completionCache = null;
+    return null;
+  }
+  if (completionCache.untilMs <= nowMs) {
+    completionCache = null;
+    return null;
+  }
+  return completionCache;
 }
 
 const SCORE_NAVER_UA =
@@ -223,6 +295,34 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
   }
 
+  const targetDate = todayKstDate();
+  const dev = readScoreCronDevOverrides(url);
+
+  if (isKboScoreHardQuietHour() && dev.tick == null) {
+    return NextResponse.json({
+      ok: true,
+      skipped: "KBO_SCORE_HARD_QUIET_HOURS",
+      targetDate,
+      quietWindow: "01:00-13:00 KST",
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (dev.tick == null) {
+    const cached = readFreshCompletionCache(targetDate);
+    if (cached) {
+      return NextResponse.json({
+        ok: true,
+        skipped: cached.reason,
+        fastPath: true,
+        targetDate,
+        cacheUntil: new Date(cached.untilMs).toISOString(),
+        cachedStatuses: cached.statuses,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+  }
+
   // 경기 시간대 외에는 즉시 종료 (주중 18~22:30, 주말 14~21시)
   // force=1 파라미터로 수동 트리거 시 우회 가능
   if (!isKboGameHour() && !url.searchParams.get("force")) {
@@ -231,10 +331,8 @@ export async function GET(req: Request) {
 
   const fastMode = isFastMode(url);
   const clutchEnabled = url.searchParams.get("clutch") === "1";
-  const targetDate = todayKstDate();
   const isOffDay = isKboRegularOffDay(targetDate);
   const triggerSource = url.searchParams.get("source") ?? "unknown";
-  const dev = readScoreCronDevOverrides(url);
 
   // 월요일 휴식일에는 DB 로깅/정리 작업도 하지 않고 즉시 응답한다.
   // cron-job.org는 force=1로 호출하므로, 이 빠른 경로가 없으면 DB cold start만으로도 504가 날 수 있다.
@@ -350,8 +448,10 @@ export async function GET(req: Request) {
       const cleared = await prisma.game.deleteMany({
         where: { gameDate: { gte: start, lt: end } },
       });
+      const cached = rememberAllGamesDone(targetDate, snapshot);
       summary.skipped = snapshot.length === 0 ? "NO_GAMES" : "ALL_CANCELLED";
       summary.clearedGames = cleared.count;
+      if (cached) summary.cacheUntil = new Date(cached.untilMs).toISOString();
       summary.durationMs = Date.now() - startedAt;
       await finishCronRun({
         id: runId,
@@ -615,6 +715,8 @@ export async function GET(req: Request) {
       }
     }
 
+    const cached = rememberAllGamesDone(targetDate, snapshot);
+    if (cached) summary.cacheUntil = new Date(cached.untilMs).toISOString();
     summary.durationMs = Date.now() - startedAt;
     await finishCronRun({
       id: runId,

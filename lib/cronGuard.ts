@@ -6,6 +6,9 @@
  *   주말(토~일): 13:00 ~ 21:00
  *   월요일: false (KBO 정기 휴식일)
  *
+ * isKboScoreHardQuietHour — Neon 보호용 절대 quiet window (check-score)
+ *   매일 01:00 ~ 13:00 KST: force=1이어도 DB를 깨우지 않는다.
+ *
  * isKboPostgameHour — 경기 종료 후 구간 (postgame)
  *   주중(화~금): 21:00 ~ 23:30
  *   주말(토~일): 19:30 ~ 22:30
@@ -13,9 +16,9 @@
  */
 
 export function isKboGameHour(now?: Date): boolean {
-  const kst = toKst(now ?? new Date());
-  const day      = kst.getDay();
-  const totalMin = kst.getHours() * 60 + kst.getMinutes();
+  const kst = toKstParts(now ?? new Date());
+  const day      = kst.day;
+  const totalMin = kst.hours * 60 + kst.minutes;
 
   if (day === 1) return false; // 월요일 휴식
 
@@ -25,10 +28,16 @@ export function isKboGameHour(now?: Date): boolean {
     : totalMin >= 17 * 60 + 30 && totalMin < 22 * 60 + 30;  // 17:30~22:30
 }
 
+export function isKboScoreHardQuietHour(now?: Date): boolean {
+  const kst = toKstParts(now ?? new Date());
+  const totalMin = kst.hours * 60 + kst.minutes;
+  return totalMin >= 1 * 60 && totalMin < 13 * 60;
+}
+
 export function isKboPostgameHour(now?: Date): boolean {
-  const kst = toKst(now ?? new Date());
-  const day      = kst.getDay();
-  const totalMin = kst.getHours() * 60 + kst.getMinutes();
+  const kst = toKstParts(now ?? new Date());
+  const day      = kst.day;
+  const totalMin = kst.hours * 60 + kst.minutes;
 
   if (day === 1) return false; // 월요일 휴식
 
@@ -38,6 +47,11 @@ export function isKboPostgameHour(now?: Date): boolean {
     : totalMin >= 21 * 60      && totalMin < 23 * 60 + 30;  // 21:00~23:30
 }
 
-function toKst(date: Date): Date {
-  return new Date(date.getTime() + 9 * 60 * 60 * 1000);
+function toKstParts(date: Date): { day: number; hours: number; minutes: number } {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    day: kst.getUTCDay(),
+    hours: kst.getUTCHours(),
+    minutes: kst.getUTCMinutes(),
+  };
 }
