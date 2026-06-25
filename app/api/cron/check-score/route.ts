@@ -9,6 +9,7 @@ import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
 import { pushLiveActivityForGame } from "@/lib/liveActivityPush";
+import { sendPregameLiveActivityStarts } from "@/lib/liveActivityAutoStart";
 import {
   fetchClutchData,
   detectClutchSituation,
@@ -52,6 +53,10 @@ type RouteSummary = {
   liveActivityFailed: number;
   liveActivityEnded: number;
   liveActivitySubscriptions: number;
+  liveActivityStartSent: number;
+  liveActivityStartDisabled: number;
+  liveActivityStartTargets: number;
+  liveActivityStartSkipped: number;
   errors: number;
   failedGameIds: string[];
   snapshotCount: number;
@@ -68,6 +73,7 @@ type RouteSummary = {
 const DEFAULT_RESPONSE_BUDGET_MS = 8500;
 const MIN_LOOP_BUDGET_MS = 900;
 const MIN_ALERT_BUDGET_MS = 3600;
+const MIN_LIVE_ACTIVITY_START_BUDGET_MS = 2600;
 const MIN_LIVE_ACTIVITY_BUDGET_MS = 1800;
 const MIN_RELAY_BUDGET_MS = 4600;
 const MIN_CLUTCH_BUDGET_MS = 5200;
@@ -266,6 +272,10 @@ export async function GET(req: Request) {
     liveActivityFailed: 0,
     liveActivityEnded: 0,
     liveActivitySubscriptions: 0,
+    liveActivityStartSent: 0,
+    liveActivityStartDisabled: 0,
+    liveActivityStartTargets: 0,
+    liveActivityStartSkipped: 0,
     errors: 0,
     failedGameIds: [],
     snapshotCount: 0,
@@ -291,6 +301,28 @@ export async function GET(req: Request) {
       snapshot = [];
     }
     summary.snapshotCount = snapshot.length;
+
+    if (snapshot.length > 0) {
+      if (hasBudget(deadlineAt, MIN_LIVE_ACTIVITY_START_BUDGET_MS)) {
+        try {
+          const autoStart = await sendPregameLiveActivityStarts({
+            games: snapshot,
+            origin: url.origin,
+            targetDate,
+          });
+          summary.liveActivityStartSent += autoStart.sent;
+          summary.liveActivityStartDisabled += autoStart.disabled;
+          summary.liveActivityStartTargets += autoStart.targets;
+          summary.liveActivityStartSkipped += autoStart.skipped;
+          summary.disabled += autoStart.disabled;
+        } catch (e) {
+          summary.errors += 1;
+          console.error("[check-score] live activity auto-start failed", e);
+        }
+      } else {
+        deferOnce(summary, "live-activity-start");
+      }
+    }
 
     if (snapshot.length === 0 || snapshot.every((game) => game.status === "CANCEL")) {
       if (snapshot.length > 0) {
@@ -349,6 +381,9 @@ export async function GET(req: Request) {
             awayTeam: game.awayTeam,
             homeScore: game.homeScore,
             awayScore: game.awayScore,
+            currentInning: game.currentInning,
+            currentInningHalf: game.currentInningHalf,
+            currentInningLabel: game.currentInningLabel,
             status: game.status,
             gameDate: game.gameDate,
             lastSyncedAt: new Date(),
@@ -359,6 +394,9 @@ export async function GET(req: Request) {
             awayTeam: game.awayTeam,
             homeScore: game.homeScore,
             awayScore: game.awayScore,
+            currentInning: game.currentInning,
+            currentInningHalf: game.currentInningHalf,
+            currentInningLabel: game.currentInningLabel,
             status: game.status,
             gameDate: game.gameDate,
             endedAt: game.status === "RESULT" ? new Date() : null,
@@ -382,6 +420,10 @@ export async function GET(req: Request) {
         const homeDelta = game.homeScore - previous.homeScore;
         const awayDelta = game.awayScore - previous.awayScore;
         const scoreChanged = homeDelta > 0 || awayDelta > 0;
+        const inningChanged =
+          game.currentInning !== previous.currentInning ||
+          game.currentInningHalf !== previous.currentInningHalf ||
+          game.currentInningLabel !== previous.currentInningLabel;
         const justEnded = previous.status !== "RESULT" && game.status === "RESULT";
         const justCancelled = previous.status !== "CANCEL" && game.status === "CANCEL";
         const justSuspended = previous.status !== "SUSPENDED" && game.status === "SUSPENDED";
@@ -438,7 +480,7 @@ export async function GET(req: Request) {
           deferOnce(summary, `cancel:${game.externalId}`);
         }
 
-        if (scoreChanged || justEnded || justCancelled || justSuspended) {
+        if (scoreChanged || inningChanged || justEnded || justCancelled || justSuspended) {
           if (hasBudget(deadlineAt, MIN_LIVE_ACTIVITY_BUDGET_MS)) {
             try {
               const liveActivity = await pushLiveActivityForGame(game);

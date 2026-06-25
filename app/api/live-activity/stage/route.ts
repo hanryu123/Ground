@@ -88,6 +88,7 @@ export async function GET(req: Request) {
   const teamId = (url.searchParams.get("teamId") ?? "lg").trim().toLowerCase();
   const mode = url.searchParams.get("mode");
   const forceMock = url.searchParams.get("mock") === "1";
+  const allowMockFallback = url.searchParams.get("mockFallback") !== "0";
 
   if (forceMock) {
     return jsonNoStore({ ok: true, source: "mock", payload: buildMockPayload(teamId, mode) });
@@ -101,6 +102,13 @@ export async function GET(req: Request) {
     ]);
     const game = games.find((item) => item.homeId === teamId || item.awayId === teamId);
     if (!game) {
+      if (!allowMockFallback) {
+        return jsonNoStore({
+          ok: true,
+          source: "none:no-team-game",
+          payload: null,
+        });
+      }
       return jsonNoStore({
         ok: true,
         source: "mock:no-team-game",
@@ -150,6 +158,17 @@ export async function GET(req: Request) {
 
     return jsonNoStore({ ok: true, source: "live", payload });
   } catch (error) {
+    if (!allowMockFallback) {
+      return jsonNoStore(
+        {
+          ok: false,
+          source: "none:error",
+          error: error instanceof Error ? error.message : "unknown_error",
+          payload: null,
+        },
+        { status: 200 }
+      );
+    }
     return jsonNoStore(
       {
         ok: true,

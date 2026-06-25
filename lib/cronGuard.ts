@@ -1,9 +1,9 @@
 /**
  * KST 기준 경기 시간대 가드.
  *
- * isKboGameHour  — 경기 진행 중 구간 (check-score, live-events)
- *   주중(화~금): 18:00 ~ 22:30
- *   주말(토~일): 14:00 ~ 21:00
+ * isKboGameHour  — 경기 전 Live Activity 대기 + 경기 진행 중 구간 (check-score, live-events)
+ *   주중(화~금): 17:30 ~ 22:30
+ *   주말(토~일): 13:00 ~ 21:00
  *   월요일: false (KBO 정기 휴식일)
  *
  * isKboPostgameHour — 경기 종료 후 구간 (postgame)
@@ -21,8 +21,8 @@ export function isKboGameHour(now?: Date): boolean {
 
   const isWeekend = day === 0 || day === 6;
   return isWeekend
-    ? totalMin >= 14 * 60 && totalMin < 21 * 60        // 14:00~21:00
-    : totalMin >= 18 * 60 && totalMin < 22 * 60 + 30;  // 18:00~22:30
+    ? totalMin >= 13 * 60 && totalMin < 21 * 60        // 13:00~21:00
+    : totalMin >= 17 * 60 + 30 && totalMin < 22 * 60 + 30;  // 17:30~22:30
 }
 
 export function isKboPostgameHour(now?: Date): boolean {

@@ -35,7 +35,8 @@ export type AlertKind =
   | "highlight"
   | "cancel"
   | "rain-delay"
-  | "clutch";
+  | "clutch"
+  | "live-activity-start";
 
 export type SubscriptionTopics = Partial<Record<TopicKey, boolean>> & {
   /** 구독을 만든 클라이언트 환경. 알파 서버는 알파 구독에만 푸시한다. */

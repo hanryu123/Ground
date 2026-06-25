@@ -162,6 +162,9 @@ model Game {
   awayTeam               String
   homeScore              Int        @default(0)
   awayScore              Int        @default(0)
+  currentInning          Int?
+  currentInningHalf      String?
+  currentInningLabel     String?
   status                 GameStatus @default(BEFORE)
   isLineupNotified       Boolean    @default(false)
   gameDate               DateTime?

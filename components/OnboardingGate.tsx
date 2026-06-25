@@ -8,6 +8,7 @@ import OnboardingTutorial, { TUTORIAL_SEEN_KEY } from "./OnboardingTutorial";
 import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
 import { registerNativePush } from "@/lib/nativePush";
 import { getOrCreateNotifyUserId } from "@/lib/webPushClient";
+import { recoverLiveActivityForTeam } from "@/lib/liveActivityRecovery";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -70,6 +71,9 @@ export default function OnboardingGate({
     try {
       const userId = getOrCreateNotifyUserId();
       void registerNativePush({ userId, favoriteTeam: teamId });
+      void recoverLiveActivityForTeam(teamId).catch((error) => {
+        console.warn("[liveActivityRecovery] failed:", error);
+      });
     } catch {
       // 웹 환경에서는 무시
     }

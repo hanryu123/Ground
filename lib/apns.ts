@@ -156,6 +156,50 @@ function sendApnsRequest(input: {
   });
 }
 
+function sendApnsBackgroundRequest(input: {
+  client: http2.ClientHttp2Session;
+  token: string;
+  jwt: string;
+  topic: string;
+  payload: Buffer;
+}): Promise<{ ok: boolean; disable: boolean; status: number; reason?: string }> {
+  return new Promise((resolve) => {
+    const req = input.client.request({
+      ":method": "POST",
+      ":path": `/3/device/${input.token}`,
+      authorization: `bearer ${input.jwt}`,
+      "apns-topic": input.topic,
+      "apns-push-type": "background",
+      "apns-priority": "5",
+      "content-type": "application/json",
+    });
+
+    let status = 0;
+    let body = "";
+
+    req.setEncoding("utf8");
+    req.on("response", (headers) => {
+      status = Number(headers[":status"] ?? 0);
+    });
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("error", (error) => {
+      resolve({ ok: false, disable: false, status, reason: error.message });
+    });
+    req.on("end", () => {
+      const reason = body ? safeReason(body) : undefined;
+      resolve({
+        ok: status >= 200 && status < 300,
+        disable: status === 410 || reason === "BadDeviceToken" || reason === "Unregistered",
+        status,
+        reason,
+      });
+    });
+    req.end(input.payload);
+  });
+}
+
 function sendApnsLiveActivityRequest(input: {
   client: http2.ClientHttp2Session;
   token: string;
@@ -244,6 +288,53 @@ export async function sendApnsMulticast(input: {
           status: result.status,
           reason: result.reason,
           tokenPrefix: token.slice(0, 8),
+        });
+      }
+    }
+  } finally {
+    client.close();
+  }
+
+  return { ok, failed };
+}
+
+export async function sendApnsSilentMulticast(input: {
+  tokens: string[];
+  payload: Record<string, unknown>;
+}): Promise<ApnsResult> {
+  if (input.tokens.length === 0) return { ok: 0, failed: [] };
+
+  const config = getApnsConfig();
+  const jwt = createJwt();
+  const payload = Buffer.from(JSON.stringify({
+    aps: { "content-available": 1 },
+    ...input.payload,
+  }));
+
+  const client = http2.connect(`https://${config.host}`);
+  const failed: string[] = [];
+  let ok = 0;
+
+  try {
+    for (const token of input.tokens) {
+      const result = await sendApnsBackgroundRequest({
+        client,
+        token,
+        jwt,
+        topic: config.topic,
+        payload,
+      });
+
+      if (result.ok) {
+        ok += 1;
+      } else if (result.disable) {
+        failed.push(token);
+      } else {
+        console.warn("[apns-silent] delivery failed", {
+          status: result.status,
+          reason: result.reason,
+          tokenPrefix: token.slice(0, 8),
+          host: config.host,
         });
       }
     }
