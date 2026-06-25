@@ -27,6 +27,8 @@ type StatusState = {
   tone: "idle" | "ok" | "error";
 };
 
+const LIVE_ACTIVITY_POLL_MS = 12_000;
+
 export default function LiveActivityStageControls({ teamId }: Props) {
   const [availability, setAvailability] = useState<string>("checking");
   const [payload, setPayload] = useState<GroundLiveActivityPayload | null>(null);
@@ -35,6 +37,7 @@ export default function LiveActivityStageControls({ teamId }: Props) {
     tone: "idle",
   });
   const [busy, setBusy] = useState(false);
+  const [autoSync, setAutoSync] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +84,7 @@ export default function LiveActivityStageControls({ teamId }: Props) {
         if (action === "start") await startLiveActivityStage(loaded.payload);
         else if (action === "update") await updateLiveActivityStage(loaded.payload);
         else await endLiveActivityStage(loaded.payload);
+        setAutoSync(action !== "end" && !mode);
         setStatus({
           label: `${action} ok`,
           detail: `${loaded.payload.inning} · ${loaded.payload.homeTeam} ${loaded.payload.homeScore}:${loaded.payload.awayScore} ${loaded.payload.awayTeam} · ${loaded.source}`,
@@ -98,6 +102,50 @@ export default function LiveActivityStageControls({ teamId }: Props) {
     },
     [loadPayload]
   );
+
+  useEffect(() => {
+    if (!autoSync) return;
+
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const loaded = await loadPayload();
+        if (cancelled) return;
+        if (loaded.payload.phase === "FINAL" || loaded.payload.phase === "CANCEL") {
+          await endLiveActivityStage(loaded.payload);
+          if (cancelled) return;
+          setAutoSync(false);
+          setStatus({
+            label: "auto end ok",
+            detail: `${loaded.payload.inning} · ${loaded.payload.homeTeam} ${loaded.payload.homeScore}:${loaded.payload.awayScore} ${loaded.payload.awayTeam} · ${loaded.source}`,
+            tone: "ok",
+          });
+          return;
+        }
+
+        await updateLiveActivityStage(loaded.payload);
+        if (cancelled) return;
+        setStatus({
+          label: "auto update ok",
+          detail: `${loaded.payload.inning} · ${loaded.payload.homeTeam} ${loaded.payload.homeScore}:${loaded.payload.awayScore} ${loaded.payload.awayTeam} · ${loaded.source}`,
+          tone: "ok",
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setStatus({
+          label: "auto update failed",
+          detail: error instanceof Error ? error.message : "unknown_error",
+          tone: "error",
+        });
+      }
+    };
+
+    const interval = window.setInterval(() => void sync(), LIVE_ACTIVITY_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [autoSync, loadPayload]);
 
   return (
     <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-40 rounded-lg border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-md">
@@ -118,6 +166,10 @@ export default function LiveActivityStageControls({ teamId }: Props) {
           {availability}
         </span>
       </div>
+
+      <p className="mb-2 text-[11px] font-semibold text-white/45">
+        {autoSync ? `auto sync ${LIVE_ACTIVITY_POLL_MS / 1000}s` : "manual sync"}
+      </p>
 
       {status.detail && (
         <p
