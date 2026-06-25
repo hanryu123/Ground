@@ -45,6 +45,12 @@ private extension GroundGameAttributes.ContentState {
         if isCancelled { return "CANCELLED" }
         return "LIVE"
     }
+
+    var contextLabel: String {
+        if isFinal { return "경기 종료" }
+        if isCancelled { return status }
+        return inning
+    }
 }
 
 private struct ScoreColumn: View {
@@ -131,7 +137,7 @@ struct GroundLiveActivityLockScreenView: View {
                             .font(.caption2.weight(.black))
                             .tracking(1)
                             .foregroundStyle(accent)
-                        Text(state.inning)
+                        Text(state.contextLabel)
                             .font(.subheadline.weight(.heavy))
                             .foregroundStyle(.white)
                     }
