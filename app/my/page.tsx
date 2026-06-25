@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
 import { TEAMS } from "@/lib/teams";
 import { setMyTeam, useMyTeam } from "@/lib/useMyTeam";
+import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -71,6 +72,14 @@ export default function MyPage() {
               </p>
             </motion.div>
           </AnimatePresence>
+          <div className="mt-7">
+            <LiveActivityRecoveryButton
+              teamId={team.id}
+              teamShort={team.short}
+              accent={team.accent}
+              variant="settings"
+            />
+          </div>
         </div>
       </div>
 

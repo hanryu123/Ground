@@ -1,5 +1,6 @@
 import Foundation
 import Capacitor
+import UIKit
 
 #if canImport(ActivityKit)
 import ActivityKit
@@ -209,7 +210,8 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private let storedActivityIdKey = "ground.liveActivity.stage.activityId"
@@ -326,6 +328,19 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         #endif
         call.reject("ios_16_2_required")
+    }
+
+    @objc func openSettings(_ call: CAPPluginCall) {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            call.reject("settings_url_unavailable")
+            return
+        }
+
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:]) { success in
+                call.resolve(["ok": success])
+            }
+        }
     }
 
     #if canImport(ActivityKit)

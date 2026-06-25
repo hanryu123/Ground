@@ -33,6 +33,7 @@ type GroundLiveActivityPlugin = {
   start(input: GroundLiveActivityPayload): Promise<{ ok: boolean; activityId?: string }>;
   update(input: GroundLiveActivityPayload): Promise<{ ok: boolean; activityId?: string }>;
   end(input: GroundLiveActivityPayload): Promise<{ ok: boolean; activityId?: string }>;
+  openSettings(): Promise<{ ok: boolean }>;
 };
 
 const GroundLiveActivity = registerPlugin<GroundLiveActivityPlugin>("GroundLiveActivity");
@@ -70,4 +71,9 @@ export async function updateLiveActivityStage(payload: GroundLiveActivityPayload
 
 export async function endLiveActivityStage(payload: GroundLiveActivityPayload) {
   return GroundLiveActivity.end(withSubscribeUrl(payload));
+}
+
+export async function openLiveActivitySettings() {
+  if (Capacitor.getPlatform() !== "ios") return { ok: false };
+  return GroundLiveActivity.openSettings();
 }

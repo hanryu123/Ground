@@ -2,7 +2,7 @@
 
 import HeroCard from "@/components/HeroCard";
 import DirectorNav from "@/components/DirectorNav";
-import LiveActivityStageControls from "@/components/LiveActivityStageControls";
+import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
 import { useMyTeam } from "@/lib/useMyTeam";
 import { useDirectorMode } from "@/lib/director";
 
@@ -26,9 +26,15 @@ export default function TodayPage() {
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <HeroCard team={team} />
+        <div className="absolute left-5 right-5 top-[76px] z-40">
+          <LiveActivityRecoveryButton
+            teamId={team.id}
+            teamShort={team.short}
+            accent={team.accent}
+          />
+        </div>
       </div>
       {directorOn && <DirectorNav />}
-      {directorOn && <LiveActivityStageControls teamId={team.id} />}
     </div>
   );
 }
