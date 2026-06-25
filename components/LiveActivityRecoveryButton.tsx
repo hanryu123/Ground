@@ -35,7 +35,10 @@ function recoveryMessage(action: string, reason?: string): Status {
     return { tone: "ok", text: "잠금화면 라이브 스코어를 다시 켰어요." };
   }
   if (action === "ended") {
-    return { tone: "warn", text: "경기 종료 후에는 새 라이브 스코어를 켜지 않아요." };
+    return {
+      tone: "warn",
+      text: "경기가 종료되었습니다. 실시간 스코어는 다음 경기 시작 시 잠금 화면에 자동으로 표시됩니다!",
+    };
   }
   if (reason === "no_payload") {
     return { tone: "warn", text: "오늘 이 팀의 진행 중인 경기가 아직 없어요." };
