@@ -23,14 +23,14 @@ private extension GroundGameAttributes {
         }
     }
 
-    func displayScores(for state: GroundGameAttributes.ContentState) -> (leftTeam: String, leftScore: Int, rightTeam: String, rightScore: Int) {
+    func displayScores(for state: GroundGameAttributes.ContentState) -> (leftTeam: String, leftScore: Int, leftIsFavorite: Bool, rightTeam: String, rightScore: Int, rightIsFavorite: Bool) {
         if awayTeam.caseInsensitiveCompare(myTeamShort) == .orderedSame {
-            return (awayTeam, state.awayScore, homeTeam, state.homeScore)
+            return (awayTeam, state.awayScore, true, homeTeam, state.homeScore, false)
         }
         if homeTeam.caseInsensitiveCompare(myTeamShort) == .orderedSame {
-            return (homeTeam, state.homeScore, awayTeam, state.awayScore)
+            return (homeTeam, state.homeScore, true, awayTeam, state.awayScore, false)
         }
-        return (homeTeam, state.homeScore, awayTeam, state.awayScore)
+        return (homeTeam, state.homeScore, false, awayTeam, state.awayScore, false)
     }
 
     func resultSummary(for state: GroundGameAttributes.ContentState) -> String? {
@@ -97,6 +97,7 @@ private struct ScoreColumn: View {
     let team: String
     let score: Int
     let alignTrailing: Bool
+    let scoreColor: Color
 
     var body: some View {
         VStack(alignment: alignTrailing ? .trailing : .leading, spacing: 3) {
@@ -108,7 +109,7 @@ private struct ScoreColumn: View {
             Text("\(score)")
                 .font(.system(size: 40, weight: .black, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(scoreColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
@@ -167,11 +168,21 @@ struct GroundLiveActivityLockScreenView: View {
             }
 
             HStack(alignment: .center, spacing: 12) {
-                ScoreColumn(team: scores.leftTeam, score: scores.leftScore, alignTrailing: false)
+                ScoreColumn(
+                    team: scores.leftTeam,
+                    score: scores.leftScore,
+                    alignTrailing: false,
+                    scoreColor: scores.leftIsFavorite ? accent : .white
+                )
 
                 ScoreDivider()
 
-                ScoreColumn(team: scores.rightTeam, score: scores.rightScore, alignTrailing: true)
+                ScoreColumn(
+                    team: scores.rightTeam,
+                    score: scores.rightScore,
+                    alignTrailing: true,
+                    scoreColor: scores.rightIsFavorite ? accent : .white
+                )
             }
 
             HStack(alignment: .center, spacing: 7) {
@@ -248,7 +259,7 @@ struct GroundLiveActivityWidget: Widget {
                         Text("\(scores.leftScore)")
                             .font(.title.weight(.black))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(scores.leftIsFavorite ? accent : .white)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -259,7 +270,7 @@ struct GroundLiveActivityWidget: Widget {
                         Text("\(scores.rightScore)")
                             .font(.title.weight(.black))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(scores.rightIsFavorite ? accent : .white)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -293,11 +304,11 @@ struct GroundLiveActivityWidget: Widget {
             } compactLeading: {
                 Text("\(scores.leftScore)")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(scores.leftIsFavorite ? accent : .white)
             } compactTrailing: {
                 Text("\(scores.rightScore)")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(scores.rightIsFavorite ? accent : .white)
             } minimal: {
                 Text(context.state.isPregame ? "G" : "\(scores.leftScore):\(scores.rightScore)")
                     .font(.caption2.weight(.black))
