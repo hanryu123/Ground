@@ -631,6 +631,13 @@ function sanitizePostGameReport(
   replaceBoth(/실책을 놓치지 않은 집중력/g, "상대의 자멸을 틈탄 집중력");
   replaceBoth(/1연승/g, "직전 경기 승리");
   replaceBoth(/1연패/g, "직전 경기 패배");
+  const streak = facts.recentMomentum?.streak;
+  if (streak && streak.count >= 2) {
+    const targetWord = streak.result === "W" ? "승" : streak.result === "L" ? "패" : null;
+    if (targetWord) {
+      replaceBoth(new RegExp(`\\d+\\s*연${targetWord}`, "g"), streak.label);
+    }
+  }
   if (facts.myScore <= facts.oppScore) replaceBoth(/리드/g, "점수차");
   if (facts.oppScore !== 0) replaceBoth(/영봉승/g, "승리");
   if (!hasVerifiedFactTerm(facts, /쐐기|결승타|결승\s*타점/)) {
@@ -828,6 +835,8 @@ export async function generatePostGameReport(input: {
 - 이 경기를 단 하나의 각도(영웅/패인/장면)로 날카롭게 잘라라
 - 칭찬할 때는 아낌없이, 비판할 때는 직설적으로 — "아쉽다" 한마디로 때우는 결론 금지
 - 최근 흐름은 반드시 최근 5경기, 직전 경기, 연승/연패 스트릭을 구분해서 해석
+- 연승/연패 숫자는 "현재 연속 흐름"만 정답이다. "최근 5경기"가 5승 0패여도 현재 연속 흐름이 7연승이면 반드시 7연승이라고 써라
+- 최근 5경기 전승/전패 기록을 5연승/5연패로 환산 금지
 - 2연승/2연패 이상일 때만 연승/연패 표현 허용. 1승/1패는 절대 "1연승/1연패"라고 쓰지 말고 "직전 경기 승리/패배"로만 써라
 - 3연승/3연패 이상이면 문맥상 자연스럽게 언급. 8연패 이상이면 반드시 한줄평의 핵심 서사로 삼아라
 - 최근 5경기 성적이 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지
@@ -892,7 +901,7 @@ ${narrativeLines || "투수/결승타 정보 없음"}
 ▶ 최근 팀 흐름 (오늘 경기 결과까지 반영):
 ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
 최근 5경기: ${input.facts.recentMomentum?.recentRecord ?? "기록 없음"} / ${input.facts.recentMomentum?.recentForm ?? "기록 없음"}
-현재 연속 흐름: ${input.facts.recentMomentum?.streak?.label ?? "없음"}
+현재 연속 흐름(연승/연패 정답): ${input.facts.recentMomentum?.streak?.label ?? "없음"}
 직전 경기: ${input.facts.recentMomentum?.lastGameLine ?? "없음"}
 
 ▶ 참고 수치 (숫자 나열 금지, 필요시 맥락으로만 활용):

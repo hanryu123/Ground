@@ -18,6 +18,9 @@ const NAVER_TEAM_MAP: Record<string, string> = {
   KT: "kt",
 };
 
+const DEFAULT_MOMENTUM_LOOKBACK_DAYS = 90;
+const MOMENTUM_FETCH_SIZE = 500;
+
 type ResultMark = "W" | "L" | "D";
 
 type NaverScheduleGameRaw = {
@@ -239,12 +242,12 @@ export async function fetchTeamMomentum(input: {
   lookbackDays?: number;
 }): Promise<TeamMomentum | null> {
   const toDate = input.includeAsOfDate ? input.asOfDate : addDaysKst(input.asOfDate, -1);
-  const fromDate = addDaysKst(toDate, -(input.lookbackDays ?? 45));
+  const fromDate = addDaysKst(toDate, -(input.lookbackDays ?? DEFAULT_MOMENTUM_LOOKBACK_DAYS));
   const url =
     `${NAVER_BASE}/schedule/games` +
     `?fields=basic,statusInfo,score` +
     `&upperCategoryId=kbaseball&categoryId=kbo` +
-    `&fromDate=${fromDate}&toDate=${toDate}&size=300`;
+    `&fromDate=${fromDate}&toDate=${toDate}&size=${MOMENTUM_FETCH_SIZE}`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2200);

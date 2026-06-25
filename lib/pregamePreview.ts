@@ -223,6 +223,8 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 - 불안감·걱정·압박감 조성 문구 금지: 오직 기대·흥분·자신감만
 - 스코어·경기 결과 추론 금지 (경기 전이므로)
 - 최근 흐름은 반드시 "최근 5경기", "직전 경기", "연승/연패"를 구분해서 해석
+- 연승/연패 숫자는 "현재 연속 흐름"만 정답이다. "최근 5경기"가 5승 0패여도 현재 연속 흐름이 7연승이면 반드시 7연승이라고 써라
+- 최근 5경기 전승/전패 기록을 5연승/5연패로 환산 금지
 - 3연승/3연패 이상이면 반드시 언급. 8연패 이상이면 프리뷰의 핵심 서사로 삼아라
 - 최근 5경기가 좋아도 직전 경기 패배면 "좋은 흐름"으로 단정 금지. "최근 5경기 4승 1패지만 직전 패배"처럼 균형 있게 써라
 - 특정 스코어는 필요할 때만 한 번 자연스럽게 사용하고, 숫자 나열식 브리핑은 금지
@@ -242,7 +244,7 @@ ${styleBrief}
 우리 선발:${starter}
 최근 흐름 요약:${momentum.summary}
 최근 5경기:${momentum.recentRecord} / ${momentum.recentForm}
-현재 연속 흐름:${momentum.streak?.label ?? "없음"}
+현재 연속 흐름(연승/연패 정답):${momentum.streak?.label ?? "없음"}
 직전 경기:${momentum.lastGameLine ?? "없음"}
 최근 스코어:${momentum.recentScores.join(" | ") || "없음"}
 프리뷰/뉴스 컨텍스트:${newsBlock}`;
