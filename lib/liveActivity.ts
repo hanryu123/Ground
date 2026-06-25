@@ -18,6 +18,7 @@ export type GroundLiveActivityPayload = {
   winningPitcher?: string | null;
   losingPitcher?: string | null;
   updatedAtEpochMs: number;
+  subscribeUrl?: string | null;
 };
 
 type Availability = {
@@ -36,6 +37,14 @@ type GroundLiveActivityPlugin = {
 
 const GroundLiveActivity = registerPlugin<GroundLiveActivityPlugin>("GroundLiveActivity");
 
+function withSubscribeUrl(payload: GroundLiveActivityPayload): GroundLiveActivityPayload {
+  if (typeof window === "undefined" || payload.subscribeUrl) return payload;
+  return {
+    ...payload,
+    subscribeUrl: new URL("/api/live-activity/subscribe", window.location.origin).toString(),
+  };
+}
+
 export async function getLiveActivityAvailability(): Promise<Availability> {
   if (Capacitor.getPlatform() !== "ios") {
     return { available: false, platform: Capacitor.getPlatform(), reason: "ios_only" };
@@ -52,13 +61,13 @@ export async function getLiveActivityAvailability(): Promise<Availability> {
 }
 
 export async function startLiveActivityStage(payload: GroundLiveActivityPayload) {
-  return GroundLiveActivity.start(payload);
+  return GroundLiveActivity.start(withSubscribeUrl(payload));
 }
 
 export async function updateLiveActivityStage(payload: GroundLiveActivityPayload) {
-  return GroundLiveActivity.update(payload);
+  return GroundLiveActivity.update(withSubscribeUrl(payload));
 }
 
 export async function endLiveActivityStage(payload: GroundLiveActivityPayload) {
-  return GroundLiveActivity.end(payload);
+  return GroundLiveActivity.end(withSubscribeUrl(payload));
 }

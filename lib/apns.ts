@@ -6,6 +6,18 @@ type ApnsResult = {
   failed: string[];
 };
 
+export type LiveActivityContentState = {
+  phase: "PRE" | "LIVE" | "FINAL" | "CANCEL";
+  status: string;
+  inning: string;
+  homeScore: number;
+  awayScore: number;
+  resultLabel?: string | null;
+  winningPitcher?: string | null;
+  losingPitcher?: string | null;
+  updatedAtEpochMs: number;
+};
+
 export type ApnsConfigStatus = {
   configured: boolean;
   keyIdSet: boolean;
@@ -144,6 +156,50 @@ function sendApnsRequest(input: {
   });
 }
 
+function sendApnsLiveActivityRequest(input: {
+  client: http2.ClientHttp2Session;
+  token: string;
+  jwt: string;
+  topic: string;
+  payload: Buffer;
+}): Promise<{ ok: boolean; disable: boolean; status: number; reason?: string }> {
+  return new Promise((resolve) => {
+    const req = input.client.request({
+      ":method": "POST",
+      ":path": `/3/device/${input.token}`,
+      authorization: `bearer ${input.jwt}`,
+      "apns-topic": `${input.topic}.push-type.liveactivity`,
+      "apns-push-type": "liveactivity",
+      "apns-priority": "10",
+      "content-type": "application/json",
+    });
+
+    let status = 0;
+    let body = "";
+
+    req.setEncoding("utf8");
+    req.on("response", (headers) => {
+      status = Number(headers[":status"] ?? 0);
+    });
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("error", (error) => {
+      resolve({ ok: false, disable: false, status, reason: error.message });
+    });
+    req.on("end", () => {
+      const reason = body ? safeReason(body) : undefined;
+      resolve({
+        ok: status >= 200 && status < 300,
+        disable: status === 410 || reason === "BadDeviceToken" || reason === "Unregistered",
+        status,
+        reason,
+      });
+    });
+    req.end(input.payload);
+  });
+}
+
 export async function sendApnsMulticast(input: {
   tokens: string[];
   title: string;
@@ -188,6 +244,66 @@ export async function sendApnsMulticast(input: {
           status: result.status,
           reason: result.reason,
           tokenPrefix: token.slice(0, 8),
+        });
+      }
+    }
+  } finally {
+    client.close();
+  }
+
+  return { ok, failed };
+}
+
+export async function sendLiveActivityUpdate(input: {
+  tokens: string[];
+  event: "update" | "end";
+  contentState: LiveActivityContentState;
+  staleDateMs?: number | null;
+  dismissalDateMs?: number | null;
+}): Promise<ApnsResult> {
+  if (input.tokens.length === 0) return { ok: 0, failed: [] };
+
+  const config = getApnsConfig();
+  const jwt = createJwt();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const aps: Record<string, unknown> = {
+    timestamp: nowSeconds,
+    event: input.event,
+    "content-state": input.contentState,
+  };
+
+  if (input.event === "update") {
+    aps["stale-date"] = Math.floor((input.staleDateMs ?? Date.now() + 60_000) / 1000);
+  } else if (input.dismissalDateMs) {
+    aps["dismissal-date"] = Math.floor(input.dismissalDateMs / 1000);
+  }
+
+  const payload = Buffer.from(JSON.stringify({ aps }));
+  const client = http2.connect(`https://${config.host}`);
+  const failed: string[] = [];
+  let ok = 0;
+
+  try {
+    for (const token of input.tokens) {
+      const result = await sendApnsLiveActivityRequest({
+        client,
+        token,
+        jwt,
+        topic: config.topic,
+        payload,
+      });
+
+      if (result.ok) {
+        ok += 1;
+      } else if (result.disable) {
+        failed.push(token);
+      } else {
+        console.warn("[apns-live-activity] delivery failed", {
+          status: result.status,
+          reason: result.reason,
+          tokenPrefix: token.slice(0, 8),
+          event: input.event,
+          host: config.host,
         });
       }
     }

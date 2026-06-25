@@ -51,6 +51,7 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("invalid_payload")
                 return
             }
+            let subscribeUrl = call.getString("subscribeUrl")
 
             Task {
                 do {
@@ -65,6 +66,11 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                         pushType: .token
                     )
                     UserDefaults.standard.set(activity.id, forKey: storedActivityIdKey)
+                    observePushTokenUpdates(
+                        activity: activity,
+                        attributes: attributes,
+                        subscribeUrl: subscribeUrl
+                    )
                     call.resolve(["ok": true, "activityId": activity.id])
                 } catch {
                     call.reject(error.localizedDescription)
@@ -180,6 +186,63 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let activity = findStageActivity() else { return }
         await activity.end(nil, dismissalPolicy: .immediate)
         UserDefaults.standard.removeObject(forKey: storedActivityIdKey)
+    }
+
+    @available(iOS 16.2, *)
+    private func observePushTokenUpdates(
+        activity: Activity<GroundGameAttributes>,
+        attributes: GroundGameAttributes,
+        subscribeUrl: String?
+    ) {
+        Task { [weak self] in
+            for await tokenData in activity.pushTokenUpdates {
+                guard let self else { return }
+                await self.postLiveActivityToken(
+                    token: self.hexString(from: tokenData),
+                    activityId: activity.id,
+                    gameId: attributes.gameId,
+                    teamId: attributes.teamId,
+                    subscribeUrl: subscribeUrl
+                )
+            }
+        }
+    }
+
+    private func hexString(from data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func postLiveActivityToken(
+        token: String,
+        activityId: String,
+        gameId: String,
+        teamId: String,
+        subscribeUrl: String?
+    ) async {
+        guard let subscribeUrl,
+              let url = URL(string: subscribeUrl) else {
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "token": token,
+            "activityId": activityId,
+            "gameId": gameId,
+            "teamId": teamId,
+        ])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse,
+               http.statusCode < 200 || http.statusCode >= 300 {
+                NSLog("[GroundLiveActivity] token subscribe failed: %d", http.statusCode)
+            }
+        } catch {
+            NSLog("[GroundLiveActivity] token subscribe error: %@", error.localizedDescription)
+        }
     }
     #endif
 }

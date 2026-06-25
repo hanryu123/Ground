@@ -8,6 +8,7 @@ import { loadMockSnapshotWithOverrides, readScoreCronDevOverrides } from "@/lib/
 import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
+import { pushLiveActivityForGame } from "@/lib/liveActivityPush";
 import {
   fetchClutchData,
   detectClutchSituation,
@@ -47,6 +48,10 @@ type RouteSummary = {
   pushSent: number;
   disabled: number;
   inboxCreated: number;
+  liveActivitySent: number;
+  liveActivityFailed: number;
+  liveActivityEnded: number;
+  liveActivitySubscriptions: number;
   errors: number;
   failedGameIds: string[];
   snapshotCount: number;
@@ -63,6 +68,7 @@ type RouteSummary = {
 const DEFAULT_RESPONSE_BUDGET_MS = 8500;
 const MIN_LOOP_BUDGET_MS = 900;
 const MIN_ALERT_BUDGET_MS = 3600;
+const MIN_LIVE_ACTIVITY_BUDGET_MS = 1800;
 const MIN_RELAY_BUDGET_MS = 4600;
 const MIN_CLUTCH_BUDGET_MS = 5200;
 const SCORE_LLM_TIMEOUT_MS = 2200;
@@ -256,6 +262,10 @@ export async function GET(req: Request) {
     pushSent: 0,
     disabled: 0,
     inboxCreated: 0,
+    liveActivitySent: 0,
+    liveActivityFailed: 0,
+    liveActivityEnded: 0,
+    liveActivitySubscriptions: 0,
     errors: 0,
     failedGameIds: [],
     snapshotCount: 0,
@@ -293,6 +303,15 @@ export async function GET(req: Request) {
           summary.cancelSent += cancelSummary.sent;
           summary.disabled += cancelSummary.disabled;
           summary.inboxCreated += cancelSummary.inboxCreated;
+          if (hasBudget(deadlineAt, MIN_LIVE_ACTIVITY_BUDGET_MS)) {
+            const liveActivity = await pushLiveActivityForGame(game);
+            summary.liveActivitySent += liveActivity.sent;
+            summary.liveActivityFailed += liveActivity.failed;
+            summary.liveActivityEnded += liveActivity.ended;
+            summary.liveActivitySubscriptions += liveActivity.subscriptions;
+          } else {
+            deferOnce(summary, `live-activity:${game.externalId}`);
+          }
         }
       }
       const { start, end } = dayRangeKst(targetDate);
@@ -417,6 +436,23 @@ export async function GET(req: Request) {
           summary.inboxCreated += cancelSummary.inboxCreated;
         } else if (justCancelled) {
           deferOnce(summary, `cancel:${game.externalId}`);
+        }
+
+        if (scoreChanged || justEnded || justCancelled || justSuspended) {
+          if (hasBudget(deadlineAt, MIN_LIVE_ACTIVITY_BUDGET_MS)) {
+            try {
+              const liveActivity = await pushLiveActivityForGame(game);
+              summary.liveActivitySent += liveActivity.sent;
+              summary.liveActivityFailed += liveActivity.failed;
+              summary.liveActivityEnded += liveActivity.ended;
+              summary.liveActivitySubscriptions += liveActivity.subscriptions;
+            } catch (e) {
+              summary.errors += 1;
+              console.error("[check-score] live activity push failed", game.externalId, e);
+            }
+          } else {
+            deferOnce(summary, `live-activity:${game.externalId}`);
+          }
         }
 
         // ─── 클러치 상황 감지 ───────────────────────────────────────────
