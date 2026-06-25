@@ -2,6 +2,7 @@
 
 import HeroCard from "@/components/HeroCard";
 import DirectorNav from "@/components/DirectorNav";
+import LiveActivityStageControls from "@/components/LiveActivityStageControls";
 import { useMyTeam } from "@/lib/useMyTeam";
 import { useDirectorMode } from "@/lib/director";
 
@@ -27,6 +28,7 @@ export default function TodayPage() {
         <HeroCard team={team} />
       </div>
       {directorOn && <DirectorNav />}
+      {directorOn && <LiveActivityStageControls teamId={team.id} />}
     </div>
   );
 }
