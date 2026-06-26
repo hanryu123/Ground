@@ -13,6 +13,8 @@ type StagePayload = {
   teamId: string;
   homeTeam: string;
   awayTeam: string;
+  homePitcher: string | null;
+  awayPitcher: string | null;
   stadium: string;
   gameStartEpochMs: number | null;
   phase: StagePhase;
@@ -69,6 +71,8 @@ function buildMockPayload(teamId: string, mode: string | null): StagePayload {
     teamId: team.id,
     homeTeam: team.short,
     awayTeam: opponent.short,
+    homePitcher: "김진수",
+    awayPitcher: "박준영",
     stadium: "잠실",
     gameStartEpochMs: phase === "PRE" ? now + 42 * 60 * 1000 : now - 90 * 60 * 1000,
     phase,
@@ -136,6 +140,8 @@ export async function GET(req: Request) {
       teamId,
       homeTeam: findTeam(game.homeId).short,
       awayTeam: findTeam(game.awayId).short,
+      homePitcher: game.homePitcher && game.homePitcher !== "미정" ? game.homePitcher : null,
+      awayPitcher: game.awayPitcher && game.awayPitcher !== "미정" ? game.awayPitcher : null,
       stadium: game.stadium,
       gameStartEpochMs: gameStartEpochMs(game),
       phase,

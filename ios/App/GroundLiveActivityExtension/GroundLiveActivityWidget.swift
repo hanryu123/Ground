@@ -2,9 +2,27 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+private let groundStartTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "ko_KR")
+    formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+    formatter.dateFormat = "HH:mm"
+    return formatter
+}()
+
 private extension GroundGameAttributes {
     var matchupText: String {
         "\(awayTeam) @ \(homeTeam)"
+    }
+
+    var gameStartDate: Date? {
+        guard let gameStartEpochMs else { return nil }
+        return Date(timeIntervalSince1970: gameStartEpochMs / 1000)
+    }
+
+    var hasScheduledStartPassed: Bool {
+        guard let start = gameStartDate else { return false }
+        return start <= Date()
     }
 
     var myTeamShort: String {
@@ -21,6 +39,59 @@ private extension GroundGameAttributes {
         case "kiwoom": return "키움"
         default: return teamId.uppercased()
         }
+    }
+
+    private func cleanPitcherName(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "미정" || trimmed == "-" { return nil }
+        return trimmed
+    }
+
+    var starterMatchupText: String? {
+        let away = cleanPitcherName(awayPitcher)
+        let home = cleanPitcherName(homePitcher)
+        if let away, let home {
+            return "선발 \(away) vs \(home)"
+        }
+        if let away {
+            return "\(awayTeam) 선발 \(away)"
+        }
+        if let home {
+            return "\(homeTeam) 선발 \(home)"
+        }
+        return nil
+    }
+
+    func phaseLabel(for state: GroundGameAttributes.ContentState) -> String {
+        if state.isPregame && hasScheduledStartPassed { return "STARTING" }
+        return state.phaseLabel
+    }
+
+    func contextLabel(for state: GroundGameAttributes.ContentState) -> String {
+        if state.isPregame {
+            if hasScheduledStartPassed { return "경기 시작 대기" }
+            if let start = gameStartDate { return groundStartTimeFormatter.string(from: start) }
+        }
+        return state.contextLabel
+    }
+
+    func detailText(for state: GroundGameAttributes.ContentState) -> String? {
+        if state.isPregame {
+            if let starters = starterMatchupText {
+                if let start = gameStartDate, start > Date() {
+                    return "\(starters) · \(groundStartTimeFormatter.string(from: start)) 시작"
+                }
+                return starters
+            }
+            if let start = gameStartDate, start > Date() {
+                return "\(groundStartTimeFormatter.string(from: start)) 시작"
+            }
+        }
+        if let stadium, !stadium.isEmpty {
+            return stadium
+        }
+        return nil
     }
 
     func displayScores(for state: GroundGameAttributes.ContentState) -> (leftTeam: String, leftScore: Int, leftIsFavorite: Bool, rightTeam: String, rightScore: Int, rightIsFavorite: Bool) {
@@ -155,11 +226,11 @@ struct GroundLiveActivityLockScreenView: View {
                 Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(state.phaseLabel)
+                    Text(context.attributes.phaseLabel(for: state))
                         .font(.caption2.weight(.black))
                         .tracking(1.2)
                         .foregroundStyle(accent)
-                    Text(state.contextLabel)
+                    Text(context.attributes.contextLabel(for: state))
                         .font(.caption.weight(.heavy))
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -197,11 +268,8 @@ struct GroundLiveActivityLockScreenView: View {
                     if let losingPitcher = state.losingPitcher {
                         Text("패 \(losingPitcher)")
                     }
-                } else if state.isPregame, let start = context.attributes.gameStartEpochMs {
-                    Text(Date(timeIntervalSince1970: start / 1000), style: .relative)
-                    Text("까지")
-                } else if let stadium = context.attributes.stadium, !stadium.isEmpty {
-                    Text(stadium)
+                } else if let detail = context.attributes.detailText(for: state) {
+                    Text(detail)
                 }
             }
             .font(.caption.weight(.semibold))
@@ -279,7 +347,7 @@ struct GroundLiveActivityWidget: Widget {
                             .font(.caption2.weight(.black))
                             .tracking(1)
                             .foregroundStyle(accent)
-                        Text(context.state.contextLabel)
+                        Text(context.attributes.contextLabel(for: context.state))
                             .font(.caption.weight(.heavy))
                             .foregroundStyle(.white.opacity(0.82))
                     }
@@ -292,11 +360,11 @@ struct GroundLiveActivityWidget: Widget {
                         Text(scores.leftTeam)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.58))
-                        Text(context.attributes.matchupText)
+                        Text(context.attributes.detailText(for: context.state) ?? context.attributes.matchupText)
                             .font(.caption.weight(.bold))
                             .lineLimit(1)
                         Spacer()
-                        Text(context.state.status)
+                        Text(context.attributes.phaseLabel(for: context.state))
                             .font(.caption.weight(.black))
                             .foregroundStyle(accent)
                     }

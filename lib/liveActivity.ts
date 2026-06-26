@@ -7,6 +7,8 @@ export type GroundLiveActivityPayload = {
   teamId: string;
   homeTeam: string;
   awayTeam: string;
+  homePitcher?: string | null;
+  awayPitcher?: string | null;
   stadium?: string | null;
   gameStartEpochMs?: number | null;
   phase: "PRE" | "LIVE" | "FINAL" | "CANCEL";

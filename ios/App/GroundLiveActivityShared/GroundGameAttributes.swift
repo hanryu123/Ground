@@ -18,6 +18,8 @@ struct GroundGameAttributes: ActivityAttributes {
     var teamId: String
     var homeTeam: String
     var awayTeam: String
+    var homePitcher: String?
+    var awayPitcher: String?
     var stadium: String?
     var gameStartEpochMs: Double?
 }

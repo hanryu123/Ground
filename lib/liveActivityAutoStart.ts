@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { sendApnsSilentMulticast } from "@/lib/apns";
 import { resolveServerAppEnv } from "@/lib/appEnv";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { fetchKboTodayGames } from "@/lib/kbo";
 import { isTopicEnabled, matchesCurrentPushEnv } from "@/lib/notifications/topics";
 import { prisma } from "@/lib/prisma";
 import type { LiveScoreGame } from "@/lib/score/types";
@@ -19,6 +20,8 @@ type LiveActivityStagePayload = {
   teamId: string;
   homeTeam: string;
   awayTeam: string;
+  homePitcher: string | null;
+  awayPitcher: string | null;
   stadium: string | null;
   gameStartEpochMs: number | null;
   phase: "PRE" | "LIVE" | "FINAL" | "CANCEL";
@@ -31,6 +34,11 @@ type LiveActivityStagePayload = {
   losingPitcher: string | null;
   updatedAtEpochMs: number;
   subscribeUrl: string;
+};
+
+type StarterPair = {
+  homePitcher: string | null;
+  awayPitcher: string | null;
 };
 
 type AutoStartResult = {
@@ -61,12 +69,15 @@ function buildStagePayload(input: {
   game: LiveScoreGame;
   teamId: string;
   origin: string;
+  starters?: StarterPair;
 }): LiveActivityStagePayload {
   return {
     gameId: input.game.externalId,
     teamId: input.teamId,
     homeTeam: findTeam(input.game.homeTeam).short,
     awayTeam: findTeam(input.game.awayTeam).short,
+    homePitcher: input.starters?.homePitcher ?? null,
+    awayPitcher: input.starters?.awayPitcher ?? null,
     stadium: null,
     gameStartEpochMs: input.game.gameDate?.getTime() ?? null,
     phase: "PRE",
@@ -115,6 +126,7 @@ async function sendAutoStartForTeam(input: {
   teamId: string;
   origin: string;
   targetDate: string;
+  starters?: StarterPair;
 }): Promise<AutoStartResult> {
   const tokens = await fetchTargetTokens(input.teamId);
   if (tokens.length === 0) {
@@ -181,11 +193,28 @@ export async function sendPregameLiveActivityStarts(input: {
     return { sent: 0, disabled: 0, skipped: 0, targets: 0 };
   }
 
+  const starterMap = new Map<string, StarterPair>();
+  try {
+    const gamesWithStarters = await fetchKboTodayGames(input.targetDate, {
+      cacheMode: "live",
+      includeLineups: false,
+    });
+    for (const game of gamesWithStarters) {
+      starterMap.set(game.id, {
+        homePitcher: game.homePitcher && game.homePitcher !== "미정" ? game.homePitcher : null,
+        awayPitcher: game.awayPitcher && game.awayPitcher !== "미정" ? game.awayPitcher : null,
+      });
+    }
+  } catch (error) {
+    console.warn("[live-activity-start] starter enrichment failed", error);
+  }
+
   const results = await mapWithConcurrency(jobs, 4, (job) =>
     sendAutoStartForTeam({
       ...job,
       origin: input.origin,
       targetDate: input.targetDate,
+      starters: starterMap.get(job.game.externalId),
     })
   );
 

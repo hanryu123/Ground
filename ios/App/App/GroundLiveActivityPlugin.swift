@@ -75,6 +75,8 @@ enum GroundLiveActivityNativeCoordinator {
             teamId: teamId,
             homeTeam: homeTeam,
             awayTeam: awayTeam,
+            homePitcher: string(payload, "homePitcher"),
+            awayPitcher: string(payload, "awayPitcher"),
             stadium: string(payload, "stadium"),
             gameStartEpochMs: double(payload, "gameStartEpochMs")
         )
@@ -357,6 +359,8 @@ public class GroundLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             teamId: teamId,
             homeTeam: homeTeam,
             awayTeam: awayTeam,
+            homePitcher: call.getString("homePitcher"),
+            awayPitcher: call.getString("awayPitcher"),
             stadium: call.getString("stadium"),
             gameStartEpochMs: call.getDouble("gameStartEpochMs")
         )
