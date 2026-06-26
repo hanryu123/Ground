@@ -91,6 +91,23 @@ type ScoreCronCompletionCache = {
 };
 
 let completionCache: ScoreCronCompletionCache | null = null;
+let checkScoreSchemaEnsured = false;
+
+async function ensureCheckScoreSchema() {
+  if (checkScoreSchemaEnsured) return;
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TYPE "GameStatus" ADD VALUE IF NOT EXISTS 'SUSPENDED'
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "Game"
+      ADD COLUMN IF NOT EXISTS "currentInning" INTEGER,
+      ADD COLUMN IF NOT EXISTS "currentInningHalf" TEXT,
+      ADD COLUMN IF NOT EXISTS "currentInningLabel" TEXT
+  `);
+
+  checkScoreSchemaEnsured = true;
+}
 
 function isFastMode(url: URL): boolean {
   const raw = (url.searchParams.get("fast") ?? "").toLowerCase();
@@ -399,6 +416,8 @@ export async function GET(req: Request) {
       snapshot = [];
     }
     summary.snapshotCount = snapshot.length;
+
+    await ensureCheckScoreSchema();
 
     if (snapshot.length > 0) {
       if (hasBudget(deadlineAt, MIN_LIVE_ACTIVITY_START_BUDGET_MS)) {

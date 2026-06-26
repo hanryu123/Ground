@@ -19,6 +19,51 @@ type LiveActivitySubscriptionRow = {
   teamId: string;
 };
 
+let liveActivitySchemaEnsured = false;
+
+async function ensureLiveActivitySubscriptionSchema() {
+  if (liveActivitySchemaEnsured) return;
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "LiveActivitySubscription" (
+      "id" TEXT NOT NULL,
+      "token" TEXT NOT NULL,
+      "activityId" TEXT,
+      "gameId" TEXT NOT NULL,
+      "teamId" TEXT NOT NULL,
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "appEnv" TEXT NOT NULL DEFAULT 'production',
+      "endedAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      "lastSeenAt" TIMESTAMP(3),
+      CONSTRAINT "LiveActivitySubscription_pkey" PRIMARY KEY ("id")
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "LiveActivitySubscription_token_key"
+    ON "LiveActivitySubscription"("token")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_enabled_gameId_teamId_idx"
+    ON "LiveActivitySubscription"("enabled", "gameId", "teamId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_activityId_idx"
+    ON "LiveActivitySubscription"("activityId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_teamId_enabled_idx"
+    ON "LiveActivitySubscription"("teamId", "enabled")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_endedAt_idx"
+    ON "LiveActivitySubscription"("endedAt")
+  `);
+
+  liveActivitySchemaEnsured = true;
+}
+
 function resolvePhase(game: LiveScoreGame): LiveActivityContentState["phase"] {
   if (game.status === "RESULT") return "FINAL";
   if (game.status === "CANCEL") return "CANCEL";
@@ -76,6 +121,8 @@ function groupByTeam(rows: LiveActivitySubscriptionRow[]): Map<string, LiveActiv
 export async function pushLiveActivityForGame(
   game: LiveScoreGame
 ): Promise<PushLiveActivityResult> {
+  await ensureLiveActivitySubscriptionSchema();
+
   const event = game.status === "RESULT" || game.status === "CANCEL" ? "end" : "update";
   const rows = await prisma.liveActivitySubscription.findMany({
     where: {

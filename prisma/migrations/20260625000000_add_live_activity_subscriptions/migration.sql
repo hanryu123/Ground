@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "LiveActivitySubscription" (
+CREATE TABLE IF NOT EXISTS "LiveActivitySubscription" (
     "id" TEXT NOT NULL,
     "token" TEXT NOT NULL,
     "activityId" TEXT,
@@ -16,16 +16,16 @@ CREATE TABLE "LiveActivitySubscription" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "LiveActivitySubscription_token_key" ON "LiveActivitySubscription"("token");
+CREATE UNIQUE INDEX IF NOT EXISTS "LiveActivitySubscription_token_key" ON "LiveActivitySubscription"("token");
 
 -- CreateIndex
-CREATE INDEX "LiveActivitySubscription_enabled_gameId_teamId_idx" ON "LiveActivitySubscription"("enabled", "gameId", "teamId");
+CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_enabled_gameId_teamId_idx" ON "LiveActivitySubscription"("enabled", "gameId", "teamId");
 
 -- CreateIndex
-CREATE INDEX "LiveActivitySubscription_activityId_idx" ON "LiveActivitySubscription"("activityId");
+CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_activityId_idx" ON "LiveActivitySubscription"("activityId");
 
 -- CreateIndex
-CREATE INDEX "LiveActivitySubscription_teamId_enabled_idx" ON "LiveActivitySubscription"("teamId", "enabled");
+CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_teamId_enabled_idx" ON "LiveActivitySubscription"("teamId", "enabled");
 
 -- CreateIndex
-CREATE INDEX "LiveActivitySubscription_endedAt_idx" ON "LiveActivitySubscription"("endedAt");
+CREATE INDEX IF NOT EXISTS "LiveActivitySubscription_endedAt_idx" ON "LiveActivitySubscription"("endedAt");
