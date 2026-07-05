@@ -36,6 +36,18 @@ type PreviewJob = {
   opponentTeamId: string;
 };
 
+type PreviewRunLog = {
+  gameId: string;
+  teamId: string;
+  opponentTeamId: string;
+  gameStatus: LiveGame["status"];
+  source: "llm" | "fallback";
+  fallbackReason?: string;
+  title: string;
+  lines: string[];
+  dispatch: "sent" | "already-dispatched" | "skipped-after-start" | "locked";
+};
+
 function buildGameCancelCopy(input: {
   game: LiveGame;
   fanTeamId: string;
@@ -88,8 +100,8 @@ async function runPreviewCron(req: Request) {
       const dt = toKstDateTime(date, game.time);
       if (!dt) return false;
       const mins = minutesUntil(dt);
-      // force 모드: 경기 2시간 전~시작 후 10분 내 (오늘 경기만, 먼 미래 경기는 제외)
-      if (force) return mins >= -10 && mins <= 120;
+      // force 모드: 오늘 경기 프리뷰 재생성/검수용. 시간 윈도우를 완전히 무시한다.
+      if (force) return true;
       // 일반: 경기 45~75분 전 윈도우
       return mins >= 45 && mins <= 75;
     })();
@@ -100,7 +112,7 @@ async function runPreviewCron(req: Request) {
       const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
       if (game.status === "CANCEL") {
         cancelJobs.push({ game, teamId, opponentTeamId });
-      } else if (game.status === "BEFORE") {
+      } else if (game.status === "BEFORE" || force) {
         jobs.push({ game, teamId, opponentTeamId });
       }
     }
@@ -113,6 +125,7 @@ async function runPreviewCron(req: Request) {
   let cancelSent = 0;
   let cancelSkipped = 0;
   let cancelFailed = 0;
+  const previewLogs: PreviewRunLog[] = [];
 
   await mapWithConcurrency(cancelJobs, 4, async ({ game, teamId }) => {
     try {
@@ -171,7 +184,7 @@ async function runPreviewCron(req: Request) {
       },
       select: { id: true },
     });
-    if (alreadyDispatched) {
+    if (alreadyDispatched && !force) {
       previewSkipped += 1;
       return;
     }
@@ -228,6 +241,21 @@ async function runPreviewCron(req: Request) {
           error: null,
         },
       });
+      previewLogs.push({
+        gameId: game.id,
+        teamId,
+        opponentTeamId,
+        gameStatus: game.status,
+        source: preview.source,
+        fallbackReason: preview.fallbackReason,
+        title: preview.title,
+        lines: preview.lines,
+        dispatch: alreadyDispatched
+          ? "already-dispatched"
+          : game.status !== "BEFORE"
+            ? "skipped-after-start"
+            : "locked",
+      });
     } catch (error) {
       await prisma.pregamePreview.update({
         where: { date_teamId: { date, teamId } },
@@ -245,6 +273,16 @@ async function runPreviewCron(req: Request) {
       return;
     }
 
+    if (alreadyDispatched) {
+      previewSkipped += 1;
+      return;
+    }
+
+    if (game.status !== "BEFORE") {
+      previewSkipped += 1;
+      return;
+    }
+
     // force 여부와 무관하게 항상 중복 락 기록 — 재발송 방지
     const lock = await markDispatchOnce({
       alertKind: "preview",
@@ -253,9 +291,13 @@ async function runPreviewCron(req: Request) {
       gameExternalId: game.id,
     });
     if (!lock) {
+      const log = previewLogs.find((item) => item.gameId === game.id && item.teamId === teamId);
+      if (log) log.dispatch = "locked";
       previewSkipped += 1;
       return;
     }
+    const log = previewLogs.find((item) => item.gameId === game.id && item.teamId === teamId);
+    if (log) log.dispatch = "sent";
 
     const body = preview.lines.slice(0, 2).join(" ");
     const result = await sendTeamTopicNotification({
@@ -291,6 +333,7 @@ async function runPreviewCron(req: Request) {
     cancelFailed,
     jobs: jobs.length,
     cancelJobs: cancelJobs.length,
+    previewLogs,
     durationMs: Date.now() - startedAt,
   });
 }

@@ -12,6 +12,7 @@ import {
   matchesCurrentPushEnv,
 } from "@/lib/notifications/topics";
 import type { LiveScoreGame } from "@/lib/score/types";
+import type { ScoringPlayContext } from "@/lib/score/playByPlay";
 
 /**
  * 점수 변동 알림 발송.
@@ -96,6 +97,7 @@ export async function dispatchScoreAlertsForGame(input: {
   /** 1차로 라우트에서 업데이트한 Game.id (inbox payload 에 박힘) */
   dbGameId: string;
   latestPlayText: string;
+  scoringPlayContext?: ScoringPlayContext | null;
   fastMode: boolean;
   llmTimeoutMs?: number;
   llmRetryTimeoutMs?: number | null;
@@ -195,7 +197,16 @@ export async function dispatchScoreAlertsForGame(input: {
       recentBodies: teamRecentBodies,
     });
 
-    const cacheKey = `${favoriteTeam}:${myScore}:${oppScore}:${tone}:${input.latestPlayText}`;
+    const cacheKey = [
+      favoriteTeam,
+      myScore,
+      oppScore,
+      tone,
+      input.latestPlayText,
+      input.scoringPlayContext?.batter.name ?? "",
+      input.scoringPlayContext?.play.resultType ?? "",
+      input.scoringPlayContext?.play.primaryText ?? "",
+    ].join(":");
     let copyPromise = copyCache.get(cacheKey);
     if (!copyPromise) {
       const copyInput = {
@@ -206,6 +217,7 @@ export async function dispatchScoreAlertsForGame(input: {
         mySide: isHomeFan ? "home" as const : "away" as const,
         tone,
         latestPlayText: input.latestPlayText,
+        scoringPlayContext: input.scoringPlayContext ?? null,
         fallbackTitle: fallback.title,
         fallbackBody: fallback.body,
         recentBodies: teamRecentBodies,
@@ -244,6 +256,7 @@ export async function dispatchScoreAlertsForGame(input: {
         teamId: favoriteTeam,
         tone,
         latestPlayText: input.latestPlayText,
+        scoringPlayContext: input.scoringPlayContext ?? null,
       } as Prisma.InputJsonValue,
     };
   };

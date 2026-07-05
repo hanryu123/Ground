@@ -11,7 +11,7 @@
  *
  * isKboPostgameHour — 경기 종료 후 구간 (postgame)
  *   주중(화~금): 21:00 ~ 23:30
- *   주말(토~일): 19:30 ~ 22:30
+ *   주말(토~일): 19:30 ~ 23:30
  *   월요일: false
  */
 
@@ -43,7 +43,7 @@ export function isKboPostgameHour(now?: Date): boolean {
 
   const isWeekend = day === 0 || day === 6;
   return isWeekend
-    ? totalMin >= 19 * 60 + 30 && totalMin < 22 * 60 + 30  // 19:30~22:30
+    ? totalMin >= 19 * 60 + 30 && totalMin < 23 * 60 + 30  // 19:30~23:30
     : totalMin >= 21 * 60      && totalMin < 23 * 60 + 30;  // 21:00~23:30
 }
 

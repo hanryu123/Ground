@@ -38,6 +38,17 @@ type PostgameJob = {
   facts: PostGameFacts | null; // mock 모드면 사전 생성, 일반이면 null → fetch.
 };
 
+type PostgameRunLog = {
+  gameId: string;
+  teamId: string;
+  opponentTeamId: string;
+  tone: "win" | "loss" | "draw";
+  title: string;
+  content: string;
+  teamOwnership: PostGameFacts["teamOwnership"];
+  dispatch: "dry-run" | "sent" | "already-dispatched";
+};
+
 type MockPostgameOverrides = {
   teamId: string;
   opponentTeamId: string;
@@ -70,6 +81,34 @@ function resolveTone(myScore: number, oppScore: number): "win" | "loss" | "draw"
   if (myScore > oppScore) return "win";
   if (myScore < oppScore) return "loss";
   return "draw";
+}
+
+function isIsoDate(raw: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw);
+}
+
+function shiftIsoDate(date: string, deltaDays: number): string {
+  const base = new Date(`${date}T00:00:00+09:00`);
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function isKboPostgameCatchupHour(now = new Date()): boolean {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const totalMin = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return totalMin >= 0 && totalMin < 13 * 60;
+}
+
+function resolvePostgameDate(url: URL): { date: string; catchup: boolean } {
+  const explicit = (url.searchParams.get("date") ?? "").trim();
+  if (isIsoDate(explicit)) return { date: explicit, catchup: false };
+
+  const today = todayKstDate();
+  if (isKboPostgameCatchupHour()) {
+    return { date: shiftIsoDate(today, -1), catchup: true };
+  }
+  return { date: today, catchup: false };
 }
 
 function readMockOverrides(url: URL): MockPostgameOverrides | null {
@@ -196,17 +235,19 @@ export async function GET(req: Request) {
   if (shouldSkipCronInAlpha(url, req)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
 
   const force = url.searchParams.get("force") === "1";
+  const dryRun = url.searchParams.get("dryRun") === "1" || url.searchParams.get("inspect") === "1";
+  const target = resolvePostgameDate(url);
 
-  // mock 모드나 force 파라미터 없으면 경기 종료 시간대 밖에서 즉시 스킵
-  // (주중 21:00~23:30, 주말 19:30~22:30 KST)
+  // mock/force/catch-up 이 아니면 경기 종료 시간대 밖에서 즉시 스킵
+  // (주중 21:00~23:30, 주말 19:30~23:30 KST)
   const mock = readMockOverrides(url);
-  if (!mock && !force && !isKboPostgameHour()) {
+  if (!mock && !force && !target.catchup && !isKboPostgameHour()) {
     return NextResponse.json({ ok: true, skipped: "OUT_OF_POSTGAME_HOURS" });
   }
 
   const teamFilter = (url.searchParams.get("teamId") ?? "").trim().toLowerCase();
   const gameIdFilter = (url.searchParams.get("gameId") ?? "").trim();
-  const date = todayKstDate();
+  const date = mock ? todayKstDate() : target.date;
 
   let jobs: PostgameJob[];
   if (mock) {
@@ -239,16 +280,29 @@ export async function GET(req: Request) {
   let generated = 0;
   let sent = 0;
   let skipped = 0;
+  const postgameLogs: PostgameRunLog[] = [];
   await mapWithConcurrency(jobs, 2, async (job) => {
-    const lock = await markDispatchOnce({
-      alertKind: "postgame",
-      teamScope: job.teamId,
-      eventKey: `${date}:${job.externalId}:postgame`,
-      gameExternalId: job.externalId,
-    });
-    if (!lock) {
-      skipped += 1;
-      return;
+    if (!dryRun) {
+      const lock = await markDispatchOnce({
+        alertKind: "postgame",
+        teamScope: job.teamId,
+        eventKey: `${date}:${job.externalId}:postgame`,
+        gameExternalId: job.externalId,
+      });
+      if (!lock) {
+        postgameLogs.push({
+          gameId: job.externalId,
+          teamId: job.teamId,
+          opponentTeamId: job.opponentTeamId,
+          tone: resolveTone(job.myScore, job.oppScore),
+          title: "",
+          content: "",
+          teamOwnership: undefined,
+          dispatch: "already-dispatched",
+        });
+        skipped += 1;
+        return;
+      }
     }
     const baseFacts =
       job.facts ??
@@ -274,6 +328,20 @@ export async function GET(req: Request) {
       tone: resolveTone(job.myScore, job.oppScore),
       facts,
     });
+    postgameLogs.push({
+      gameId: job.externalId,
+      teamId: job.teamId,
+      opponentTeamId: job.opponentTeamId,
+      tone: resolveTone(job.myScore, job.oppScore),
+      title: report.headline,
+      content: report.content,
+      teamOwnership: facts.teamOwnership,
+      dispatch: dryRun ? "dry-run" : "sent",
+    });
+    if (dryRun) {
+      generated += 1;
+      return;
+    }
     await prisma.postGameReport.upsert({
       where: { externalId_teamId: { externalId: job.externalId, teamId: job.teamId } },
       create: {
@@ -335,5 +403,6 @@ export async function GET(req: Request) {
     generated,
     sent,
     skipped,
+    postgameLogs,
   });
 }

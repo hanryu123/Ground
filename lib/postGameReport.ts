@@ -3,6 +3,7 @@ import { fetchTeamMomentum, type TeamMomentum } from "@/lib/teamMomentum";
 import {
   buildCopyStyleBrief,
   buildVariedPostgameFallback,
+  hasForbiddenFanCliche,
   sanitizeBoringFanCopy,
 } from "@/lib/fanCopyVariety";
 
@@ -21,6 +22,26 @@ function stadiumCity(mySide: "home" | "away", myTeamId: string, oppTeamId: strin
 }
 
 type Tone = "win" | "loss" | "draw";
+
+type TeamOwnershipBlock = {
+  side: Side;
+  id: string;
+  name: string;
+  shortName: string;
+  score: number;
+  players: string[];
+  mvpPlayers: string[];
+  notable: string[];
+};
+
+export type PostGameTeamOwnership = {
+  homeTeam: TeamOwnershipBlock;
+  awayTeam: TeamOwnershipBlock;
+  winningTeam: string | null;
+  losingTeam: string | null;
+  perspectiveTeam: string;
+  opponentTeam: string;
+};
 
 export type PostGameFacts = {
   externalId: string;
@@ -43,6 +64,7 @@ export type PostGameFacts = {
   notable?: string[];
   myPlayers?: string[];
   oppPlayers?: string[];
+  teamOwnership?: PostGameTeamOwnership;
   recentMomentum?: TeamMomentum | null;
   gameTime?: string | null;
   /** 경기 도중 우천 중단이 있었던 경우 true */
@@ -283,6 +305,68 @@ function playerMentioned(text: string | null | undefined, players: string[] | un
   return (players ?? []).some((name) => name.length >= 2 && text.includes(name));
 }
 
+function uniqueStrings(values: Array<string | null | undefined>, limit = 40): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const text = sanitizeTextValue(value);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function playersMentionedInLines(lines: Array<string | null | undefined>, players: string[]): string[] {
+  const joined = lines.filter(Boolean).join(" ");
+  return uniqueStrings(players.filter((name) => name.length >= 2 && joined.includes(name)), 12);
+}
+
+function sideForPlayerName(name: string | null | undefined, homePlayers: string[], awayPlayers: string[]): Side | null {
+  if (!name) return null;
+  if (playerMentioned(name, homePlayers)) return "home";
+  if (playerMentioned(name, awayPlayers)) return "away";
+  return null;
+}
+
+function mergeMvpPlayers(input: {
+  side: Side;
+  players: string[];
+  battingHighlights: TeamBattingHighlights;
+  etcNotable: string[];
+  winningSide: Side | null;
+  losingSide: Side | null;
+  winningPitcher: string | null;
+  losingPitcher: string | null;
+  savePitcher: string | null;
+  homePlayers: string[];
+  awayPlayers: string[];
+}): string[] {
+  const pitcherCandidates = [
+    sideForPlayerName(input.winningPitcher, input.homePlayers, input.awayPlayers) === input.side ||
+    (!sideForPlayerName(input.winningPitcher, input.homePlayers, input.awayPlayers) && input.winningSide === input.side)
+      ? input.winningPitcher
+      : null,
+    sideForPlayerName(input.savePitcher, input.homePlayers, input.awayPlayers) === input.side ||
+    (!sideForPlayerName(input.savePitcher, input.homePlayers, input.awayPlayers) && input.winningSide === input.side)
+      ? input.savePitcher
+      : null,
+    sideForPlayerName(input.losingPitcher, input.homePlayers, input.awayPlayers) === input.side ||
+    (!sideForPlayerName(input.losingPitcher, input.homePlayers, input.awayPlayers) && input.losingSide === input.side)
+      ? input.losingPitcher
+      : null,
+  ];
+  return uniqueStrings([
+    ...pitcherCandidates,
+    ...playersMentionedInLines([
+      input.battingHighlights.homeRun,
+      ...input.battingHighlights.notable,
+      ...input.etcNotable,
+    ], input.players),
+  ], 12);
+}
+
 function teamOnlyLine(
   line: string | null | undefined,
   myPlayers: string[],
@@ -290,10 +374,11 @@ function teamOnlyLine(
 ): string | null {
   const text = sanitizeTextValue(line);
   if (!text) return null;
+  if (myPlayers.length === 0) return null;
   const mentionsMy = playerMentioned(text, myPlayers);
   const mentionsOpp = playerMentioned(text, oppPlayers);
   if (mentionsOpp) return null;
-  if (myPlayers.length > 0 && !mentionsMy) return null;
+  if (!mentionsMy) return null;
   return text;
 }
 
@@ -304,6 +389,7 @@ function safeTeamNarrativeLine(
 ): string | null {
   const text = sanitizeTextValue(line);
   if (!text) return null;
+  if (myPlayers.length === 0) return null;
   if (playerMentioned(text, oppPlayers)) return null;
   return text;
 }
@@ -349,6 +435,97 @@ function parseTeamBattingHighlights(recordResponse: unknown, side: Side): TeamBa
   return {
     homeRun: homeRuns.length > 0 ? homeRuns.join(", ") : null,
     notable: notable.slice(0, 3),
+  };
+}
+
+function buildTeamOwnership(input: {
+  teamId: string;
+  opponentTeamId: string;
+  mySide: Side;
+  myScore: number;
+  oppScore: number;
+  homePlayers: string[];
+  awayPlayers: string[];
+  homeBattingHighlights: TeamBattingHighlights;
+  awayBattingHighlights: TeamBattingHighlights;
+  homeNotable: string[];
+  awayNotable: string[];
+  winningPitcher: string | null;
+  losingPitcher: string | null;
+  savePitcher: string | null;
+}): PostGameTeamOwnership {
+  const homeTeamId = input.mySide === "home" ? input.teamId : input.opponentTeamId;
+  const awayTeamId = input.mySide === "away" ? input.teamId : input.opponentTeamId;
+  const homeTeam = findTeam(homeTeamId);
+  const awayTeam = findTeam(awayTeamId);
+  const homeScore = input.mySide === "home" ? input.myScore : input.oppScore;
+  const awayScore = input.mySide === "away" ? input.myScore : input.oppScore;
+  const winningSide: Side | null =
+    homeScore > awayScore ? "home" : awayScore > homeScore ? "away" : null;
+  const losingSide: Side | null =
+    homeScore < awayScore ? "home" : awayScore < homeScore ? "away" : null;
+  const homeMvpPlayers = mergeMvpPlayers({
+    side: "home",
+    players: input.homePlayers,
+    battingHighlights: input.homeBattingHighlights,
+    etcNotable: input.homeNotable,
+    winningSide,
+    losingSide,
+    winningPitcher: input.winningPitcher,
+    losingPitcher: input.losingPitcher,
+    savePitcher: input.savePitcher,
+    homePlayers: input.homePlayers,
+    awayPlayers: input.awayPlayers,
+  });
+  const awayMvpPlayers = mergeMvpPlayers({
+    side: "away",
+    players: input.awayPlayers,
+    battingHighlights: input.awayBattingHighlights,
+    etcNotable: input.awayNotable,
+    winningSide,
+    losingSide,
+    winningPitcher: input.winningPitcher,
+    losingPitcher: input.losingPitcher,
+    savePitcher: input.savePitcher,
+    homePlayers: input.homePlayers,
+    awayPlayers: input.awayPlayers,
+  });
+
+  return {
+    homeTeam: {
+      side: "home",
+      id: homeTeam.id,
+      name: homeTeam.name,
+      shortName: homeTeam.short,
+      score: homeScore,
+      players: input.homePlayers.slice(0, 40),
+      mvpPlayers: homeMvpPlayers,
+      notable: uniqueUsableLines([
+        input.homeBattingHighlights.homeRun,
+        ...input.homeBattingHighlights.notable,
+        ...input.homeNotable,
+      ], 6),
+    },
+    awayTeam: {
+      side: "away",
+      id: awayTeam.id,
+      name: awayTeam.name,
+      shortName: awayTeam.short,
+      score: awayScore,
+      players: input.awayPlayers.slice(0, 40),
+      mvpPlayers: awayMvpPlayers,
+      notable: uniqueUsableLines([
+        input.awayBattingHighlights.homeRun,
+        ...input.awayBattingHighlights.notable,
+        ...input.awayNotable,
+      ], 6),
+    },
+    winningTeam:
+      winningSide === "home" ? homeTeam.name : winningSide === "away" ? awayTeam.name : null,
+    losingTeam:
+      losingSide === "home" ? homeTeam.name : losingSide === "away" ? awayTeam.name : null,
+    perspectiveTeam: findTeam(input.teamId).name,
+    opponentTeam: findTeam(input.opponentTeamId).name,
   };
 }
 
@@ -405,6 +582,111 @@ function hasUnlabeledOpponentPlayerMention(text: string, oppTeam: string, oppPla
     }
   }
   return false;
+}
+
+function ownershipBlocks(facts: PostGameFacts): TeamOwnershipBlock[] {
+  return facts.teamOwnership ? [facts.teamOwnership.homeTeam, facts.teamOwnership.awayTeam] : [];
+}
+
+function ownershipBlockForTeam(facts: PostGameFacts, teamLabel: string): TeamOwnershipBlock | null {
+  return ownershipBlocks(facts).find((block) =>
+    block.name === teamLabel || block.shortName === teamLabel
+  ) ?? null;
+}
+
+function opponentOwnershipPlayers(facts: PostGameFacts): string[] {
+  const opponentBlock = ownershipBlockForTeam(facts, facts.oppTeam);
+  return uniqueStrings([
+    ...(facts.oppPlayers ?? []),
+    ...(opponentBlock?.players ?? []),
+    ...(opponentBlock?.mvpPlayers ?? []),
+  ], 60);
+}
+
+function hasOpponentOwnershipViolation(text: string, facts: PostGameFacts): boolean {
+  return hasUnlabeledOpponentPlayerMention(text, facts.oppTeam, opponentOwnershipPlayers(facts));
+}
+
+function toLlmOwnershipPayload(facts: PostGameFacts): {
+  homeTeam: Pick<TeamOwnershipBlock, "name" | "shortName" | "score" | "mvpPlayers" | "players" | "notable">;
+  awayTeam: Pick<TeamOwnershipBlock, "name" | "shortName" | "score" | "mvpPlayers" | "players" | "notable">;
+  winningTeam: string | null;
+  losingTeam: string | null;
+  perspectiveTeam: string;
+  opponentTeam: string;
+} | null {
+  if (!facts.teamOwnership) return null;
+  const shrink = (block: TeamOwnershipBlock) => ({
+    name: block.name,
+    shortName: block.shortName,
+    score: block.score,
+    mvpPlayers: block.mvpPlayers.slice(0, 8),
+    players: block.players.slice(0, 30),
+    notable: block.notable.slice(0, 5),
+  });
+  return {
+    homeTeam: shrink(facts.teamOwnership.homeTeam),
+    awayTeam: shrink(facts.teamOwnership.awayTeam),
+    winningTeam: facts.teamOwnership.winningTeam,
+    losingTeam: facts.teamOwnership.losingTeam,
+    perspectiveTeam: facts.teamOwnership.perspectiveTeam,
+    opponentTeam: facts.teamOwnership.opponentTeam,
+  };
+}
+
+function ensureTeamOwnership(input: {
+  teamId: string;
+  opponentTeamId: string;
+  mySide: Side;
+  facts: PostGameFacts;
+}): PostGameTeamOwnership {
+  if (input.facts.teamOwnership) return input.facts.teamOwnership;
+  const homeTeamId = input.mySide === "home" ? input.teamId : input.opponentTeamId;
+  const awayTeamId = input.mySide === "away" ? input.teamId : input.opponentTeamId;
+  const homeTeam = findTeam(homeTeamId);
+  const awayTeam = findTeam(awayTeamId);
+  const homeScore = input.mySide === "home" ? input.facts.myScore : input.facts.oppScore;
+  const awayScore = input.mySide === "away" ? input.facts.myScore : input.facts.oppScore;
+  const homePlayers = input.mySide === "home" ? input.facts.myPlayers ?? [] : input.facts.oppPlayers ?? [];
+  const awayPlayers = input.mySide === "away" ? input.facts.myPlayers ?? [] : input.facts.oppPlayers ?? [];
+  const myMvpPlayers = uniqueStrings([
+    input.facts.winningPitcher,
+    input.facts.losingPitcher,
+    input.facts.savePitcher,
+    ...playersMentionedInLines([
+      input.facts.clutchHit,
+      input.facts.homeRun,
+      ...(input.facts.notable ?? []),
+    ], input.facts.myPlayers ?? []),
+  ], 12);
+  const homeMvpPlayers = input.mySide === "home" ? myMvpPlayers : [];
+  const awayMvpPlayers = input.mySide === "away" ? myMvpPlayers : [];
+  return {
+    homeTeam: {
+      side: "home",
+      id: homeTeam.id,
+      name: homeTeam.name,
+      shortName: homeTeam.short,
+      score: homeScore,
+      players: homePlayers.slice(0, 40),
+      mvpPlayers: homeMvpPlayers,
+      notable: [],
+    },
+    awayTeam: {
+      side: "away",
+      id: awayTeam.id,
+      name: awayTeam.name,
+      shortName: awayTeam.short,
+      score: awayScore,
+      players: awayPlayers.slice(0, 40),
+      mvpPlayers: awayMvpPlayers,
+      notable: [],
+    },
+    winningTeam: homeScore > awayScore ? homeTeam.name : awayScore > homeScore ? awayTeam.name : null,
+    losingTeam: homeScore < awayScore ? homeTeam.name : awayScore < homeScore ? awayTeam.name : null,
+    perspectiveTeam: findTeam(input.teamId).name,
+    opponentTeam: findTeam(input.opponentTeamId).name,
+  };
 }
 
 function parsePitchingResult(recordResponse: unknown): ParsedPitchingResult {
@@ -566,7 +848,7 @@ function buildFallbackReport(input: { facts: PostGameFacts; tone: Tone }): { hea
     wasRainSuspended: facts.wasRainSuspended,
   });
   const sanitized = sanitizePostGameReport(report, facts);
-  if (!hasUnlabeledOpponentPlayerMention(`${sanitized.headline} ${sanitized.content}`, facts.oppTeam, facts.oppPlayers)) {
+  if (!hasOpponentOwnershipViolation(`${sanitized.headline} ${sanitized.content}`, facts)) {
     return sanitized;
   }
 
@@ -592,6 +874,19 @@ function parseJsonBlock(text: string): { headline?: string; content?: string } |
   } catch {
     return null;
   }
+}
+
+function countSentences(text: string): number {
+  return compact(text)
+    .split(/(?<=[.!?。！？])\s+/)
+    .filter((sentence) => /[가-힣A-Za-z0-9]/.test(sentence)).length;
+}
+
+function isSubstantivePostGameContent(content: string): boolean {
+  const text = compact(content);
+  if (text.length < 300) return false;
+  if (countSentences(text) < 5) return false;
+  return true;
 }
 
 function hasVerifiedComebackFact(facts: PostGameFacts): boolean {
@@ -696,7 +991,7 @@ function isSafePostGameCopy(input: { headline: string; content: string; facts: P
   if (/그랜드\s*슬램|만루\s*홈런|만루포/.test(text) && !hasVerifiedFactTerm(input.facts, /그랜드\s*슬램|만루\s*홈런|만루포/)) return false;
   if (/퀄리티\s*스타트|QS|완투승/.test(text) && !hasVerifiedFactTerm(input.facts, /퀄리티\s*스타트|QS|완투승/)) return false;
   if (/영봉승/.test(text) && input.facts.oppScore !== 0) return false;
-  if (hasUnlabeledOpponentPlayerMention(text, input.facts.oppTeam, input.facts.oppPlayers)) return false;
+  if (hasOpponentOwnershipViolation(text, input.facts)) return false;
   return true;
 }
 
@@ -745,6 +1040,14 @@ export async function fetchPostGameFacts(input: {
   const myPlayers = side === "home" ? playerLists.homePlayers : playerLists.awayPlayers;
   const oppPlayers = side === "home" ? playerLists.awayPlayers : playerLists.homePlayers;
   const myBattingHighlights = parseTeamBattingHighlights(box, side);
+  const homeBattingHighlights = parseTeamBattingHighlights(box, "home");
+  const awayBattingHighlights = parseTeamBattingHighlights(box, "away");
+  const homeEtcNotable = etc.notable
+    .map((line) => teamOnlyLine(line, playerLists.homePlayers, playerLists.awayPlayers))
+    .filter((line): line is string => Boolean(line));
+  const awayEtcNotable = etc.notable
+    .map((line) => teamOnlyLine(line, playerLists.awayPlayers, playerLists.homePlayers))
+    .filter((line): line is string => Boolean(line));
   const safeTexts = texts
     .map((line) => safeTeamNarrativeLine(line, myPlayers, oppPlayers))
     .filter((line): line is string => Boolean(line));
@@ -769,6 +1072,22 @@ export async function fetchPostGameFacts(input: {
     ...etc.notable.map((line) => teamOnlyLine(line, myPlayers, oppPlayers)),
     ...safeTexts,
   ], 5);
+  const teamOwnership = buildTeamOwnership({
+    teamId: input.teamId,
+    opponentTeamId: input.opponentTeamId,
+    mySide: input.mySide,
+    myScore: input.myScore,
+    oppScore: input.oppScore,
+    homePlayers: playerLists.homePlayers,
+    awayPlayers: playerLists.awayPlayers,
+    homeBattingHighlights,
+    awayBattingHighlights,
+    homeNotable: homeEtcNotable,
+    awayNotable: awayEtcNotable,
+    winningPitcher: rawWinningPitcher,
+    losingPitcher: rawLosingPitcher,
+    savePitcher: rawSavePitcher,
+  });
 
   return {
     externalId: input.externalId,
@@ -791,6 +1110,7 @@ export async function fetchPostGameFacts(input: {
     notable,
     myPlayers,
     oppPlayers,
+    teamOwnership,
     recentMomentum,
     gameTime: input.gameTime ?? null,
   };
@@ -804,7 +1124,16 @@ export async function generatePostGameReport(input: {
   facts: PostGameFacts;
   strictLlm?: boolean;
 }): Promise<{ headline: string; content: string }> {
-  const fallback = buildFallbackReport({ facts: input.facts, tone: input.tone });
+  const facts: PostGameFacts = {
+    ...input.facts,
+    teamOwnership: ensureTeamOwnership({
+      teamId: input.teamId,
+      opponentTeamId: input.opponentTeamId,
+      mySide: input.mySide,
+      facts: input.facts,
+    }),
+  };
+  const fallback = buildFallbackReport({ facts, tone: input.tone });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     if (input.strictLlm) throw new Error("ANTHROPIC_API_KEY is missing (strictLlm mode)");
@@ -816,12 +1145,16 @@ export async function generatePostGameReport(input: {
   const locationLine = stadium
     ? `경기장: ${stadium} (${input.mySide === "home" ? "홈" : "원정"} 경기)`
     : `경기: ${input.mySide === "home" ? "홈" : "원정"} 경기`;
-  const gameTimeLine = resolveGameTimeInstruction(input.facts.gameTime);
+  const gameTimeLine = resolveGameTimeInstruction(facts.gameTime);
+  const ownershipPayload = toLlmOwnershipPayload(facts);
+  const ownershipJson = ownershipPayload
+    ? JSON.stringify(ownershipPayload, null, 2)
+    : "소속 구조화 데이터 없음";
   const styleBrief = buildCopyStyleBrief({
     surface: "postgame",
-    seed: `${input.facts.externalId}:${input.teamId}:${input.tone}:${input.facts.myScore}:${input.facts.oppScore}`,
+    seed: `${facts.externalId}:${input.teamId}:${input.tone}:${facts.myScore}:${facts.oppScore}`,
     teamShort: team,
-    opponentShort: input.facts.oppTeam,
+    opponentShort: facts.oppTeam,
   });
 
   const system = `너는 ${team} 전담 편파 캐스터야. 직업적 품격(존댓말, 방송 어체)은 지키지만, 감정은 완전히 ${team} 편이야.
@@ -858,9 +1191,10 @@ export async function generatePostGameReport(input: {
 - 아래 금칙어 금지: "확인 중", "정보 없음", "탓할 수 없는"
 - 데이터가 비어도 추측 금지하고 자연스러운 축약 표현 사용
 - 경기장/구장 언급 시 반드시 아래 제공된 실제 경기장 위치를 사용할 것
-- 선수 소속 절대 오인 금지. 상대 선수 명단에 있는 이름을 ${team} 선수, ${team} 중심타자, ${team} 주인공처럼 쓰면 실패다
-- 상대 선수 기록은 "${input.facts.oppTeam} 타자/상대 타자/상대 중심타선"으로만 다뤄라
-- 상대 선수 이름을 단독 주어로 세우지 마라. 반드시 "${input.facts.oppTeam}의 OOO" 또는 "상대 타자 OOO"처럼 소속을 붙여라
+- 선수 소속 절대 오인 금지. 아래 teamOwnership JSON에 있는 homeTeam/awayTeam 소속을 최상위 사실로 삼아라
+- Strict Ownership Constraint: "너는 승리 팀의 관점에서 편파 한줄평을 작성해야 한다. 데이터에 제공된 각 선수의 소속 팀(homeTeam/awayTeam)을 완벽하게 인지하고, 절대로 패배한 팀 소속의 선수를 승리 팀의 주역이나 같은 팀 선수로 묶어서 서술하지 마라. 패배 팀 선수를 언급할 때는 반드시 '상대 팀 김건희의 추격이 매서웠지만' 혹은 '상대 타선' 같은 명확한 대조 표현을 써야만 한다."
+- 상대 선수 기록은 "${facts.oppTeam} 타자/상대 타자/상대 중심타선"으로만 다뤄라
+- 상대 선수 이름을 단독 주어로 세우지 마라. 반드시 "${facts.oppTeam}의 OOO" 또는 "상대 타자 OOO"처럼 소속을 붙여라
 
 ⚠️ 데이터 매칭 하드룰:
 - "리드": 최종 스코어가 우리팀 > 상대팀일 때만 사용. 패배/무승부 문맥에서 리드 표현 금지
@@ -878,37 +1212,36 @@ export async function generatePostGameReport(input: {
 - 병살타: 타구 하나로 2명 아웃 (공격팀 최악)
 - 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님
 ${styleBrief}`;
-  const rainLine = input.facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
+  const rainLine = facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
   const narrativeLines = [
-    input.facts.winningPitcher ? `우리 승리투수: ${input.facts.winningPitcher}` : null,
-    input.facts.losingPitcher ? `우리 패전투수: ${input.facts.losingPitcher}` : null,
-    input.facts.savePitcher ? `우리 세이브: ${input.facts.savePitcher}` : null,
-    input.facts.clutchHit ? `우리 결승타 장면: ${input.facts.clutchHit}` : null,
-    input.facts.homeRun && !input.facts.clutchHit ? `우리 홈런 장면: ${input.facts.homeRun}` : null,
+    facts.winningPitcher ? `우리 승리투수: ${facts.winningPitcher}` : null,
+    facts.losingPitcher ? `우리 패전투수: ${facts.losingPitcher}` : null,
+    facts.savePitcher ? `우리 세이브: ${facts.savePitcher}` : null,
+    facts.clutchHit ? `우리 결승타 장면: ${facts.clutchHit}` : null,
+    facts.homeRun && !facts.clutchHit ? `우리 홈런 장면: ${facts.homeRun}` : null,
   ].filter(Boolean).join("\n");
-  const prompt = `팀:${input.facts.myTeam}
-상대:${input.facts.oppTeam}
+  const prompt = `팀:${facts.myTeam}
+상대:${facts.oppTeam}
 ${locationLine}
-${gameTimeLine ? `${gameTimeLine}\n` : ""}결과:${input.tone} | 스코어:${input.facts.myScore}:${input.facts.oppScore}
+${gameTimeLine ? `${gameTimeLine}\n` : ""}결과:${input.tone} | 스코어:${facts.myScore}:${facts.oppScore}
 ${rainLine ? `${rainLine}\n` : ""}
-▶ 선수 소속 경계 (절대 위반 금지):
-우리 팀(${input.facts.myTeam}) 선수: ${(input.facts.myPlayers ?? []).slice(0, 18).join(", ") || "명단 없음"}
-상대 팀(${input.facts.oppTeam}) 선수: ${(input.facts.oppPlayers ?? []).slice(0, 18).join(", ") || "명단 없음"}
+▶ teamOwnership JSON (선수 소속의 유일한 기준, 절대 위반 금지):
+${ownershipJson}
 
 ▶ 핵심 내러티브 (한줄평의 중심으로 활용할 것):
 ${narrativeLines || "투수/결승타 정보 없음"}
 
 ▶ 최근 팀 흐름 (오늘 경기 결과까지 반영):
-${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
-최근 5경기: ${input.facts.recentMomentum?.recentRecord ?? "기록 없음"} / ${input.facts.recentMomentum?.recentForm ?? "기록 없음"}
-현재 연속 흐름(연승/연패 정답): ${input.facts.recentMomentum?.streak?.label ?? "없음"}
-직전 경기: ${input.facts.recentMomentum?.lastGameLine ?? "없음"}
+${facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
+최근 5경기: ${facts.recentMomentum?.recentRecord ?? "기록 없음"} / ${facts.recentMomentum?.recentForm ?? "기록 없음"}
+현재 연속 흐름(연승/연패 정답): ${facts.recentMomentum?.streak?.label ?? "없음"}
+직전 경기: ${facts.recentMomentum?.lastGameLine ?? "없음"}
 
 ▶ 참고 수치 (숫자 나열 금지, 필요시 맥락으로만 활용):
-안타:${input.facts.myHits ?? "?"}:${input.facts.oppHits ?? "?"}
-실책:${input.facts.myErrors ?? "?"}:${input.facts.oppErrors ?? "?"}
-홈런:${input.facts.myHomeRuns ?? "?"}:${input.facts.oppHomeRuns ?? "?"}
-주요 장면:${(input.facts.notable ?? []).join(" | ") || "없음"}`;
+안타:${facts.myHits ?? "?"}:${facts.oppHits ?? "?"}
+실책:${facts.myErrors ?? "?"}:${facts.oppErrors ?? "?"}
+홈런:${facts.myHomeRuns ?? "?"}:${facts.oppHomeRuns ?? "?"}
+주요 장면:${(facts.notable ?? []).join(" | ") || "없음"}`;
 
   const callLlm = async (timeoutMs: number) => {
     const controller = new AbortController();
@@ -942,14 +1275,22 @@ ${input.facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
           .map((item) => item.text ?? "")
           .join("\n") ?? "";
       const parsed = parseJsonBlock(text);
-      const headline = clip(sanitizeBoringFanCopy(parsed?.headline ?? "", `${input.facts.externalId}:head`), 62);
-      const content = clip(sanitizeBoringFanCopy(parsed?.content ?? "", `${input.facts.externalId}:content`), 760);
+      const headline = clip(
+        sanitizeBoringFanCopy(parsed?.headline ?? "", `${facts.externalId}:head`, { clicheFallback: false }),
+        62,
+      );
+      const content = clip(
+        sanitizeBoringFanCopy(parsed?.content ?? "", `${facts.externalId}:content`, { clicheFallback: false }),
+        760,
+      );
       if (!headline || !content) return null;
       if (/확인\s*중|정보\s*없음|탓할 수 없는/i.test(`${headline} ${content}`)) return null;
+      if (hasForbiddenFanCliche(`${headline} ${content}`)) return null;
+      if (!isSubstantivePostGameContent(content)) return null;
       const outputText = `${headline} ${content}`;
-      if (isNonNightGame(input.facts.gameTime) && hasNightExpression(outputText)) return null;
-      if (hasUnlabeledOpponentPlayerMention(outputText, input.facts.oppTeam, input.facts.oppPlayers)) return null;
-      if (!isSafePostGameCopy({ headline, content, facts: input.facts })) {
+      if (isNonNightGame(facts.gameTime) && hasNightExpression(outputText)) return null;
+      if (hasOpponentOwnershipViolation(outputText, facts)) return null;
+      if (!isSafePostGameCopy({ headline, content, facts })) {
         console.warn("[postgame-llm] rejected unsafe copy", { headline, content });
         return null;
       }

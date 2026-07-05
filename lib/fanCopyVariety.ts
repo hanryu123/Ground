@@ -212,9 +212,31 @@ const FORBIDDEN_CLICHES = [
   "함께 응원합시다",
   "오늘 우리 팀 할 수 있습니다",
   "빨리 따라잡아야 합니다",
+  "빨리 따라잡아야겠습니다",
   "이 기세 그대로 가야죠",
   "다음 타자가 살려줘야 합니다",
   "멘탈 잡고 반격해야 합니다",
+  "큰일입니다",
+  "큰일 났습니다",
+  "벌써 1점을 내줬다뇨",
+  "초반인데 왜 벌써",
+] as const;
+
+const FORBIDDEN_CLICHE_PATTERNS = [
+  /빨리\s*따라잡아야(?:겠)?습니다/,
+  /큰일(?:이|)\s*(?:났|났네요|입니다|났습니다)/,
+  /\d+회(?:\s*[초말])?인데\s*벌써\s*\d+점을?\s*내줬다뇨/,
+  /벌써\s*\d+점을?\s*내줬다뇨/,
+  /홈런을\s*내줬습니다[.!…\s]*빨리/,
+  /다음\s*타자가\s*(?:좀\s*)?살려줘야/,
+] as const;
+
+const RESCUE_LINES = [
+  "스코어보드 불빛이 잠깐 흔들렸습니다. 바로 다음 장면에서 답을 꺼내야 합니다.",
+  "응원석 숨이 한 박자 멈췄습니다. 이제 벤치와 타석이 동시에 반응해야 합니다.",
+  "방금 장면은 알림창에 오래 남겠습니다. 그래도 판은 다음 공에서 다시 움직입니다.",
+  "중계석 톤이 확 낮아졌습니다. 이럴수록 첫 아웃카운트나 첫 출루가 필요합니다.",
+  "팬들 손이 휴대폰 위에서 굳었습니다. 지금 필요한 건 말보다 바로 다음 플레이입니다.",
 ] as const;
 
 export const FAN_COPY_STYLE_COUNT =
@@ -247,6 +269,31 @@ function pickOffset<T>(seed: string, list: readonly T[], offset: string): T {
   return pickBySeed(`${seed}:${offset}`, list);
 }
 
+function hasHangulFinalConsonant(text: string): boolean {
+  const lastHangul = [...compact(text)].reverse().find((char) => /[가-힣]/.test(char));
+  if (!lastHangul) return false;
+  const code = lastHangul.charCodeAt(0) - 0xac00;
+  return code >= 0 && code <= 11171 && code % 28 !== 0;
+}
+
+function withSubjectParticle(name: string): string {
+  return `${name}${hasHangulFinalConsonant(name) ? "이" : "가"}`;
+}
+
+function withTopicParticle(name: string): string {
+  return `${name}${hasHangulFinalConsonant(name) ? "은" : "는"}`;
+}
+
+function buildLastGameMood(line: string): string {
+  const clean = compact(line).replace(/^\d{4}-\d{2}-\d{2}\s+/, "");
+  const result = clean.match(/\s([승패무])$/)?.[1];
+  const score = clean.replace(/\s[승패무]$/, "");
+  if (result === "승") return `${score}, 좋은 기억은 짧게 챙기고 더 욕심낼 밤입니다.`;
+  if (result === "패") return `${score}, 팬들 속에 남은 찝찝함부터 지워야 할 밤입니다.`;
+  if (result === "무") return `${score}, 웃기도 찡그리기도 애매했던 밤입니다.`;
+  return `${clean} 여운이 아직 남아 있습니다.`;
+}
+
 export function buildCopyStyleBrief(input: {
   surface: Surface;
   seed: string;
@@ -270,12 +317,26 @@ export function buildCopyStyleBrief(input: {
 - 리듬: ${rhythm}
 - 이미지 앵커: ${image}
 - 이번 문구에서 특히 피할 상투어: ${forbidden.join(" / ")}
+- 절대 금지 뼈대: "큰일입니다" / "빨리 따라잡아야" / "벌써 N점을 내줬다뇨" / "다음 타자가 살려줘야" 계열
+- 금지 뼈대가 떠오르면 장소·소리·팬 행동 중 하나로 시작해서 완전히 다른 문장으로 우회한다.
 - 같은 날 같은 팀 알림끼리 첫 8글자, 결론 문장, 감탄사 구조가 겹치면 실패다.
 ━━━━━━━━━━━━━━━━━━━`;
 }
 
-export function sanitizeBoringFanCopy(text: string, seed: string): string {
+export function hasForbiddenFanCliche(text: string): boolean {
+  return (
+    FORBIDDEN_CLICHES.some((phrase) => text.includes(phrase)) ||
+    FORBIDDEN_CLICHE_PATTERNS.some((pattern) => pattern.test(text))
+  );
+}
+
+export function sanitizeBoringFanCopy(
+  text: string,
+  seed: string,
+  options: { clicheFallback?: boolean } = {}
+): string {
   let out = compact(text);
+  const clicheFallback = options.clicheFallback ?? true;
   const replacements = [
     ["다음 경기도 기대가 됩니다", "오늘 장면은 리플레이로 한 번 더 봐야 합니다"],
     ["다음 경기, 반드시 되갚아야 합니다", "이 패배는 그냥 넘기면 안 됩니다"],
@@ -288,9 +349,14 @@ export function sanitizeBoringFanCopy(text: string, seed: string): string {
     ["함께 응원합시다", "알림 켜두고 같이 달려보시죠"],
     ["오늘 우리 팀 할 수 있습니다", "오늘은 우리 쪽으로 판을 당겨와야 합니다"],
     ["빨리 따라잡아야 합니다", "지금 바로 점수판을 흔들어야 합니다"],
+    ["빨리 따라잡아야겠습니다", "바로 다음 장면에서 답을 꺼내야겠습니다"],
     ["이 기세 그대로 가야죠", "이 장면을 그냥 흘려보내면 안 됩니다"],
     ["다음 타자가 살려줘야 합니다", "벤치가 바로 다음 답을 꺼내야 합니다"],
+    ["다음 타자가 좀 살려줘야겠습니다", "다음 타석에서 바로 표정을 바꿔야겠습니다"],
     ["멘탈 잡고 반격해야 합니다", "흔들릴 시간 없이 바로 다시 붙어야 합니다"],
+    ["큰일입니다", "응원석 숨이 잠깐 멎었습니다"],
+    ["큰일 났습니다", "중계석 톤이 확 낮아졌습니다"],
+    ["초반인데 왜 벌써", "첫 이닝부터 이렇게 흔들리면"],
     ["단어의 방향을 바꾸다", "분위기를 반전시키다"],
     ["단어의 방향을 직접 바꿔야 합니다", "분위기를 직접 반전시켜야 합니다"],
     ["실책을 놓치지 않고 점수를 쌓아 올린", "상대의 자멸을 틈타 무섭게 집중력을 발휘한"],
@@ -303,9 +369,8 @@ export function sanitizeBoringFanCopy(text: string, seed: string): string {
     out = out.replaceAll(from, to);
   }
 
-  if (FORBIDDEN_CLICHES.some((phrase) => out.includes(phrase))) {
-    const image = pickOffset(seed, IMAGE_FRAMES, "sanitize-image");
-    out = `${image}까지 조용해진 느낌입니다. 오늘 장면은 좀 다르게 기억되겠습니다.`;
+  if (clicheFallback && hasForbiddenFanCliche(out)) {
+    out = pickOffset(seed, RESCUE_LINES, "sanitize-rescue");
   }
   return compact(out);
 }
@@ -600,53 +665,151 @@ export function buildVariedPostgameFallback(input: PostgameFallbackInput): { hea
     `팬들이 기억할 건 스코어보다 그 순간의 공기입니다`,
     `양쪽 모두 흔들린 장면은 있었지만, 결정적인 무게는 달랐습니다`,
   ], "pg-mid");
-  const extra = statHint && statHint !== middle ? `${statHint}. ` : "";
   const rain = input.wasRainSuspended ? "우천 중단까지 섞인 경기라 집중력의 무게도 더 컸습니다. " : "";
+  const texture = pickOffset(seed, [
+    `${input.myTeam} 팬들에게는 점수보다 경기 내내 쌓인 체감이 더 크게 남습니다`,
+    `스코어만 보면 단순해도, 팬 입장에서는 장면마다 온도가 달랐습니다`,
+    `오늘 경기는 박수와 한숨이 어디서 갈렸는지 비교적 선명했습니다`,
+    `결국 마지막에 남은 건 숫자보다 그 숫자를 만든 타이밍이었습니다`,
+  ], "pg-texture");
+  const scoreFrame =
+    input.tone === "win"
+      ? `${input.myTeam}가 ${gap}점 차를 끝까지 지키며 결과를 가져왔고, 마지막까지 흔들릴 틈을 크게 허용하지 않았습니다`
+      : input.tone === "loss"
+        ? `${gap}점 차 패배지만, 팬들이 느낀 무게는 결코 가볍지 않았고 흐름을 되돌릴 시간도 빠르게 줄었습니다`
+        : `승패가 갈리지 않은 만큼, 놓친 타이밍 하나하나가 더 크게 보였고 마지막 표정도 쉽게 정리되지 않았습니다`;
+  const scoreMeaning =
+    input.tone === "win"
+      ? `최종 스코어 ${score}는 단순한 숫자가 아니라, 오늘 ${input.myTeam}가 경기 흐름을 어디서 붙잡았는지 보여주는 표식입니다`
+      : input.tone === "loss"
+        ? `최종 스코어 ${score}는 짧아 보여도, 오늘 ${input.myTeam}가 놓친 선택과 타이밍을 꽤 솔직하게 드러냅니다`
+        : `최종 스코어 ${score}는 양쪽 모두에게 설명이 필요하지만, ${input.myTeam} 팬에게는 특히 더 찜찜하게 남습니다`;
+  const toneAngle =
+    input.tone === "win"
+      ? `화려한 말보다 필요한 순간을 놓치지 않은 쪽이 ${input.myTeam}였습니다`
+      : input.tone === "loss"
+        ? `오늘 ${input.myTeam}에는 결과보다 왜 그 흐름을 못 끊었는지가 더 큰 숙제입니다`
+        : `오늘 ${input.myTeam}에는 버틴 장면과 놓친 장면이 같이 남았습니다`;
+  const fanAftertaste =
+    input.tone === "win"
+      ? `팬 입장에서는 이긴 장면만큼이나, 흔들릴 수 있던 순간을 넘긴 과정까지 다시 보게 되는 경기입니다`
+      : input.tone === "loss"
+        ? `팬 입장에서는 졌다는 사실보다, 다시 돌려봐도 답답한 장면들이 먼저 떠오를 경기입니다`
+        : `팬 입장에서는 결과를 받아들이기보다, 어느 장면에서 한 발을 더 뗐어야 했는지부터 떠올리게 됩니다`;
   const closer = pickOffset(seed, input.tone === "win" ? closersWin : input.tone === "loss" ? closersLoss : closersDraw, "pg-close");
+  const sentences = [
+    opener,
+    rain ? rain.trim() : null,
+    middle,
+    statHint && statHint !== middle ? statHint : texture,
+    scoreFrame,
+    scoreMeaning,
+    toneAngle,
+    fanAftertaste,
+    closer,
+  ].filter((line): line is string => Boolean(line));
   return {
     headline,
-    content: sanitizeBoringFanCopy(`${opener} ${rain}${middle}. ${extra}${closer}`, seed),
+    content: sanitizeBoringFanCopy(
+      sentences
+        .map((sentence) => {
+          const clean = compact(sentence);
+          return /[.!?。！？]$/.test(clean) ? clean : `${clean}.`;
+        })
+        .join(" "),
+      seed,
+      { clicheFallback: false },
+    ),
   };
 }
 
 export function buildVariedPregameFallback(input: PregameFallbackInput): { title: string; lines: string[] } {
   const seed = `${input.seed}:${input.team}:${input.opp}:${input.starter ?? ""}`;
+  const starterSubject = input.starter ? withSubjectParticle(input.starter) : null;
+  const teamSubject = withSubjectParticle(input.team);
+  const teamTopic = withTopicParticle(input.team);
+  const oppSubject = withSubjectParticle(input.opp);
+  const streakTopic = input.streakLabel ? withTopicParticle(input.streakLabel) : null;
   const title = pickOffset(seed, [
-    "🎙️ 오늘 경기, 어디서 갈리나",
-    "🔥 오늘의 편파 관전 포인트",
-    "⚾ 경기 전 알림창 예열",
-    "🏟️ 오늘도 팬 모드입니다",
-    "📌 첫 공 전에 볼 장면",
-    "🎧 중계 켜기 전 체크",
+    `🔥 ${input.team} 오늘 말 나옵니다`,
+    `🎙️ ${input.opp}전 한 장면 대기`,
+    `⚾ ${input.team} 팬심 집합`,
+    `🏟️ ${input.team} 쪽 소리부터`,
+    `📌 ${input.opp}전 체크 포인트`,
+    `🎧 ${input.team} 경기 전 호출`,
+    `🔥 오늘 ${input.team} 각입니다`,
+    `⚾ ${input.opp}전 그냥 못 넘깁니다`,
+    `🧢 ${input.team} 팬들 모이세요`,
+    `🥁 ${input.opp}전 북소리 체크`,
+    `📡 ${input.team} 쪽 신호 옵니다`,
+    `🎬 ${input.opp}전 첫 컷 대기`,
   ], "pv-title");
   const starterLine = input.starter
     ? pickOffset(seed, [
-        `선발 ${input.starter}, 첫 이닝부터 ${input.opp} 타선을 조용하게 만들어야 합니다.`,
-        `${input.starter}의 초반 제구가 오늘 응원석 온도를 정할 겁니다.`,
-        `오늘 마운드의 첫 표정은 ${input.starter}에게 달려 있습니다.`,
-        `${input.starter}가 초구부터 스트라이크를 꽂으면 경기 공기가 달라집니다.`,
+        `선발 ${input.starter}, 오늘은 구속 숫자보다 ${input.opp} 타자 반응으로 답을 받아야 합니다.`,
+        `${starterSubject} 첫 헛스윙 하나만 꺼내도 ${input.team} 팬들 채팅창 온도가 달라집니다.`,
+        `마운드 위 ${input.starter}에게 필요한 건 거창한 서사가 아니라 낮게 깔리는 첫 장면입니다.`,
+        `${input.starter} 공 끝에 ${input.opp} 방망이가 늦으면, 시작부터 ${input.team} 쪽 소리가 커집니다.`,
+        `오늘 ${input.starter} 이름표는 예고편이 아닙니다. 초반 타석 반응으로 바로 검증받습니다.`,
+        `선발 ${input.starter}가 카운트 싸움을 빨리 유리하게 만들면 ${input.team} 응원은 훨씬 편해집니다.`,
+        `오늘 ${input.starter}의 숙제는 간단합니다. ${input.opp} 중심타선 앞에 복잡한 생각을 심는 겁니다.`,
+        `타자 눈높이를 흔드는 공 하나, ${input.starter}에게는 그 장면이 출발점입니다.`,
+        `${starterSubject} 낮은 존을 먼저 열면 ${input.opp} 타선 플랜도 길게 꼬입니다.`,
+        `오늘 ${input.starter}에게 필요한 건 과한 영웅담보다 ${input.opp} 배트 타이밍을 늦추는 공입니다.`,
       ], "pv-starter")
-    : `${input.team} 마운드가 초반부터 경기 공기를 잡아야 합니다.`;
-  const momentumLine = input.streakLabel && /연승|연패/.test(input.streakLabel)
-    ? `${input.team}, 현재 ${input.streakLabel} 흐름입니다. 오늘은 분위기를 직접 반전시켜야 합니다.`
-    : `${input.team} 최근 체감은 이렇습니다. ${input.momentumSummary}`;
+    : `${input.team} 마운드는 오늘 첫 좋은 카운트부터 팬들 어깨를 펴게 만들어야 합니다.`;
+  const momentumLine = (() => {
+    if (input.streakLabel && /연승/.test(input.streakLabel)) {
+      return pickOffset(seed, [
+        `${input.team} ${input.streakLabel}, 팬들 표정이 조심스럽게 건방져질 타이밍입니다.`,
+        `${input.streakLabel} 숫자가 괜히 붙은 게 아닙니다. ${teamTopic} 오늘도 먼저 밀 명분이 충분합니다.`,
+        `요즘 ${input.team} 알림은 열어볼 맛이 있습니다. ${input.streakLabel} 옆에 하나 더 붙일 시간입니다.`,
+      ], "pv-streak-win");
+    }
+    if (input.streakLabel && /연패/.test(input.streakLabel)) {
+      return pickOffset(seed, [
+        `${input.team} ${input.streakLabel}, 긴말보다 선취점 하나가 제일 큰 사과문입니다.`,
+        `${streakTopic} 더 길어지면 밈이 됩니다. ${input.team} 팬들은 오늘 그 농담을 끝내고 싶습니다.`,
+        `${input.team} 팬심은 요 며칠 오래 끓었습니다. 오늘은 좋은 타구 하나부터 숨통을 틔워야죠.`,
+      ], "pv-streak-loss");
+    }
+    if (input.lastGameLine) {
+      return `${buildLastGameMood(input.lastGameLine)} ${teamTopic} 오늘 첫 찬스부터 말투를 바꿔야죠.`;
+    }
+    return `${input.team} 최근 메모는 ${input.momentumSummary}입니다. 오늘은 숫자보다 먼저 장면을 가져와야죠.`;
+  })();
   const matchupLine = pickOffset(seed, [
-    `${input.opp}전은 첫 득점이 커 보이는 매치업입니다.`,
-    `${input.opp} 상대로는 한 번 잡은 분위기를 길게 끌고 가야 합니다.`,
-    `${input.opp} 덕아웃을 먼저 조용하게 만드는 게 오늘 출발점입니다.`,
-    `${input.opp}전, 타선이 초반부터 알림창을 흔들어줘야 합니다.`,
-    `${input.opp} 상대라면 팬들도 자연스럽게 더 예민해집니다.`,
+    `${input.opp} 상대로는 큰소리보다 작은 빈틈을 먼저 잡는 쪽이 재밌어집니다.`,
+    `${input.opp} 이름값에 눌릴 경기 아닙니다. ${input.team} 쪽 한 방이 먼저 나오면 말투가 바뀝니다.`,
+    `${input.opp} 벤치가 계산기 꺼내게 만들 장면, 오늘 초반에 하나면 충분합니다.`,
+    `${input.opp}전 알림은 밍밍하면 안 됩니다. 팬들 손가락이 멈출 이유를 만들어야죠.`,
+    `${input.opp} 이름만 떠도 예민해지는 팬심, 오늘은 그 촉까지 전력입니다.`,
+    `${input.opp}전은 한 번 밀리면 말이 길어집니다. ${teamTopic} 먼저 짧고 세게 보여줘야죠.`,
+    `${oppSubject} 편하게 스윙하게 두면 손해입니다. ${teamTopic} 초반부터 귀찮게 굴어야 합니다.`,
+    `${input.opp} 상대로는 첫 좋은 수비 하나도 분위기 자산입니다. 허투루 넘길 장면이 없습니다.`,
+    `${input.opp}전 키워드는 선명합니다. ${teamSubject} 먼저 팬들 목소리를 키우면 됩니다.`,
+    `${oppSubject} 계산한 경기표에 ${input.team} 쪽 변수를 하나 꽂아 넣어야 합니다.`,
   ], "pv-matchup");
   const closer = pickOffset(seed, [
-    `${input.time ?? "경기 시간"} 시작, 중계 켜두면 알림이 같이 따라붙겠습니다.`,
-    `오늘은 첫 이닝부터 같이 보셔야 재미가 납니다.`,
-    `팬 모드 켜두세요. 오늘 알림창은 가만히 있지 않을 겁니다.`,
-    `초반 세 타석만 봐도 오늘 냄새가 나올 겁니다.`,
-    `경기 시작 전부터 이미 응원석 온도는 올라가 있습니다.`,
+    `${input.time ?? "경기 시간"} 시작, 오늘 알림은 군더더기 빼고 장면으로만 가겠습니다.`,
+    `초반 흐름 놓치면 단톡방 복습부터 해야 할 수도 있습니다.`,
+    `팬 모드 켜두세요. 오늘은 작은 타구 하나에도 어깨가 먼저 반응할 수 있습니다.`,
+    `초반 세 타석 안에 오늘 ${input.team} 경기의 농도가 보일 겁니다.`,
+    `경기 전부터 ${input.team} 팬들 엄지는 이미 알림 위에서 대기 중입니다.`,
+    `오늘은 길게 설명하지 않겠습니다. ${input.team} 팬들이 먼저 알아볼 장면만 잡겠습니다.`,
+    `${input.time ?? "플레이볼"} 전부터 채팅창 예열됐습니다. 이제 그 열을 경기장 쪽으로 넘겨야죠.`,
+    `이 알림은 예고편입니다. 본편에서는 ${input.team} 쪽 박수가 먼저 터져야 합니다.`,
+    `작은 카운트 하나도 그냥 지나치지 않겠습니다. 오늘은 ${input.team} 쪽 디테일을 보겠습니다.`,
+    `팬들 마음은 이미 좌석에 앉았습니다. 이제 ${teamSubject} 첫 신호만 보내면 됩니다.`,
+    `오늘은 거창한 예언보다 빠른 반응입니다. 좋은 장면 나오면 바로 물겠습니다.`,
+    `중계석 말투도 준비 끝입니다. ${teamSubject} 먼저 소리를 키우면 그대로 따라가겠습니다.`,
+    `손가락은 알림 위에, 눈은 첫 타석에 두면 됩니다. 오늘 ${input.team} 포인트 놓치지 않겠습니다.`,
   ], "pv-close");
   return {
     title,
-    lines: [momentumLine, starterLine, matchupLine, closer].map((line) => clip(sanitizeBoringFanCopy(line, seed), 88)),
+    lines: [momentumLine, starterLine, matchupLine, closer].map((line) =>
+      clip(sanitizeBoringFanCopy(line, seed, { clicheFallback: false }), 88)
+    ),
   };
 }
 
@@ -697,7 +860,7 @@ export function buildLiveFallbackCopy(input: LiveFallbackInput): { title: string
     return {
       title: name ? `💥 ${name} 홈런 허용` : "💥 홈런 허용",
       body: pickOffset(seed, [
-        `${inning}${name ? `${name}에게 ` : ""}홈런을 내줬습니다. 이건 바로 수습해야 합니다.`,
+        `${inning}${name ? `${name} 타구에 ` : ""}응원석 공기가 확 무거워졌습니다. 바로 수습해야 합니다.`,
         `${inning}타구가 넘어갔습니다. 경기장 공기가 확 무거워졌습니다.`,
         `${inning}홈런 허용, 방금 장면은 정말 뼈아픕니다.`,
         `${inning}담장을 넘어갔습니다. 이제 벤치가 답을 내야 합니다.`,

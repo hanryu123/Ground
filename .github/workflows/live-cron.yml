@@ -15,6 +15,11 @@ jobs:
           curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/check-score" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
 
+      - name: postgame
+        run: |
+          curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/postgame" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+
       - name: live-events
         run: |
           curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/live-events" \

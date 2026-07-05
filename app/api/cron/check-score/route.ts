@@ -8,6 +8,11 @@ import { loadMockSnapshotWithOverrides, readScoreCronDevOverrides } from "@/lib/
 import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
+import {
+  buildFallbackScoringContext,
+  fetchScoringPlayContext,
+  formatScoringPlayText,
+} from "@/lib/score/playByPlay";
 import { pushLiveActivityForGame } from "@/lib/liveActivityPush";
 import { sendPregameLiveActivityStarts } from "@/lib/liveActivityAutoStart";
 import {
@@ -198,106 +203,6 @@ function readFreshCompletionCache(targetDate: string, nowMs = Date.now()): Score
     return null;
   }
   return completionCache;
-}
-
-const SCORE_NAVER_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
-
-/**
- * Naver relay JSON에서 최근 플레이 텍스트를 의미 있는 한국어 문자열로 추출.
- * Claude 프롬프트용으로 "7회말 좌전안타 — 롯데 3:2 두산" 형태로 반환.
- */
-type RelayParseResult = {
-  text: string;
-  inningLabel: string | null;
-  /** 이닝 번호만 분리해서 노출 — 호출부에서 초/말을 덮어쓸 수 있도록 */
-  inn: number | null;
-};
-
-function parseLatestPlayFromRelay(json: Record<string, unknown>): RelayParseResult | null {
-  try {
-    const result = json["result"] as Record<string, unknown> | undefined;
-    const trd = result?.["textRelayData"] as Record<string, unknown> | undefined;
-    const textRelays = trd?.["textRelays"];
-    if (!Array.isArray(textRelays) || textRelays.length === 0) return null;
-
-    const last = textRelays[textRelays.length - 1] as Record<string, unknown>;
-    const rawTitle = (last["title"] as string | undefined) ?? "";
-    const title = /공격/.test(rawTitle) ? "" : rawTitle;
-    const rawInn = last["inn"] ?? last["inning"];
-    const inn: number | null = typeof rawInn === "number" ? rawInn
-      : typeof rawInn === "string" ? (parseInt(rawInn) || null) : null;
-    const textOptions = last["textOptions"] as Array<Record<string, unknown>> | undefined;
-
-    // 초/말: 1순위=상위JSON inningSub, 2순위=텍스트, 3순위=entry inningSub
-    // inningSub 1=초(원정공격), 2=말(홈공격)
-    const result2 = json["result"] as Record<string, unknown> | undefined;
-    const relayObj = (json["relay"] ?? result2?.["relay"]) as Record<string, unknown> | undefined;
-    const subCandidates = [
-      json["inningSub"], result2?.["inningSub"], relayObj?.["inningSub"],
-      json["currentInningSub"], result2?.["currentInningSub"],
-    ];
-    let half = "";
-    for (const s of subCandidates) {
-      if (s === 1 || s === "1") { half = "초"; break; }
-      if (s === 2 || s === "2") { half = "말"; break; }
-    }
-    if (!half) {
-      const playTexts = (textOptions ?? []).map((o) => (o["playText"] as string | undefined) ?? "").join(" ");
-      const m = `${title} ${playTexts}`.match(/\d{1,2}회\s*(초|말)/);
-      if (m) half = m[1];
-    }
-    if (!half) {
-      const s = last["inningSub"];
-      if (s === 1 || s === "1") half = "초";
-      else if (s === 2 || s === "2") half = "말";
-    }
-    const inningLabel: string | null = inn != null ? `${inn}회${half}` : null;
-
-    const plays = (textOptions ?? [])
-      .map((o) => (o["playText"] as string | undefined) ?? "")
-      .filter(Boolean);
-    const playDesc = plays.slice(0, 2).join(", ");
-
-    const firstOption = (textOptions ?? [])[0];
-    const gs = firstOption?.["currentGameState"] as Record<string, unknown> | undefined;
-    const homeScore = gs?.["homeScore"] as string | undefined;
-    const awayScore = gs?.["awayScore"] as string | undefined;
-    const homeCode = gs?.["homeTeamCode"] as string | undefined;
-    const awayCode = gs?.["awayTeamCode"] as string | undefined;
-
-    // 스코어는 buildUserPrompt에서 팬 관점으로 별도 전달 — 여기선 제외해야 Claude가 혼동하지 않음
-    const parts = [inningLabel, title, playDesc].filter(Boolean);
-    const text = parts.join(" ");
-    return text.length > 5 ? { text, inningLabel, inn } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchLatestPlayText(externalId: string): Promise<RelayParseResult | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch(
-      `https://api-gw.sports.naver.com/schedule/games/${externalId}/relay`,
-      {
-        headers: {
-          "user-agent": SCORE_NAVER_UA,
-          accept: "application/json",
-          referer: "https://m.sports.naver.com/",
-          "accept-language": "ko-KR,ko;q=0.9",
-        },
-        cache: "no-store",
-        signal: controller.signal,
-      }
-    ).finally(() => clearTimeout(timeout));
-    if (!res.ok) return null;
-    const json = await res.json() as Record<string, unknown>;
-    return parseLatestPlayFromRelay(json);
-  } catch {
-    return null;
-  }
 }
 
 export async function GET(req: Request) {
@@ -678,37 +583,24 @@ export async function GET(req: Request) {
         });
         if (dedupe.count === 0) continue;
 
-        const relayResult =
+        const relayScoringContext =
           fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
             ? null
-            : await fetchLatestPlayText(game.externalId);
-        if (!relayResult && !fastMode) deferOnce(summary, `relay:${game.externalId}`);
+            : await fetchScoringPlayContext({
+                game,
+                previousHomeScore: previous.homeScore,
+                previousAwayScore: previous.awayScore,
+              });
+        if (!relayScoringContext && !fastMode) deferOnce(summary, `relay:${game.externalId}`);
 
-        // ⚾ 이닝 초/말: 득점한 팀으로 결정 — 가장 신뢰도 높은 방법
-        //   홈팀 득점 → 홈팀이 공격 중 → 말(Bottom)
-        //   원정팀 득점 → 원정팀이 공격 중 → 초(Top)
-        const scoringHalf: "초" | "말" | null =
-          homeDelta > 0 ? "말" :
-          awayDelta > 0 ? "초" :
-          null;
-        const inningNum = relayResult?.inn ?? game.currentInning ?? null;
-        // 득점 정보로 초/말을 확정하고, 이닝 번호는 relay에서 가져옴
-        const correctedLabel: string | null =
-          inningNum != null && scoringHalf
-            ? `${inningNum}회${scoringHalf}`
-            : relayResult?.inningLabel ?? game.currentInningLabel ?? null;
-
-        // latestPlayText 앞의 이닝 레이블을 교정된 값으로 교체
-        let latestPlayText: string;
-        if (relayResult?.text) {
-          const origLabel = relayResult.inningLabel;
-          latestPlayText = origLabel && correctedLabel && relayResult.text.startsWith(origLabel)
-            ? correctedLabel + relayResult.text.slice(origLabel.length)
-            : relayResult.text;
-        } else {
-          const inningPrefix = correctedLabel ? `${correctedLabel} ` : "";
-          latestPlayText = `${inningPrefix}스코어 변동: ${game.homeTeam} ${game.homeScore}:${game.awayScore} ${game.awayTeam}`;
-        }
+        const scoringPlayContext =
+          relayScoringContext ??
+          buildFallbackScoringContext({
+            game,
+            previousHomeScore: previous.homeScore,
+            previousAwayScore: previous.awayScore,
+          });
+        const latestPlayText = formatScoringPlayText(scoringPlayContext);
 
         const result = await dispatchScoreAlertsForGame({
           game,
@@ -716,6 +608,7 @@ export async function GET(req: Request) {
           previousAwayScore: previous.awayScore,
           dbGameId: updated.id,
           latestPlayText,
+          scoringPlayContext,
           fastMode,
           llmTimeoutMs: SCORE_LLM_TIMEOUT_MS,
           llmRetryTimeoutMs: null,

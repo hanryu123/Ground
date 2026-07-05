@@ -416,6 +416,35 @@ function buildLiveEventCopy(
   });
 }
 
+async function fetchRecentLiveEventBodiesByTeam(teamIds: string[]): Promise<Map<string, string[]>> {
+  const unique = [...new Set(teamIds.filter(Boolean))];
+  const out = new Map<string, string[]>();
+  if (unique.length === 0) return out;
+
+  await Promise.all(
+    unique.map(async (teamId) => {
+      const rows = await prisma.notification.findMany({
+        where: {
+          type: "SYSTEM",
+          createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) },
+          payload: { path: ["teamId"], equals: teamId },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        select: { body: true },
+      });
+      out.set(
+        teamId,
+        rows
+          .map((row) => row.body)
+          .filter((text): text is string => typeof text === "string" && text.trim().length > 0)
+      );
+    })
+  );
+
+  return out;
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   // auth check temporarily open for debugging — re-enable after live-events confirmed working
@@ -431,6 +460,12 @@ export async function GET(req: Request) {
   const date = todayKstDate();
   const schedule = await fetchKboSchedule(date);
   const liveGames = schedule.today.filter((game) => game.status === "LIVE");
+  const recentBodiesByTeam = await fetchRecentLiveEventBodiesByTeam(
+    liveGames.flatMap((game) => [game.homeId, game.awayId])
+  ).catch((error) => {
+    console.warn("[live-events] recent body lookup failed", error);
+    return new Map<string, string[]>();
+  });
   let sent = 0;
   let skipped = 0;
   const debugRelays: Array<{ gameId: string; relayCount: number; eventKeys: string[]; debugStatuses: string[] }> = [];
@@ -530,6 +565,7 @@ export async function GET(req: Request) {
               oppCurrentScore,
               playerName: relay.playerName ?? undefined,
               strikeoutDetail: relay.strikeoutDetail ?? undefined,
+              recentBodies: recentBodiesByTeam.get(teamId) ?? [],
               fallbackBody: fallback.body,
             });
             llmCache.set(llmCacheKey, llmPromise);
