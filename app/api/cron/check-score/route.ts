@@ -213,7 +213,11 @@ export async function GET(req: Request) {
   // auth check temporarily open — re-enable after confirmed working
   // const auth = authorizeCron(req, url);
   // if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-  if (shouldSkipCronInAlpha(url, req)) {
+  // check-score is intentionally callable by the external 1-minute monitor.
+  // Other cron routes stay locked behind CRON_SECRET in alpha, but this route
+  // must keep polling during live game hours even when cron-job.org cannot send
+  // our Authorization header. Dedupe locks below prevent duplicate score pushes.
+  if (shouldSkipCronInAlpha(url, req) && !isKboGameHour() && !url.searchParams.get("force")) {
     return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
   }
 
