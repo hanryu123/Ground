@@ -9,9 +9,9 @@ import { sendCancelAlerts } from "@/lib/score/cancelAlert";
 import { sendRainDelayAlerts } from "@/lib/score/rainDelayAlert";
 import { dispatchScoreAlertsForGame } from "@/lib/score/scoreAlert";
 import {
-  buildFallbackScoringContext,
   fetchScoringPlayContext,
   formatScoringPlayText,
+  type ScoringPlayContext,
 } from "@/lib/score/playByPlay";
 import { pushLiveActivityForGame } from "@/lib/liveActivityPush";
 import { sendPregameLiveActivityStarts } from "@/lib/liveActivityAutoStart";
@@ -143,6 +143,21 @@ function hasBudget(deadlineAt: number, minMs: number): boolean {
 
 function deferOnce(summary: RouteSummary, task: string) {
   if (!summary.deferredTasks.includes(task)) summary.deferredTasks.push(task);
+}
+
+function parseScoreAlertKey(key: string | null | undefined): { home: number; away: number } | null {
+  if (!key) return null;
+  const m = key.match(/^(\d+):(\d+)$/);
+  if (!m) return null;
+  return { home: Number.parseInt(m[1], 10), away: Number.parseInt(m[2], 10) };
+}
+
+function hasCompleteScoringFact(context: ScoringPlayContext | null): context is ScoringPlayContext {
+  if (!context) return false;
+  if (context.source !== "naver-relay") return false;
+  if (!context.batter.name) return false;
+  if (context.play.resultType === "UNKNOWN") return false;
+  return Boolean(context.play.resultLabel);
 }
 
 function kstEndOfScoreQuietWindow(date: string): Date {
@@ -559,9 +574,30 @@ export async function GET(req: Request) {
           deferOnce(summary, `clutch:${game.externalId}`);
         }
 
-        if (!scoreChanged) continue;
+        const scoreAlertKey = `${game.homeScore}:${game.awayScore}`;
+        const previousAlertScore = parseScoreAlertKey(previous.lastScoreAlertKey);
+        const hasPendingScoreAlert =
+          !scoreChanged &&
+          previousAlertScore != null &&
+          previous.lastScoreAlertKey !== scoreAlertKey &&
+          (game.homeScore > previousAlertScore.home || game.awayScore > previousAlertScore.away);
+        if (!scoreChanged && !hasPendingScoreAlert) continue;
+
+        const alertPreviousHomeScore = hasPendingScoreAlert && previousAlertScore
+          ? previousAlertScore.home
+          : previous.homeScore;
+        const alertPreviousAwayScore = hasPendingScoreAlert && previousAlertScore
+          ? previousAlertScore.away
+          : previous.awayScore;
+        const baselineScoreAlertKey = `${alertPreviousHomeScore}:${alertPreviousAwayScore}`;
 
         if (!hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS)) {
+          if (scoreChanged && !previous.lastScoreAlertKey) {
+            await prisma.game.updateMany({
+              where: { id: updated.id, lastScoreAlertKey: null },
+              data: { lastScoreAlertKey: baselineScoreAlertKey },
+            });
+          }
           deferOnce(summary, `score:${game.externalId}`);
           continue;
         }
@@ -575,9 +611,37 @@ export async function GET(req: Request) {
           },
           select: { id: true },
         });
-        if (alreadyNotified) continue;
+        if (alreadyNotified) {
+          await prisma.game.updateMany({
+            where: {
+              id: updated.id,
+              OR: [{ lastScoreAlertKey: null }, { lastScoreAlertKey: { not: scoreAlertKey } }],
+            },
+            data: { lastScoreAlertKey: scoreAlertKey, lastScoreAlertAt: new Date() },
+          });
+          continue;
+        }
 
-        const scoreAlertKey = `${game.homeScore}:${game.awayScore}`;
+        const relayScoringContext =
+          fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
+            ? null
+            : await fetchScoringPlayContext({
+                game,
+                previousHomeScore: alertPreviousHomeScore,
+                previousAwayScore: alertPreviousAwayScore,
+              });
+
+        if (!hasCompleteScoringFact(relayScoringContext)) {
+          if (scoreChanged && !previous.lastScoreAlertKey) {
+            await prisma.game.updateMany({
+              where: { id: updated.id, lastScoreAlertKey: null },
+              data: { lastScoreAlertKey: baselineScoreAlertKey },
+            });
+          }
+          deferOnce(summary, relayScoringContext ? `score-fact:${game.externalId}` : `relay:${game.externalId}`);
+          continue;
+        }
+
         const dedupe = await prisma.game.updateMany({
           where: {
             id: updated.id,
@@ -587,29 +651,13 @@ export async function GET(req: Request) {
         });
         if (dedupe.count === 0) continue;
 
-        const relayScoringContext =
-          fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
-            ? null
-            : await fetchScoringPlayContext({
-                game,
-                previousHomeScore: previous.homeScore,
-                previousAwayScore: previous.awayScore,
-              });
-        if (!relayScoringContext && !fastMode) deferOnce(summary, `relay:${game.externalId}`);
-
-        const scoringPlayContext =
-          relayScoringContext ??
-          buildFallbackScoringContext({
-            game,
-            previousHomeScore: previous.homeScore,
-            previousAwayScore: previous.awayScore,
-          });
+        const scoringPlayContext = relayScoringContext;
         const latestPlayText = formatScoringPlayText(scoringPlayContext);
 
         const result = await dispatchScoreAlertsForGame({
           game,
-          previousHomeScore: previous.homeScore,
-          previousAwayScore: previous.awayScore,
+          previousHomeScore: alertPreviousHomeScore,
+          previousAwayScore: alertPreviousAwayScore,
           dbGameId: updated.id,
           latestPlayText,
           scoringPlayContext,
