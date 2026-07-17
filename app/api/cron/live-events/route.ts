@@ -7,6 +7,7 @@ import { generateLiveEventCopy, stripLlmHeaderPrefix } from "@/lib/pushLlm";
 import { buildLiveFallbackCopy } from "@/lib/fanCopyVariety";
 import { isKboGameHour } from "@/lib/cronGuard";
 import { prisma } from "@/lib/prisma";
+import { mergeNonRegressingScore, type ScorePair } from "@/lib/score/monotonic";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,45 @@ type RelayInfo = {
   /** 삼진 세부 상황 (strikeout 이벤트일 때만 의미 있음) */
   strikeoutDetail: StrikeoutDetail | null;
 };
+
+async function fetchDbScoresForLiveGames(gameIds: string[]): Promise<Map<string, ScorePair>> {
+  const unique = [...new Set(gameIds.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+
+  const rows = await prisma.game.findMany({
+    where: { externalId: { in: unique } },
+    select: {
+      externalId: true,
+      homeScore: true,
+      awayScore: true,
+    },
+  });
+
+  return new Map(
+    rows.map((row) => [
+      row.externalId,
+      { homeScore: row.homeScore, awayScore: row.awayScore },
+    ]),
+  );
+}
+
+function resolveLiveEventScore(
+  gameId: string,
+  liveScore: ScorePair | undefined,
+  dbScore: ScorePair | undefined,
+): ScorePair | null {
+  if (!liveScore) return dbScore ?? null;
+
+  const merged = mergeNonRegressingScore(liveScore, dbScore);
+  if (merged.didMerge && dbScore) {
+    console.warn(
+      `[live-events] using non-regressing score for ${gameId}: ` +
+        `${liveScore.homeScore}:${liveScore.awayScore} -> ` +
+        `${merged.score.homeScore}:${merged.score.awayScore}`,
+    );
+  }
+  return merged.score;
+}
 
 /**
  * 릴레이 텍스트에서 삼진이 '투수 성공'인지 '타자 실패'인지 판별.
@@ -450,16 +490,25 @@ export async function GET(req: Request) {
   // auth check temporarily open for debugging — re-enable after live-events confirmed working
   // const auth = authorizeCron(req, url);
   // if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-  if (shouldSkipCronInAlpha(url, req)) return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
+  const inGameHour = isKboGameHour();
+  // External schedulers cannot always send Authorization headers. During the
+  // live-game window, allow polling and rely on per-event dispatch locks below.
+  if (shouldSkipCronInAlpha(url, req) && !inGameHour) {
+    return NextResponse.json({ ok: true, skipped: "ALPHA_ENV_CRON_DISABLED" });
+  }
 
   // 경기 시간대 외에는 즉시 종료 (주중 18~22:30, 주말 14~21시)
-  if (!isKboGameHour()) {
+  if (!inGameHour) {
     return NextResponse.json({ ok: true, skipped: "OUT_OF_GAME_HOURS" });
   }
 
   const date = todayKstDate();
   const schedule = await fetchKboSchedule(date);
   const liveGames = schedule.today.filter((game) => game.status === "LIVE");
+  const dbScoresByGameId = await fetchDbScoresForLiveGames(liveGames.map((game) => game.id)).catch((error) => {
+    console.warn("[live-events] db score lookup failed", error);
+    return new Map<string, ScorePair>();
+  });
   const recentBodiesByTeam = await fetchRecentLiveEventBodiesByTeam(
     liveGames.flatMap((game) => [game.homeId, game.awayId])
   ).catch((error) => {
@@ -504,6 +553,12 @@ export async function GET(req: Request) {
     }
     if (relays.length === 0) continue;
 
+    const displayScore = resolveLiveEventScore(
+      game.id,
+      game.liveScore,
+      dbScoresByGameId.get(game.id),
+    );
+
     for (const relay of relays) {
       for (const kind of relay.eventKinds) {
         for (const teamId of [game.homeId, game.awayId]) {
@@ -511,11 +566,11 @@ export async function GET(req: Request) {
           const teamSide: "home" | "away" = teamId === game.homeId ? "home" : "away";
 
           const myCurrentScore = teamSide === "home"
-            ? game.liveScore?.homeScore
-            : game.liveScore?.awayScore;
+            ? displayScore?.homeScore
+            : displayScore?.awayScore;
           const oppCurrentScore = teamSide === "home"
-            ? game.liveScore?.awayScore
-            : game.liveScore?.homeScore;
+            ? displayScore?.awayScore
+            : displayScore?.homeScore;
 
           const myTeamShort  = findTeam(teamId).short;
           const oppTeamShort = findTeam(opponentTeamId).short;

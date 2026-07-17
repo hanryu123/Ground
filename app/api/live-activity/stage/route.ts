@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchKboTodayGames, todayKstDate, type LiveGame } from "@/lib/kbo";
+import { prisma } from "@/lib/prisma";
+import { mergeNonRegressingScore } from "@/lib/score/monotonic";
 import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
 import { findTeam } from "@/lib/teams";
 
@@ -121,11 +123,20 @@ export async function GET(req: Request) {
     }
 
     const score = scores.find((item) => item.externalId === game.id);
+    const dbScore = await prisma.game.findUnique({
+      where: { externalId: game.id },
+      select: { homeScore: true, awayScore: true },
+    });
     const phase = resolvePhase(game);
-    const homeScore =
-      game.result?.homeScore ?? score?.homeScore ?? game.liveScore?.homeScore ?? 0;
-    const awayScore =
-      game.result?.awayScore ?? score?.awayScore ?? game.liveScore?.awayScore ?? 0;
+    const mergedScore = mergeNonRegressingScore(
+      {
+        homeScore: game.result?.homeScore ?? score?.homeScore ?? game.liveScore?.homeScore ?? 0,
+        awayScore: game.result?.awayScore ?? score?.awayScore ?? game.liveScore?.awayScore ?? 0,
+      },
+      dbScore,
+    ).score;
+    const homeScore = mergedScore.homeScore;
+    const awayScore = mergedScore.awayScore;
     const inning =
       phase === "FINAL"
         ? "FINAL"

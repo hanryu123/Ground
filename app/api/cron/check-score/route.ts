@@ -15,6 +15,7 @@ import {
 } from "@/lib/score/playByPlay";
 import { pushLiveActivityForGame } from "@/lib/liveActivityPush";
 import { sendPregameLiveActivityStarts } from "@/lib/liveActivityAutoStart";
+import { mergeNonRegressingScore } from "@/lib/score/monotonic";
 import {
   fetchClutchData,
   detectClutchSituation,
@@ -405,7 +406,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: !summary.fetchError, runId, ...summary });
     }
 
-    for (const game of snapshot) {
+    for (const snapshotGame of snapshot) {
+      let game = snapshotGame;
       if (!hasBudget(deadlineAt, MIN_LOOP_BUDGET_MS)) {
         summary.skipped = "DEADLINE_REACHED";
         deferOnce(summary, "remaining-games");
@@ -417,6 +419,19 @@ export async function GET(req: Request) {
         const previous = await prisma.game.findUnique({
           where: { externalId: game.externalId },
         });
+        if (previous && previous.status !== "BEFORE") {
+          const merged = mergeNonRegressingScore(game, previous);
+          if (merged.didMerge) {
+            console.warn(
+              `[check-score] ignored regressing score for ${game.externalId}: ` +
+                `${game.homeScore}:${game.awayScore} < db ${previous.homeScore}:${previous.awayScore}`,
+            );
+            game = merged.score;
+          }
+          if (game.status === "BEFORE") {
+            game = { ...game, status: previous.status as LiveScoreGame["status"] };
+          }
+        }
         const updated = await prisma.game.upsert({
           where: { externalId: game.externalId },
           update: {
