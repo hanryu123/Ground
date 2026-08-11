@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findTeam } from "@/lib/teams";
-import { fetchKboSchedule, todayKstDate, type LiveGame } from "@/lib/kbo";
+import { addDaysKst, fetchKboSchedule, todayKstDate, type LiveGame } from "@/lib/kbo";
 import { fetchPregameNewsContext, generatePregamePreview } from "@/lib/pregamePreview";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { mapWithConcurrency } from "@/lib/concurrency";
@@ -48,6 +48,32 @@ type PreviewRunLog = {
   dispatch: "sent" | "already-dispatched" | "skipped-after-start" | "locked";
 };
 
+/**
+ * 바로 전 경기일들이 전부 취소된 뒤의 재개일만 골라낸다.
+ * 월요일처럼 원래 편성 자체가 없는 날은 건너뛰되, 정상 진행 경기일을 만나면 멈춘다.
+ */
+function findLeagueResumeContext(date: string, pastGames: LiveGame[]): string | null {
+  let cursor = addDaysKst(date, -1);
+  let cancelledDays = 0;
+  let skippedNoGameDays = 0;
+
+  for (let checkedDays = 0; checkedDays < 7; checkedDays += 1) {
+    const games = pastGames.filter((game) => game.date === cursor);
+    if (games.length === 0) {
+      skippedNoGameDays += 1;
+      cursor = addDaysKst(cursor, -1);
+      continue;
+    }
+    if (!games.every((game) => game.status === "CANCEL")) break;
+    cancelledDays += 1;
+    cursor = addDaysKst(cursor, -1);
+  }
+
+  // 정상 휴식일 하나를 낀, 이틀 이상 전면 취소된 리그 재개만 특별하게 다룬다.
+  if (cancelledDays < 2 || skippedNoGameDays > 2) return null;
+  return `${cancelledDays}개 경기일을 통째로 쉬고 다시 열리는 날입니다.`;
+}
+
 function buildGameCancelCopy(input: {
   game: LiveGame;
   fanTeamId: string;
@@ -91,6 +117,7 @@ async function runPreviewCron(req: Request) {
   const date = todayKstDate();
   const schedule = await fetchKboSchedule(date);
   const todays = schedule.today;
+  const leagueResumeContext = findLeagueResumeContext(date, schedule.past);
 
   const jobs: PreviewJob[] = [];
   const cancelJobs: PreviewJob[] = [];
@@ -227,6 +254,7 @@ async function runPreviewCron(req: Request) {
         opponentTeamId,
         recentGames,
         newsContext,
+        leagueResumeContext,
         llmTimeoutMs: heavyBatch ? 3500 : 4500,
         llmRetryTimeoutMs: heavyBatch ? null : 3500,
       });
