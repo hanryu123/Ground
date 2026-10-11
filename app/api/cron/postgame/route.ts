@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findTeam } from "@/lib/teams";
-import { fetchKboSchedule, todayKstDate } from "@/lib/kbo";
+import { fetchKboSchedule, isScheduledOffDay, todayKstDate } from "@/lib/kbo";
 import {
   fetchPostGameFacts,
   generatePostGameReport,
@@ -243,6 +243,9 @@ export async function GET(req: Request) {
   const mock = readMockOverrides(url);
   if (!mock && !force && !target.catchup && !isKboPostgameHour()) {
     return NextResponse.json({ ok: true, skipped: "OUT_OF_POSTGAME_HOURS" });
+  }
+  if (!mock && !force && !target.catchup && (await isScheduledOffDay(target.date))) {
+    return NextResponse.json({ ok: true, skipped: "MONDAY_OFF" });
   }
 
   const teamFilter = (url.searchParams.get("teamId") ?? "").trim().toLowerCase();

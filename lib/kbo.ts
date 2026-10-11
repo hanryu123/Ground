@@ -104,6 +104,21 @@ export function isKboRegularOffDay(date: string): boolean {
   return day === 1;
 }
 
+/**
+ * 오늘이 실제 휴식일인지 — 월요일이면서 네이버 일정에도 경기가 없을 때만 true.
+ * 시즌 막판 잔여 경기·포스트시즌은 월요일에도 편성되므로 요일만으로 판단하면 안 된다.
+ * 크론이 휴식일에 DB 를 깨우지 않도록 하는 빠른 경로용. 네이버 조회 실패 시엔 기존처럼 휴식으로 본다.
+ */
+export async function isScheduledOffDay(date: string): Promise<boolean> {
+  if (!isKboRegularOffDay(date)) return false;
+  try {
+    const games = await fetchKboGamesRange(date, date);
+    return games.length === 0;
+  } catch {
+    return true;
+  }
+}
+
 export function resolveTodayFeedStatus(date: string, games: LiveGame[]): TodayFeedStatus {
   const hasRainCancelled = games.some((game) => game.cancelReason === "RAIN");
   const allCancelled = games.length > 0 && games.every((game) => game.status === "CANCEL");
@@ -559,9 +574,6 @@ export async function fetchKboTodayGames(
   }
 ): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
-  if (isKboRegularOffDay(target)) {
-    return [];
-  }
   try {
     const cacheMode = options?.cacheMode ?? "cached";
     const games = await fetchKboGamesRange(target, target, { cacheMode });

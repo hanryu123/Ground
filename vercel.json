@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/preview",
-      "schedule": "30 8 * * 2-6"
+      "schedule": "30 8 * * 1-6"
     },
     {
       "path": "/api/cron/preview",
@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/cron/game-start",
-      "schedule": "15 9 * * 2-6"
+      "schedule": "15 9 * * 1-6"
     },
     {
       "path": "/api/cron/game-start",
@@ -63,7 +63,7 @@
     },
     {
       "path": "/api/cron/postgame",
-      "schedule": "30 13 * * 2-5"
+      "schedule": "30 13 * * 1-5"
     },
     {
       "path": "/api/cron/postgame",

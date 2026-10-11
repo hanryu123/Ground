@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchKboSchedule, todayKstDate } from "@/lib/kbo";
+import { fetchKboSchedule, isKboRegularOffDay, todayKstDate } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
@@ -505,6 +505,10 @@ export async function GET(req: Request) {
   const date = todayKstDate();
   const schedule = await fetchKboSchedule(date);
   const liveGames = schedule.today.filter((game) => game.status === "LIVE");
+  // 경기 없는 월요일엔 DB 를 깨우지 않는다 (월요일도 게임 시간대로 열어둔 대신의 보호막)
+  if (liveGames.length === 0 && isKboRegularOffDay(date)) {
+    return NextResponse.json({ ok: true, skipped: "MONDAY_OFF" });
+  }
   const dbScoresByGameId = await fetchDbScoresForLiveGames(liveGames.map((game) => game.id)).catch((error) => {
     console.warn("[live-events] db score lookup failed", error);
     return new Map<string, ScorePair>();

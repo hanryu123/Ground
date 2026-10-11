@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isKboRegularOffDay, todayKstDate } from "@/lib/kbo";
+import { isScheduledOffDay, todayKstDate } from "@/lib/kbo";
 import { finishCronRun, startCronRun } from "@/lib/cronRunLogger";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
@@ -273,10 +273,10 @@ export async function GET(req: Request) {
 
   const fastMode = isFastMode(url);
   const clutchEnabled = url.searchParams.get("clutch") === "1";
-  const isOffDay = isKboRegularOffDay(targetDate);
+  const isOffDay = await isScheduledOffDay(targetDate);
   const triggerSource = url.searchParams.get("source") ?? "unknown";
 
-  // 월요일 휴식일에는 DB 로깅/정리 작업도 하지 않고 즉시 응답한다.
+  // 휴식일(경기 없는 월요일)에는 DB 로깅/정리 작업도 하지 않고 즉시 응답한다.
   // cron-job.org는 force=1로 호출하므로, 이 빠른 경로가 없으면 DB cold start만으로도 504가 날 수 있다.
   if (isOffDay && dev.tick == null) {
     return NextResponse.json({

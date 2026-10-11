@@ -4,7 +4,7 @@
  * isKboGameHour  — 경기 전 Live Activity 대기 + 경기 진행 중 구간 (check-score, live-events)
  *   주중(화~금): 17:30 ~ 22:30
  *   주말(토~일): 13:00 ~ 21:00
- *   월요일: false (KBO 정기 휴식일)
+ *   월요일: 평일과 동일 (시즌 막판·포스트시즌엔 월요일 경기가 있다. 실제 휴식 여부는 isScheduledOffDay 로 판정)
  *
  * isKboScoreHardQuietHour — Neon 보호용 절대 quiet window (check-score)
  *   매일 01:00 ~ 13:00 KST: force=1이어도 DB를 깨우지 않는다.
@@ -12,15 +12,13 @@
  * isKboPostgameHour — 경기 종료 후 구간 (postgame)
  *   주중(화~금): 21:00 ~ 23:30
  *   주말(토~일): 19:30 ~ 23:30
- *   월요일: false
+ *   월요일: 평일과 동일
  */
 
 export function isKboGameHour(now?: Date): boolean {
   const kst = toKstParts(now ?? new Date());
   const day      = kst.day;
   const totalMin = kst.hours * 60 + kst.minutes;
-
-  if (day === 1) return false; // 월요일 휴식
 
   const isWeekend = day === 0 || day === 6;
   return isWeekend
@@ -38,8 +36,6 @@ export function isKboPostgameHour(now?: Date): boolean {
   const kst = toKstParts(now ?? new Date());
   const day      = kst.day;
   const totalMin = kst.hours * 60 + kst.minutes;
-
-  if (day === 1) return false; // 월요일 휴식
 
   const isWeekend = day === 0 || day === 6;
   return isWeekend
