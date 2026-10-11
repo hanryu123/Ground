@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findTeam } from "@/lib/teams";
-import { addDaysKst, fetchKboSchedule, todayKstDate, type LiveGame } from "@/lib/kbo";
+import {
+  addDaysKst,
+  describePostseasonSeries,
+  fetchKboSchedule,
+  fetchPostseasonSeriesState,
+  todayKstDate,
+  type LiveGame,
+} from "@/lib/kbo";
 import { fetchPregameNewsContext, generatePregamePreview } from "@/lib/pregamePreview";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { mapWithConcurrency } from "@/lib/concurrency";
@@ -242,11 +249,17 @@ async function runPreviewCron(req: Request) {
       const recentGames = schedule.past
         .filter((pastGame) => pastGame.homeId === teamId || pastGame.awayId === teamId)
         .slice(-5);
-      const newsContext = await fetchPregameNewsContext({
-        gameId: game.id,
-        teamId,
-        opponentTeamId,
-      });
+      const [newsContext, series] = await Promise.all([
+        fetchPregameNewsContext({
+          gameId: game.id,
+          teamId,
+          opponentTeamId,
+        }),
+        fetchPostseasonSeriesState(game, teamId),
+      ]);
+      const postseasonContext = series
+        ? describePostseasonSeries(series, findTeam(teamId)?.short ?? teamId.toUpperCase())
+        : null;
       preview = await generatePregamePreview({
         date,
         game,
@@ -255,6 +268,7 @@ async function runPreviewCron(req: Request) {
         recentGames,
         newsContext,
         leagueResumeContext,
+        postseasonContext,
         llmTimeoutMs: heavyBatch ? 3500 : 4500,
         llmRetryTimeoutMs: heavyBatch ? null : 3500,
       });

@@ -95,6 +95,8 @@ export type PregamePreviewInput = {
   newsContext: string[];
   /** 연속 전면 취소 뒤 리그가 재개되는 날에만 전달하는 공통 상황 맥락 */
   leagueResumeContext?: string | null;
+  /** 포스트시즌 경기일 때만 — 라운드·차전·시리즈 전적·걸린 것 (예: "준플레이오프 3차전 · 시리즈 LG 2승 0패 · 1승만 더하면 플레이오프 진출") */
+  postseasonContext?: string | null;
   llmTimeoutMs?: number;
   llmRetryTimeoutMs?: number | null;
 };
@@ -226,9 +228,11 @@ function buildFallback(
   const resumeLine = input.leagueResumeContext
     ? `${input.leagueResumeContext} 오늘은 기다린 만큼 첫 장면부터 더 크게 봐야죠.`
     : null;
+  const postseasonLine = input.postseasonContext ? `${input.postseasonContext}.` : null;
+  const leadLines = [postseasonLine, resumeLine].filter((line): line is string => Boolean(line));
   return {
     title: varied.title,
-    lines: resumeLine ? [resumeLine, ...normalizedLines].slice(0, 4) : normalizedLines,
+    lines: leadLines.length > 0 ? [...leadLines, ...normalizedLines].slice(0, 4) : normalizedLines,
     context: {
       recentForm: momentum.recentForm,
       recentRecord: momentum.recentRecord,
@@ -346,6 +350,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 	- 팬들이 부르는 별명, 홈구장 감정, 천적 구도, 연승/연패 탈출, 구속·제구 회복 여부처럼 오늘의 진짜 관전 포인트를 가볍고 날카롭게 녹인다.
 	- 최근 흐름은 데이터 그대로 해석한다. 연승이면 더 밀어붙이는 서사, 연패면 끊어내는 서사다. 연승에 "반전"이라는 단어를 붙이면 실패다.
 	- 아래에 "리그 재개 맥락"이 있으면 첫 줄 또는 제목에 반드시 그 기다림과 재개전의 긴박함을 담는다. 취소 원인이나 취소 일수는 주어진 문구 밖으로 지어내지 않는다.
+	- 아래에 "포스트시즌 맥락"이 있으면 정규시즌 경기가 아니다. 제목이나 첫 줄에 라운드·차전과 오늘 걸린 것(진출 확정, 탈락 위기 등)을 반드시 담는다. 시리즈 전적은 주어진 숫자 그대로만 쓰고, 정규시즌 순위 경쟁·연승 기록 같은 표현은 쓰지 않는다.
 	- 데이터에 없는 선수 부상, 사생활, 확정 라인업, 결과 예측은 지어내지 않는다.
 	- 밈과 드립은 야구팬이 알아듣는 정도로만, 과한 조롱이나 상대 팬 비하는 금지다.
 
@@ -395,6 +400,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 직전 경기:${momentum.lastGameLine ?? "없음"}
 최근 스코어:${momentum.recentScores.join(" | ") || "없음"}
 리그 재개 맥락:${input.leagueResumeContext ?? "없음"}
+포스트시즌 맥락:${input.postseasonContext ?? "없음"}
 프리뷰/뉴스 컨텍스트:${newsBlock}`;
 
   const callLlm = async (timeoutMs: number) => {

@@ -69,6 +69,8 @@ export type PostGameFacts = {
   gameTime?: string | null;
   /** 경기 도중 우천 중단이 있었던 경우 true */
   wasRainSuspended?: boolean;
+  /** 포스트시즌 경기일 때 이 경기 결과까지 반영한 시리즈 상황 한 줄 */
+  postseasonContext?: string;
 };
 
 function compact(text: string): string {
@@ -555,6 +557,9 @@ function hasNightExpression(text: string): boolean {
 function dateFromExternalId(externalId: string): string | null {
   const raw = externalId.slice(0, 8);
   if (!/^\d{8}$/.test(raw)) return null;
+  // 포스트시즌 id 는 "4444" + MMDD + 팀코드 + ... + YYYY (예: 44441006NCSS02025)
+  const postseasonYear = /^(4444|3333|5555|7777)/.test(raw) ? externalId.match(/(\d{4})$/)?.[1] : null;
+  if (postseasonYear) return `${postseasonYear}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
 }
 
@@ -1213,6 +1218,9 @@ export async function generatePostGameReport(input: {
 - 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님
 ${styleBrief}`;
   const rainLine = facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
+  const postseasonLine = facts.postseasonContext
+    ? `포스트시즌: ${facts.postseasonContext}. 정규시즌 경기가 아니다. 시리즈 상황(진출 확정·탈락·남은 승수)을 한줄평과 본문에 반드시 반영하고, 전적 숫자는 이 문구 그대로만 써라. 탈락이면 한 시즌을 마무리하는 톤으로, "다음 경기"를 기약하지 마라.`
+    : "";
   const narrativeLines = [
     facts.winningPitcher ? `우리 승리투수: ${facts.winningPitcher}` : null,
     facts.losingPitcher ? `우리 패전투수: ${facts.losingPitcher}` : null,
@@ -1224,7 +1232,7 @@ ${styleBrief}`;
 상대:${facts.oppTeam}
 ${locationLine}
 ${gameTimeLine ? `${gameTimeLine}\n` : ""}결과:${input.tone} | 스코어:${facts.myScore}:${facts.oppScore}
-${rainLine ? `${rainLine}\n` : ""}
+${rainLine ? `${rainLine}\n` : ""}${postseasonLine ? `${postseasonLine}\n` : ""}
 ▶ teamOwnership JSON (선수 소속의 유일한 기준, 절대 위반 금지):
 ${ownershipJson}
 

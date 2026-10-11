@@ -688,16 +688,189 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
 }
 
 // ────────────────────────────────────────────────────────────────────
+// 포스트시즌 — 네이버 gameId 앞 4자리로 라운드를 구분한다
+//   정규시즌: 20261012KTSS02026 (날짜)
+//   와일드카드 4444 · 준PO 3333 · PO 5555 · 한국시리즈 7777 · 올스타 9999
+// ────────────────────────────────────────────────────────────────────
+
+export type PostseasonRound = "WC" | "SEMI_PO" | "PO" | "KS";
+
+const POSTSEASON_ROUND_BY_PREFIX: Record<string, PostseasonRound> = {
+  "4444": "WC",
+  "3333": "SEMI_PO",
+  "5555": "PO",
+  "7777": "KS",
+};
+
+export const POSTSEASON_ROUND_LABEL: Record<PostseasonRound, string> = {
+  WC: "와일드카드 결정전",
+  SEMI_PO: "준플레이오프",
+  PO: "플레이오프",
+  KS: "한국시리즈",
+};
+
+const POSTSEASON_NEXT_STAGE: Record<PostseasonRound, string> = {
+  WC: "준플레이오프",
+  SEMI_PO: "플레이오프",
+  PO: "한국시리즈",
+  KS: "우승",
+};
+
+/** 시리즈를 가져가는 데 필요한 승수 (와일드카드는 4위 팀 1승 어드밴티지 — 아래에서 별도 처리) */
+const POSTSEASON_WINS_NEEDED: Record<PostseasonRound, number> = {
+  WC: 2,
+  SEMI_PO: 3,
+  PO: 3,
+  KS: 4,
+};
+
+export function getPostseasonRound(gameId: string | null | undefined): PostseasonRound | null {
+  if (!gameId) return null;
+  return POSTSEASON_ROUND_BY_PREFIX[gameId.slice(0, 4)] ?? null;
+}
+
+/** 정규시즌 경기 id 는 날짜(YYYYMMDD)로 시작한다. 포스트시즌·올스타는 4자리 코드로 시작. */
+export function isRegularSeasonGameId(gameId: string | null | undefined): boolean {
+  if (!gameId) return false;
+  return /^20\d{6}/.test(gameId) && getPostseasonRound(gameId) == null;
+}
+
+export type PostseasonSeriesState = {
+  round: PostseasonRound;
+  roundLabel: string;
+  /** 이 경기가 시리즈 몇 차전인지 (취소 경기 제외) */
+  gameNumber: number;
+  teamWins: number;
+  opponentWins: number;
+  /** 와일드카드 4위 팀 여부 (1승 안고 시작) */
+  hasWildcardAdvantage: boolean;
+  /** 이 경기 시작 전 기준, 시리즈를 가져가는 데 남은 승수 */
+  winsToAdvance: number;
+  /** 이 경기 시작 전 기준, 탈락까지 남은 패수 */
+  lossesToElimination: number;
+  nextStage: string;
+  /** 시리즈가 이미 끝났으면 결과 (이 경기 포함) */
+  outcome: "ADVANCED" | "ELIMINATED" | null;
+};
+
+/**
+ * 같은 라운드·같은 두 팀의 경기들로 시리즈 상황을 계산한다.
+ * games 에는 해당 시리즈 경기가 모두 들어 있어야 한다 (fetchPostseasonSeriesState 가 14일치를 넘겨준다).
+ * includeTarget=false 면 target 경기 이전까지만 (프리뷰용), true 면 target 결과까지 반영 (경기 종료 알림용).
+ */
+export function computePostseasonSeriesState(
+  target: LiveGame,
+  teamId: string,
+  games: LiveGame[],
+  includeTarget: boolean
+): PostseasonSeriesState | null {
+  const round = getPostseasonRound(target.id);
+  if (!round) return null;
+  const id = teamId.toLowerCase();
+  const opponentId = target.homeId === id ? target.awayId : target.homeId;
+  const pair = new Set([id, opponentId]);
+  const series = games
+    .filter(
+      (g) =>
+        getPostseasonRound(g.id) === round &&
+        pair.has(g.homeId) &&
+        pair.has(g.awayId) &&
+        g.status !== "CANCEL"
+    )
+    .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
+  const targetIndex = series.findIndex((g) => g.id === target.id);
+  const gameNumber = targetIndex >= 0 ? targetIndex + 1 : series.length + 1;
+  const counted = series.slice(0, targetIndex >= 0 ? targetIndex + (includeTarget ? 1 : 0) : series.length);
+
+  let teamWins = 0;
+  let opponentWins = 0;
+  let draws = 0;
+  for (const g of counted) {
+    if (!g.result) continue;
+    if (g.result.winnerId === id) teamWins += 1;
+    else if (g.result.winnerId === opponentId) opponentWins += 1;
+    else draws += 1;
+  }
+
+  // 와일드카드: 1차전 홈팀 = 4위 = 1승 안고 시작. 4위는 1승 또는 1무만 해도 진출.
+  const firstGame = series[0] ?? target;
+  const hasWildcardAdvantage = round === "WC" && firstGame.homeId === id;
+  const opponentHasAdvantage = round === "WC" && firstGame.homeId === opponentId;
+  const needed = POSTSEASON_WINS_NEEDED[round];
+  const teamScore = teamWins + (hasWildcardAdvantage ? 1 : 0) + (hasWildcardAdvantage ? draws : 0);
+  const opponentScore = opponentWins + (opponentHasAdvantage ? 1 : 0) + (opponentHasAdvantage ? draws : 0);
+
+  let outcome: PostseasonSeriesState["outcome"] = null;
+  if (teamScore >= needed) outcome = "ADVANCED";
+  else if (opponentScore >= needed) outcome = "ELIMINATED";
+
+  return {
+    round,
+    roundLabel: POSTSEASON_ROUND_LABEL[round],
+    gameNumber,
+    teamWins,
+    opponentWins,
+    hasWildcardAdvantage,
+    winsToAdvance: Math.max(0, needed - teamScore),
+    lossesToElimination: Math.max(0, needed - opponentScore),
+    nextStage: POSTSEASON_NEXT_STAGE[round],
+    outcome,
+  };
+}
+
+/** 프롬프트·폴백 문구에 그대로 넣는 한 줄 요약 */
+export function describePostseasonSeries(state: PostseasonSeriesState, teamShort: string): string {
+  const head = `${state.roundLabel} ${state.gameNumber}차전`;
+  const record =
+    state.teamWins + state.opponentWins === 0
+      ? state.hasWildcardAdvantage
+        ? `${teamShort} 4위 어드밴티지로 1승 안고 시작`
+        : "시리즈 첫 경기"
+      : `시리즈 ${teamShort} ${state.teamWins}승 ${state.opponentWins}패`;
+  if (state.outcome === "ADVANCED") {
+    return state.round === "KS"
+      ? `${head} · ${record} · ${teamShort} 한국시리즈 우승`
+      : `${head} · ${record} · ${teamShort} ${state.nextStage} 진출 확정`;
+  }
+  if (state.outcome === "ELIMINATED") return `${head} · ${record} · ${teamShort} 가을야구 마감`;
+  const stakes: string[] = [];
+  if (state.winsToAdvance === 1) {
+    stakes.push(state.round === "KS" ? "1승만 더하면 우승" : `1승만 더하면 ${state.nextStage} 진출`);
+  }
+  if (state.lossesToElimination === 1) stakes.push("지면 탈락");
+  return [head, record, ...stakes].join(" · ");
+}
+
+/** 오늘 경기의 시리즈 상황 — 포스트시즌 경기가 아니면 null. 2주치 일정을 한 번 더 조회한다. */
+export async function fetchPostseasonSeriesState(
+  target: LiveGame,
+  teamId: string,
+  options?: { includeTarget?: boolean }
+): Promise<PostseasonSeriesState | null> {
+  if (!getPostseasonRound(target.id)) return null;
+  try {
+    const games = await fetchKboGamesRange(addDaysKst(target.date, -14), target.date);
+    const merged = games.some((g) => g.id === target.id)
+      ? games.map((g) => (g.id === target.id ? target : g))
+      : [...games, target];
+    return computePostseasonSeriesState(target, teamId, merged, options?.includeTarget ?? false);
+  } catch (err) {
+    console.warn(`[kbo] postseason series lookup failed (${(err as Error).message})`);
+    return null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 순위표 — 시즌 전체 일정에서 직접 derive (네이버 ranking 엔드포인트가 404)
 // ────────────────────────────────────────────────────────────────────
 
 /**
  * KBO 정규시즌 개막일 (KST). 시범경기를 제외하기 위한 기준.
- *  - 매년 3월 말 개막. 2026 시즌은 3/22 개막 (네이버 일정 기준).
+ *  - 매년 3월 말 개막. 2026 시즌은 3/28 개막 (3/22~24 는 시범경기가 categoryId=kbo 로 섞여 내려온다).
  *  - 새 시즌엔 이 값만 갱신하면 됨.
  */
 const KBO_SEASON_OPENER: Record<number, string> = {
-  2026: "2026-03-22",
+  2026: "2026-03-28",
 };
 
 function seasonOpenerForYear(year: number): string {
@@ -912,7 +1085,7 @@ export async function fetchKboStandings(): Promise<StandingRow[]> {
     const year = parseInt(todayKstDate().slice(0, 4), 10);
     const all = await fetchKboSeasonGames(year);
     const opener = seasonOpenerForYear(year);
-    const regular = all.filter((g) => g.date >= opener);
+    const regular = all.filter((g) => g.date >= opener && isRegularSeasonGameId(g.id));
     const derived = deriveStandingsFromGames(regular);
     if (derived.length === 0) throw new Error("derived 0 rows");
     return derived;

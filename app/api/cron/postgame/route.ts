@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findTeam } from "@/lib/teams";
-import { fetchKboSchedule, isScheduledOffDay, todayKstDate } from "@/lib/kbo";
+import {
+  describePostseasonSeries,
+  fetchKboSchedule,
+  fetchPostseasonSeriesState,
+  isScheduledOffDay,
+  todayKstDate,
+  type LiveGame,
+  type PostseasonRound,
+} from "@/lib/kbo";
 import {
   fetchPostGameFacts,
   generatePostGameReport,
@@ -36,6 +44,15 @@ type PostgameJob = {
   mySide: "home" | "away";
   gameTime?: string | null;
   facts: PostGameFacts | null; // mock 모드면 사전 생성, 일반이면 null → fetch.
+  /** 포스트시즌 시리즈 계산용 원본 경기 (mock 모드엔 없음) */
+  game?: LiveGame;
+};
+
+const POSTSEASON_ROUND_SHORT: Record<PostseasonRound, string> = {
+  WC: "WC",
+  SEMI_PO: "준PO",
+  PO: "PO",
+  KS: "KS",
 };
 
 type PostgameRunLog = {
@@ -275,6 +292,7 @@ export async function GET(req: Request) {
           mySide: isHomeFan ? "home" : "away",
           gameTime: game.time,
           facts: null,
+          game,
         });
       }
     }
@@ -323,7 +341,17 @@ export async function GET(req: Request) {
       where: { alertKind: "rain-delay", gameExternalId: job.externalId },
       select: { id: true },
     });
-    const facts = rainDelayRecord ? { ...baseFacts, wasRainSuspended: true } : baseFacts;
+    const series = job.game
+      ? await fetchPostseasonSeriesState(job.game, job.teamId, { includeTarget: true })
+      : null;
+    const postseasonContext = series
+      ? describePostseasonSeries(series, findTeam(job.teamId).short)
+      : undefined;
+    const facts = {
+      ...baseFacts,
+      ...(rainDelayRecord ? { wasRainSuspended: true } : {}),
+      ...(postseasonContext ? { postseasonContext } : {}),
+    };
     const report = await generatePostGameReport({
       teamId: job.teamId,
       opponentTeamId: job.opponentTeamId,
@@ -375,9 +403,36 @@ export async function GET(req: Request) {
     const myTeamShort  = findTeam(job.teamId).short;
     const oppTeamShort = findTeam(job.opponentTeamId).short;
     const resultLabel  = job.myScore > job.oppScore ? "승" : job.myScore < job.oppScore ? "패" : "무";
-    const fixedTitle   = `[경기 종료] ${myTeamShort} ${job.myScore} vs ${oppTeamShort} ${job.oppScore} ${resultLabel}`;
+    const scoreLine    = `${myTeamShort} ${job.myScore} vs ${oppTeamShort} ${job.oppScore}`;
+    let fixedTitle     = `[경기 종료] ${scoreLine} ${resultLabel}`;
     // 본문: LLM 한줄평 (headline + content 합산)
-    const pushBody     = report.content;
+    let pushBody       = report.content;
+    // 포스트시즌: 제목에 라운드·차전, 시리즈가 끝났으면 진출/탈락을 먼저 말해준다.
+    if (series) {
+      const round = POSTSEASON_ROUND_SHORT[series.round];
+      if (series.outcome === "ADVANCED" && series.round === "KS") {
+        fixedTitle = `🏆 ${myTeamShort} 한국시리즈 우승! ${scoreLine}`;
+        pushBody = `우승이에요! 1년 내내 같이 버텨준 덕분이에요. ${report.content}`;
+      } else if (series.outcome === "ADVANCED") {
+        fixedTitle = `🎉 ${myTeamShort} ${series.nextStage} 진출! ${scoreLine}`;
+        pushBody = `${series.nextStage} 갑니다! ${report.content}`;
+      } else if (series.outcome === "ELIMINATED") {
+        fixedTitle = `[${round} 종료] ${scoreLine} · 올 시즌 마감`;
+        pushBody = `올해 가을야구는 여기까지예요. 끝까지 같이 달려줘서 고마워요. ${report.content}`;
+      } else {
+        fixedTitle = `[${round} ${series.gameNumber}차전 종료] ${scoreLine} ${resultLabel}`;
+        const goal = series.round === "KS" ? "우승이에요" : `${series.nextStage}예요`;
+        const stakes =
+          series.winsToAdvance === 1 && series.lossesToElimination === 1
+            ? `다음 경기 이기면 ${series.round === "KS" ? "우승" : series.nextStage}, 지면 탈락이에요.`
+            : series.winsToAdvance === 1
+              ? `1승만 더하면 ${goal}.`
+              : series.lossesToElimination === 1
+                ? "이제 한 판 지면 탈락이에요."
+                : `시리즈 ${series.teamWins}승 ${series.opponentWins}패.`;
+        pushBody = `${stakes} ${report.content}`;
+      }
+    }
 
     const push = await sendTeamTopicNotification({
       teamId: job.teamId,
