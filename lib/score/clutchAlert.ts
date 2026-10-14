@@ -1,3 +1,4 @@
+import { fetchPostseasonContextForGame } from "@/lib/kbo";
 /**
  * 클러치 상황 감지 및 알림 발송.
  *
@@ -258,6 +259,7 @@ export async function sendClutchAlerts(input: {
       batterName: state.batterName,
       batterNarrative: narrative,
       isAdvantage,
+      postseasonContext: await fetchPostseasonContextForGame(game.externalId, teamId, myTeam.short),
     });
 
     const result = await sendTeamTopicNotification({

@@ -137,7 +137,8 @@ async function runPreviewCron(req: Request) {
       // force 모드: 오늘 경기 프리뷰 재생성/검수용. 시간 윈도우를 완전히 무시한다.
       if (force) return true;
       // 일반: 경기 45~75분 전 윈도우
-      return mins >= 45 && mins <= 75;
+      // Vercel 크론은 정시보다 늦게 도는 일이 있어 창을 넉넉히 둔다 (발송은 markDispatchOnce 로 1회 보장)
+      return mins >= 20 && mins <= 90;
     })();
     if (!inTimeWindow) continue;
 

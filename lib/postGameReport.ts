@@ -1219,7 +1219,7 @@ export async function generatePostGameReport(input: {
 ${styleBrief}`;
   const rainLine = facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
   const postseasonLine = facts.postseasonContext
-    ? `포스트시즌: ${facts.postseasonContext}. 정규시즌 경기가 아니다. 시리즈 상황(진출 확정·탈락·남은 승수)을 한줄평과 본문에 반드시 반영하고, 전적 숫자는 이 문구 그대로만 써라. 탈락이면 한 시즌을 마무리하는 톤으로, "다음 경기"를 기약하지 마라.`
+    ? `포스트시즌: ${facts.postseasonContext}. 정규시즌 경기가 아니다. 위의 연승/연패·최근 흐름 규칙보다 이 맥락이 우선이다. 시리즈 상황(진출 확정·탈락·남은 승수)을 한줄평과 본문에 반드시 반영하고, 전적 숫자는 이 문구 그대로만 써라. 탈락이면 한 시즌을 마무리하는 톤으로, "다음 경기"를 기약하지 마라.`
     : "";
   const narrativeLines = [
     facts.winningPitcher ? `우리 승리투수: ${facts.winningPitcher}` : null,

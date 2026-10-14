@@ -1,3 +1,4 @@
+import { fetchPostseasonContextForGame } from "@/lib/kbo";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendApnsMulticast } from "@/lib/apns";
@@ -223,6 +224,11 @@ export async function dispatchScoreAlertsForGame(input: {
         recentBodies: teamRecentBodies,
         prevMyScore,
         prevOppScore,
+        postseasonContext: await fetchPostseasonContextForGame(
+          input.game.externalId,
+          favoriteTeam,
+          findTeam(favoriteTeam).short
+        ),
       };
       if (input.fastMode) {
         copyPromise = generateScorePushCopyWithOptions(copyInput, { apiKeyOverride: "" });

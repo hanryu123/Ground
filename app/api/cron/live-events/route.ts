@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchKboSchedule, isKboRegularOffDay, todayKstDate } from "@/lib/kbo";
+import { fetchKboSchedule, isKboRegularOffDay, todayKstDate, fetchPostseasonContextForGame } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
@@ -626,6 +626,7 @@ export async function GET(req: Request) {
               strikeoutDetail: relay.strikeoutDetail ?? undefined,
               recentBodies: recentBodiesByTeam.get(teamId) ?? [],
               fallbackBody: fallback.body,
+              postseasonContext: await fetchPostseasonContextForGame(game.id, teamId, myTeamShort),
             });
             llmCache.set(llmCacheKey, llmPromise);
           }

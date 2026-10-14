@@ -84,6 +84,8 @@ export function stripLlmHeaderPrefix(text: string): string {
 }
 
 type GenerateScorePushInput = {
+  /** 포스트시즌 경기일 때만 — 라운드·차전·시리즈 전적·걸린 것 한 줄 (fetchPostseasonContextForGame) */
+  postseasonContext?: string | null;
   favoriteTeam: string;
   opponentTeam: string;
   myScore: number;
@@ -748,9 +750,9 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
         // 후반 + 6점+ → 완전 이성 붕괴
         const candidates = [
           `저도 이제 모르겠습니다... ${my} ${input.myScore}:${input.oppScore} ${opp}`,
-          `아 이게 무슨... 그냥 내일 봐야겠습니다.`,
+          `아 이게 무슨... 그래도 마지막 아웃까지는 봅니다.`,
           `${my} ${input.myScore}:${input.oppScore} ${opp}. 캐스터도 말문이 막힙니다.`,
-          `오늘은 여기까지인 것 같습니다. 정말요.`,
+          `말이 안 나옵니다. 그래도 끝까지 같이 갑니다.`,
         ] as const;
         return candidates[(input.myScore + input.oppScore) % candidates.length];
       }
@@ -1268,6 +1270,22 @@ function extractAnthropicText(payload: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * 포스트시즌 경기면 실시간 알림 프롬프트 끝에 붙이는 맥락·규칙 블록.
+ * 같은 득점·삼진이라도 시리즈가 걸린 경기의 무게로 쓰게 한다.
+ */
+function postseasonPromptBlock(context: string | null | undefined): string {
+  if (!context) return "";
+  return `
+
+[포스트시즌 — 최우선 맥락]
+${context}
+- 지금은 정규시즌이 아니라 가을야구다. 이 장면이 시리즈에서 갖는 무게(진출까지 남은 거리, 탈락 위기)를 한 번은 느껴지게 써라. 매 문장마다 반복하지는 마라.
+- "지면 탈락"이 걸린 경기면 한 점, 한 아웃의 무게를 키워라. "1승만 더하면" 경기면 고지가 보이는 긴장감으로 써라.
+- 정규시즌 표현 금지: 순위 경쟁, 승차, 연승/연패, "다음 경기", "내일 보자", "시즌은 길다".
+- 시리즈 전적·차전 숫자는 위 문구 그대로만 쓰고 지어내지 마라.`;
+}
+
 // ─── Live Event (Strikeout / Pitcher Change) ─────────────────────────────────
 
 type StrikeoutDetail = {
@@ -1277,6 +1295,8 @@ type StrikeoutDetail = {
 };
 
 type GenerateLiveEventInput = {
+  /** 포스트시즌 경기일 때만 — 라운드·차전·시리즈 전적·걸린 것 한 줄 (fetchPostseasonContextForGame) */
+  postseasonContext?: string | null;
   kind: "strikeout" | "pitcherChange" | "homeRun";
   myTeamShort: string;
   oppTeamShort: string;
@@ -1530,7 +1550,7 @@ async function tryLiveEventLlmCall(apiKey: string, input: GenerateLiveEventInput
         max_tokens: 80,
         temperature: 1.0,
         system: buildLiveEventSystemPrompt(input),
-        messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}\n(seed:${nonce})` }],
+        messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n(seed:${nonce})` }],
       }),
       signal: controller.signal,
     });
@@ -1647,7 +1667,7 @@ export async function generateScorePushCopyWithOptions(
           max_tokens: options.maxTokens ?? 80,
           temperature: options.temperature ?? 1.0,
           system: buildSystemPrompt(input, input.recentBodies ?? []),
-          messages: [{ role: "user", content: `${buildUserPrompt(input)}\n\n(variation_seed: ${nonce})` }],
+          messages: [{ role: "user", content: `${buildUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n\n(variation_seed: ${nonce})` }],
         }),
         signal: controller.signal,
       });
@@ -1697,6 +1717,8 @@ export async function generateScorePushCopyWithOptions(
 // ─── Clutch Push ─────────────────────────────────────────────────────────────
 
 type GenerateClutchPushInput = {
+  /** 포스트시즌 경기일 때만 — 라운드·차전·시리즈 전적·걸린 것 한 줄 (fetchPostseasonContextForGame) */
+  postseasonContext?: string | null;
   favoriteTeam: string;
   opponentTeam: string;
   myScore: number;
@@ -1830,7 +1852,7 @@ export async function generateClutchPushCopy(
           max_tokens: 100,
           temperature: 1.0,
           system: buildClutchSystemPrompt(input),
-          messages: [{ role: "user", content: `${buildClutchUserPrompt(input)}\n(seed:${nonce})` }],
+          messages: [{ role: "user", content: `${buildClutchUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n(seed:${nonce})` }],
         }),
         signal: controller.signal,
       });

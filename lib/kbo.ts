@@ -860,6 +860,53 @@ export async function fetchPostseasonSeriesState(
   }
 }
 
+const postseasonStateCache = new Map<string, { at: number; value: PostseasonSeriesState | null }>();
+
+/** 실시간 알림용 — gameId·teamId 만으로 이 경기 시작 전 기준 시리즈 상황. 정규시즌이면 바로 null, 10분 캐시. */
+export async function fetchPostseasonStateForGame(
+  gameId: string,
+  teamId: string
+): Promise<PostseasonSeriesState | null> {
+  if (!getPostseasonRound(gameId)) return null;
+  const key = `${gameId}:${teamId.toLowerCase()}`;
+  const cached = postseasonStateCache.get(key);
+  if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.value;
+  let value: PostseasonSeriesState | null = null;
+  try {
+    const today = todayKstDate();
+    const games = await fetchKboGamesRange(addDaysKst(today, -14), today);
+    const target = games.find((g) => g.id === gameId);
+    if (target) value = computePostseasonSeriesState(target, teamId, games, false);
+  } catch (err) {
+    console.warn(`[kbo] postseason state lookup failed (${(err as Error).message})`);
+  }
+  postseasonStateCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/** 경기 시작 알림 첫 문장 — 오늘 걸린 것을 말하듯이. 걸린 게 없으면 null. */
+export function describePostseasonStakes(state: PostseasonSeriesState): string | null {
+  const goal = state.round === "KS" ? "우승" : state.nextStage;
+  if (state.winsToAdvance === 1 && state.lossesToElimination === 1) {
+    return `오늘 이기면 ${goal}, 지면 탈락이에요.`;
+  }
+  if (state.winsToAdvance === 1) {
+    return state.round === "KS" ? "오늘 이기면 우승이에요." : `오늘 이기면 바로 ${goal}예요.`;
+  }
+  if (state.lossesToElimination === 1) return "오늘 지면 탈락이에요. 무조건 잡아야 해요.";
+  return null;
+}
+
+/** 실시간 알림 LLM 프롬프트용 시리즈 한 줄 요약. 정규시즌이면 null. */
+export async function fetchPostseasonContextForGame(
+  gameId: string,
+  teamId: string,
+  teamShort: string
+): Promise<string | null> {
+  const state = await fetchPostseasonStateForGame(gameId, teamId);
+  return state ? describePostseasonSeries(state, teamShort) : null;
+}
+
 // ────────────────────────────────────────────────────────────────────
 // 순위표 — 시즌 전체 일정에서 직접 derive (네이버 ranking 엔드포인트가 404)
 // ────────────────────────────────────────────────────────────────────

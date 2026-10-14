@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchKboSchedule, todayKstDate } from "@/lib/kbo";
+import { fetchKboSchedule, todayKstDate, describePostseasonStakes, fetchPostseasonStateForGame } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
 import { authorizeCron, markDispatchOnce, minutesUntil, sendTeamTopicNotification, toKstDateTime } from "@/services/notificationService";
@@ -26,7 +26,8 @@ export async function GET(req: Request) {
     const gameDateTime = toKstDateTime(date, game.time);
     if (!gameDateTime) continue;
     const mins = minutesUntil(gameDateTime);
-    if (!force && (mins < 10 || mins > 20)) continue;
+    // Vercel 크론 지연 대비로 창을 넉넉히 (발송은 markDispatchOnce 로 1회 보장)
+    if (!force && (mins < 0 || mins > 25)) continue;
 
     for (const teamId of [game.homeId, game.awayId]) {
       const lock = await markDispatchOnce({
@@ -41,15 +42,21 @@ export async function GET(req: Request) {
       }
       const opponentTeamId = teamId === game.homeId ? game.awayId : game.homeId;
       const opponent = findTeam(opponentTeamId).short;
-      const body = buildGameStartCopy({
+      const teamShort = findTeam(teamId).short;
+      const baseBody = buildGameStartCopy({
         seed: `${date}:${game.id}:${teamId}`,
         opponent,
-        team: findTeam(teamId).short,
+        team: teamShort,
       });
+      // 포스트시즌: 제목에 라운드·차전, 본문 첫머리에 오늘 걸린 것
+      const series = await fetchPostseasonStateForGame(game.id, teamId);
+      const stakes = series ? describePostseasonStakes(series) : null;
+      const title = series ? `⏱️ ${series.roundLabel} ${series.gameNumber}차전 곧 시작` : "⏱️ 경기 시작 임박";
+      const body = stakes ? `${stakes} ${baseBody}` : baseBody;
       const result = await sendTeamTopicNotification({
         teamId,
         topicKey: "preGame",
-        title: "⏱️ 경기 시작 임박",
+        title,
         body,
         url: "/today",
         payload: {
