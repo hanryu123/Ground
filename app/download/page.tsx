@@ -108,23 +108,6 @@ function AppStoreButton({ size = "md" }: { size?: "md" | "lg" }) {
   );
 }
 
-function AndroidSoon({ emphasized = false }: { emphasized?: boolean }) {
-  return (
-    <div
-      className={`inline-flex items-center gap-3 rounded-2xl border border-white/10 px-5 py-3 text-white/55 ${
-        emphasized ? "bg-white/[0.06]" : ""
-      }`}
-      aria-disabled
-    >
-      <AndroidIcon className="h-6 w-6" />
-      <span className="flex flex-col items-start leading-tight">
-        <span className="text-[11px] font-medium text-white/40">Android</span>
-        <span className="text-base font-semibold text-white/70">준비 중이에요</span>
-      </span>
-    </div>
-  );
-}
-
 function Notification({
   app,
   time,
@@ -245,7 +228,6 @@ export default async function DownloadPage({
               <div className="mt-9 flex flex-col items-start gap-3">
                 {platform === "android" ? (
                   <>
-                    <AndroidSoon emphasized />
                     <p className="text-sm leading-relaxed text-white/50">
                       지금은 iPhone에서만 쓸 수 있어요. Android 버전은 열심히 만들고 있어요.
                     </p>
@@ -330,7 +312,9 @@ export default async function DownloadPage({
                 </div>
                 <div className="flex flex-col items-center gap-3 sm:items-start">
                   <AppStoreButton />
-                  <AndroidSoon />
+                  <p className="flex items-center gap-1.5 text-sm text-white/40">
+                    <AndroidIcon className="h-4 w-4" /> Android는 준비 중이에요
+                  </p>
                 </div>
               </div>
             ) : (
