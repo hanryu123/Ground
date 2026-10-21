@@ -5,8 +5,9 @@ import HeroCard from "@/components/HeroCard";
 import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
 import FeedNewsSection from "@/components/feed/FeedNewsSection";
 import FeedShortsSection from "@/components/feed/FeedShortsSection";
+import FeedTicketPracticeCard from "@/components/feed/FeedTicketPracticeCard";
 import { getFeedTheme } from "@/components/feed/feedTheme";
-import { useIsOffseason } from "@/lib/season";
+import { useSeasonPhase } from "@/lib/season";
 import { useMyTeam } from "@/lib/useMyTeam";
 
 /**
@@ -14,6 +15,7 @@ import { useMyTeam } from "@/lib/useMyTeam";
  *
  *   1. 경기 히어로 카드 — 오늘 경기가 있으면 스크롤 영역 한 화면을 꽉 채운다.
  *   1'. 비시즌/무경기 커버 — 같은 HeroCard 를 낮게 띄워 아래 소식이 바로 보이게 한다.
+ *   1-1. 가을야구 예매 연습 카드 — 포스트시즌 동안만
  *   2. 하이라이트 숏츠 — 우리 팀 영상이 없으면 숨김
  *   3. 팔로우 선수 카드 (Phase 3)
  *   4. 우리 팀 소식 (Highlights)
@@ -25,7 +27,7 @@ import { useMyTeam } from "@/lib/useMyTeam";
  */
 export default function TodayPage() {
   const team = useMyTeam();
-  const offseason = useIsOffseason(team.id);
+  const { offseason, postseason } = useSeasonPhase(team.id);
   const theme = useMemo(() => getFeedTheme(team), [team]);
 
   return (
@@ -43,6 +45,8 @@ export default function TodayPage() {
         </div>
       </HeroCard>
 
+      {/* 1-1. 포스트시즌 동안만 — 예매 연습 사이트 */}
+      {postseason ? <FeedTicketPracticeCard theme={theme} /> : null}
       <FeedShortsSection team={team} theme={theme} />
       {/* 3. 팔로우 선수 카드 — Phase 3 에서 이 자리에 들어간다 */}
       <div className="snap-start">

@@ -44,7 +44,7 @@ const TEAM_SHORT_STYLE = {
 
 type Props = {
   team: Team;
-  /** 올해 우리 팀 경기가 끝났는지 (useIsOffseason) — 무경기 커버에 OFF SEASON 라벨만 두고 멘트는 뺀다 */
+  /** 올해 우리 팀 경기가 끝났는지 (useSeasonPhase) — 무경기 커버에 OFF SEASON 라벨만 두고 멘트는 뺀다 */
   offseason?: boolean;
   /** 카드 위에 겹쳐 띄울 요소 (라이브 액티비티 복구 버튼 등) */
   children?: ReactNode;
