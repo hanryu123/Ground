@@ -136,10 +136,28 @@ const getAllShortsCached = unstable_cache(collectAllShorts, ["team-shorts-all", 
   revalidate: 900,
 });
 
-/** 우리 팀 숏츠, 최신순 (기간은 MAX_AGE_DAYS). */
+/**
+ * 우리 팀 숏츠 (기간은 MAX_AGE_DAYS).
+ * 채널별로 최신순 줄을 세운 뒤 한 개씩 번갈아 담는다 — 순수 최신순이면 매일 올라오는 KBO·티빙 영상이
+ * 자리를 다 채워서 구단·팬 채널 숏츠가 묻힌다. 채널 순서는 각 채널의 가장 최근 영상 순.
+ */
 export async function getTeamShorts(teamId: string, limit = 20): Promise<ShortsItem[]> {
   const all = await getAllShortsCached();
-  return all.filter((s) => s.teams.includes(teamId)).slice(0, limit);
+  const byChannel = new Map<string, ShortsItem[]>();
+  for (const item of all) {
+    if (!item.teams.includes(teamId)) continue;
+    const list = byChannel.get(item.channelLabel);
+    if (list) list.push(item);
+    else byChannel.set(item.channelLabel, [item]);
+  }
+  const queues = [...byChannel.values()];
+  const out: ShortsItem[] = [];
+  for (let round = 0; out.length < limit && queues.some((q) => q.length > round); round++) {
+    for (const q of queues) {
+      if (q[round] && out.length < limit) out.push(q[round]!);
+    }
+  }
+  return out;
 }
 
 /** 숏츠 블록 끝 "YouTube에서 더 보기" — 구단 채널이 있으면 그 채널, 없으면 KBO 채널 숏츠 탭. */
