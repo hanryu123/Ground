@@ -21,6 +21,10 @@ import type { FeedTheme } from "@/components/feed/feedTheme";
 
 const YT_ORIGIN = "https://www.youtube.com";
 const PLAY_RATIO = 0.5;
+/** 이 거리(px) 이상 밀거나 이 속도(px/ms) 이상으로 튕기면 한 장 넘긴다 */
+const SWIPE_PX = 40;
+const SWIPE_VELOCITY = 0.3;
+const SNAP_MS = 280;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -45,6 +49,18 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   const [soundOn, setSoundOn] = useState(false);
 
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // 좌우 넘기기 — 브라우저 스크롤 대신 직접 처리해 한 번에 정확히 한 장씩 넘긴다
+  const drag = useRef<{
+    x: number;
+    y: number;
+    left: number;
+    t: number;
+    from: number;
+    axis: "x" | "y" | null;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const snapAnim = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const ratios = useRef<Map<number, number>>(new Map());
   const pageVisible = useRef(true);
@@ -133,6 +149,99 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     card?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, []);
 
+  // 가로 목록에서 가운데에 가장 가까운 칸 (마지막 "더 보기" 칸 포함)
+  function centerIndex(): number {
+    const scroller = scrollerRef.current;
+    if (!scroller) return 0;
+    const mid = scroller.scrollLeft + scroller.clientWidth / 2;
+    let best = 0;
+    let bestDist = Infinity;
+    Array.from(scroller.children).forEach((el, i) => {
+      const node = el as HTMLElement;
+      const dist = Math.abs(node.offsetLeft + node.offsetWidth / 2 - mid);
+      if (dist < bestDist) {
+        best = i;
+        bestDist = dist;
+      }
+    });
+    return best;
+  }
+
+  function goToSlot(index: number) {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const slots = scroller.children;
+    const node = slots[Math.max(0, Math.min(index, slots.length - 1))] as HTMLElement | undefined;
+    if (!node) return;
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    const to = Math.max(0, Math.min(max, node.offsetLeft - (scroller.clientWidth - node.offsetWidth) / 2));
+    // scrollTo({ behavior: "smooth" }) 는 재생 카드가 바뀌며 iframe 이 붙는 순간 중간에 끊겨
+    // 칸 사이에 멈출 때가 있어 직접 프레임마다 움직인다.
+    if (snapAnim.current !== null) cancelAnimationFrame(snapAnim.current);
+    const from = scroller.scrollLeft;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / SNAP_MS);
+      scroller.scrollLeft = from + (to - from) * (1 - Math.pow(1 - t, 3));
+      snapAnim.current = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    snapAnim.current = requestAnimationFrame(step);
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    if (snapAnim.current !== null) {
+      cancelAnimationFrame(snapAnim.current);
+      snapAnim.current = null;
+    }
+    drag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      left: scroller.scrollLeft,
+      t: performance.now(),
+      from: centerIndex(),
+      axis: null,
+    };
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    const scroller = scrollerRef.current;
+    if (!d || !scroller) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (d.axis === null && Math.hypot(dx, dy) > 6) {
+      d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (d.axis === "x") scroller.setPointerCapture(e.pointerId);
+    }
+    if (d.axis === "x") scroller.scrollLeft = d.left - dx;
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.axis !== "x") return;
+    const dx = e.clientX - d.x;
+    const velocity = dx / Math.max(1, performance.now() - d.t); // px/ms
+    let next = d.from;
+    if (dx < -SWIPE_PX || velocity < -SWIPE_VELOCITY) next = d.from + 1;
+    else if (dx > SWIPE_PX || velocity > SWIPE_VELOCITY) next = d.from - 1;
+    goToSlot(next);
+    // 끌어서 넘긴 손을 뗄 때 카드 탭으로 처리되지 않게
+    suppressClick.current = true;
+    window.setTimeout(() => {
+      suppressClick.current = false;
+    }, 0);
+  }
+
+  function onPointerCancel() {
+    const d = drag.current;
+    drag.current = null;
+    if (d?.axis === "x") goToSlot(d.from);
+  }
+
   // 영상이 끝나면 다음 카드로
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -207,13 +316,24 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
       </div>
 
       <div
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-5 pb-2"
-        style={{ scrollbarWidth: "none" }}
+        ref={scrollerRef}
+        className="flex gap-3 overflow-x-auto overscroll-x-contain px-5 pb-2"
+        style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onClickCapture={(e) => {
+          if (suppressClick.current) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
       >
         {items.map((item, index) => {
           const mounted = mountedIndex === index;
           return (
-            <div key={item.videoId} className="w-[70%] max-w-[300px] shrink-0 snap-center">
+            <div key={item.videoId} className="w-[70%] max-w-[300px] shrink-0">
               <div
                 ref={(el) => {
                   cardRefs.current[index] = el;
@@ -230,6 +350,15 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                     allow="autoplay; encrypted-media; picture-in-picture"
                     allowFullScreen
                     onLoad={onIframeLoad}
+                  />
+                ) : null}
+                {mounted ? (
+                  // 플레이어가 터치를 가져가 좌우로 안 넘어가던 문제 — 가운데만 덮어 스와이프를 받고, 탭하면 소리 켜기.
+                  // 위아래 가장자리(YouTube 로고·제목·컨트롤)는 덮지 않는다 (YouTube 정책).
+                  <div
+                    className="absolute inset-x-0 bottom-[22%] top-[14%]"
+                    onClick={toggleSound}
+                    aria-hidden
                   />
                 ) : (
                   <button
@@ -287,7 +416,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
             href={moreUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex aspect-[9/16] w-[40%] max-w-[180px] shrink-0 snap-center flex-col items-center justify-center gap-2 rounded-2xl text-center"
+            className="flex aspect-[9/16] w-[40%] max-w-[180px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl text-center"
             style={{ background: theme.text(0.07), color: theme.text(0.8) }}
           >
             <ArrowUpRight size={22} />
