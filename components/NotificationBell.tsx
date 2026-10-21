@@ -113,27 +113,6 @@ const ITEMS_DEFAULT: ToggleItem[] = [
     hint: "득점/실점이 발생할 때마다 바로 푸시.",
     Icon: Bell,
   },
-  {
-    id: "livePitcherChange",
-    topicKeys: ["livePitcherChange"],
-    label: "경기중 · 투수 교체",
-    hint: "우리팀/상대팀 투수 교체 상황을 즉시 푸시.",
-    Icon: Crosshair,
-  },
-  {
-    id: "liveStrikeout",
-    topicKeys: ["liveStrikeout"],
-    label: "경기중 · 탈삼진",
-    hint: "투수 삼진 상황을 실시간으로 푸시.",
-    Icon: Trophy,
-  },
-  {
-    id: "liveHomeRun",
-    topicKeys: ["liveHomeRun"],
-    label: "경기중 · 홈런",
-    hint: "홈런 발생 시 즉시 푸시.",
-    Icon: Bell,
-  },
 ];
 
 const ITEMS_ALPHA: ToggleItem[] = [
@@ -157,13 +136,6 @@ const ITEMS_ALPHA: ToggleItem[] = [
     label: "스코어 알림",
     hint: "득/실점이 발생되면 알려드려요",
     Icon: Bell,
-  },
-  {
-    id: "liveSituation",
-    topicKeys: ["livePitcherChange", "liveStrikeout", "liveHomeRun"],
-    label: "라이브 경기 상황",
-    hint: "투수 교체, 탈삼진, 홈런 등 알려드려요.",
-    Icon: Crosshair,
   },
   {
     id: "gameResult",
