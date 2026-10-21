@@ -7,8 +7,11 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 /**
  * 피드 숏츠 블록 — 화이트리스트 채널의 숏츠를 RSS로 모아 팀별로 나눈다.
  *
- *  - 채널마다 숏츠 전용 재생목록(UUSH + 채널 id 뒤 22자) RSS를 먼저 읽고, 없으면 채널 RSS를 읽는다.
- *    RSS는 최근 15개만 주므로 업로드가 잦은 채널은 14일을 다 못 채울 수 있다.
+ *  - 채널마다 숏츠 전용 재생목록 RSS(playlist_id=UUSH + 채널 id 에서 "UC" 뺀 나머지)만 읽는다.
+ *    채널 업로드 RSS(channel_id=)는 최신 업로드 15개라 긴 영상이 많은 채널은 숏츠가 0개로 잡힌다 (KIA).
+ *    숏츠 재생목록도 최신 15개뿐이다.
+ *  - 노출 기간: 구단·팬 채널은 그 팀 영상만 올리니 최근 60일까지 (비시즌·포스트시즌에 업로드가 뜸해도 블록이 비지 않게),
+ *    KBO·티빙은 업로드가 많고 제목 매칭이라 최근 14일만.
  *  - 숏츠 판별: RSS 항목의 <link href> 가 /shorts/{id} 인지로 본다. 별도 요청이 필요 없다.
  *    (Phase 0 스파이크: /shorts/{id} 리다이렉트 방식과 75/75 일치 — docs/phase0-spike.md 2.3)
  *  - 임베드 가능 여부: oEmbed가 실패하는 영상(비공개·임베드 차단 등)은 뺀다. 스파이크 표본 70개는 전부 통과했다.
@@ -18,8 +21,13 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  */
 
 const UA = "Mozilla/5.0 (compatible; GroundBot/2.0)";
-const MAX_AGE_DAYS = 14;
-const CACHE_VERSION = "v3";
+const MAX_AGE_DAYS: Record<ShortsChannel["kind"], number> = {
+  league: 14,
+  broadcaster: 14,
+  club: 60,
+  fan: 60,
+};
+const CACHE_VERSION = "v4";
 
 export type ShortsItem = {
   videoId: string;
@@ -44,10 +52,8 @@ async function fetchFeed(query: string, channel: ShortsChannel): Promise<Highlig
   }
 }
 
-async function fetchChannelShortsFeed(channel: ShortsChannel): Promise<HighlightEntry[]> {
-  const shortsOnly = await fetchFeed(`playlist_id=UUSH${channel.id.slice(2)}`, channel);
-  if (shortsOnly.length > 0) return shortsOnly;
-  return fetchFeed(`channel_id=${channel.id}`, channel);
+function fetchChannelShortsFeed(channel: ShortsChannel): Promise<HighlightEntry[]> {
+  return fetchFeed(`playlist_id=UUSH${channel.id.slice(2)}`, channel);
 }
 
 // 리그·중계 채널은 농구·배구 숏츠도 올리고 "SK·삼성·KT·LG" 같은 이름이 겹친다
@@ -90,9 +96,9 @@ function checkEmbeddableCached(videoId: string): Promise<boolean> {
 
 async function collectAllShorts(): Promise<ShortsItem[]> {
   const channels = SHORTS_CHANNELS.filter((c) => c.enabled && c.id);
-  const cutoff = Date.now() - MAX_AGE_DAYS * 86_400_000;
 
   const perChannel = await mapWithConcurrency(channels, 4, async (channel) => {
+    const cutoff = Date.now() - MAX_AGE_DAYS[channel.kind] * 86_400_000;
     const entries = (await fetchChannelShortsFeed(channel)).filter(
       (e) => isShortsEntry(e) && (!e.publishedAt || e.publishedAt.getTime() >= cutoff)
     );
@@ -130,7 +136,7 @@ const getAllShortsCached = unstable_cache(collectAllShorts, ["team-shorts-all", 
   revalidate: 900,
 });
 
-/** 최근 14일 우리 팀 숏츠, 최신순. */
+/** 우리 팀 숏츠, 최신순 (기간은 MAX_AGE_DAYS). */
 export async function getTeamShorts(teamId: string, limit = 20): Promise<ShortsItem[]> {
   const all = await getAllShortsCached();
   return all.filter((s) => s.teams.includes(teamId)).slice(0, limit);

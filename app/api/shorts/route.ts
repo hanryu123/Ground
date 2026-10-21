@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 /**
  * GET /api/shorts?team=lg
- *   최근 14일 우리 팀 숏츠 { items: ShortsItem[], moreUrl } — 비어 있으면 피드에서 블록을 숨긴다.
+ *   우리 팀 숏츠 (구단 채널 60일 · KBO·티빙 14일) { items: ShortsItem[], moreUrl } — 비어 있으면 피드에서 블록을 숨긴다.
  */
 export async function GET(req: Request) {
   const team = new URL(req.url).searchParams.get("team") ?? "";
