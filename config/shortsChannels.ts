@@ -51,6 +51,10 @@ export const SHORTS_CHANNELS: ShortsChannel[] = [
   { id: "UC2yNu6qNLkauR29pT6VCckg", label: "키다리맨", kind: "fan", teams: ["kiwoom"], enabled: true },
   { id: "UCfGNfrHVHOpyKONSOpbBB2w", label: "주원이내", kind: "fan", teams: ["ssg"], enabled: true },
   { id: "UCXg-Wm1bN4PhQRb86SHb38A", label: "숨끼 다이노스", kind: "fan", teams: ["nc"], enabled: true },
+  // 롯데 — 사용자 추천 (2026-10-21). 도쿄 갈매기는 직접 촬영 토크·퀴즈(A).
+  // 허캐티비는 최근엔 롱폼 경기 리뷰만 올리고 숏츠는 2023-05 이후 없음 → 켜 두면 새 숏츠부터 들어온다.
+  { id: "UCHQ8RytJ1Zk7Xlvbznbp0Vg", label: "도쿄 갈매기", kind: "fan", teams: ["lotte"], enabled: true },
+  { id: "UCSuzeyw_UfTJh56OZthl16Q", label: "허캐티비", kind: "fan", teams: ["lotte"], enabled: true },
   // C — 썸네일 대부분이 중계 화면 녹화라 끈다 (KIA 연구소는 썸네일에 "출처: 티빙")
   { id: "UCTvmAZOI_eSxrpLHkuq-8gw", label: "수염오빠", kind: "fan", teams: ["lg"], enabled: false },
   { id: "UCdSsRSR8Ig-nVSMxu9H7qkw", label: "KIA 연구소", kind: "fan", teams: ["kia"], enabled: false },
