@@ -168,3 +168,34 @@ export function teamShortsMoreUrl(teamId: string): string {
   const league = SHORTS_CHANNELS.find((c) => c.kind === "league" && c.id);
   return `https://www.youtube.com/channel/${(club ?? league)!.id}/shorts`;
 }
+
+export type ClubVideo = {
+  videoId: string;
+  title: string;
+  channelLabel: string;
+  publishedAt: string | null;
+  url: string;
+};
+
+/**
+ * 구단 공식 채널 최근 일반 영상 (숏츠 제외) — 뉴스 목록 사이에 끼워 넣는 용도.
+ * 채널 업로드 RSS(최신 15개)에서 /shorts/ 링크가 아닌 것만 최신순.
+ */
+export async function getClubLatestVideos(teamId: string, limit = 6): Promise<ClubVideo[]> {
+  const club = SHORTS_CHANNELS.find(
+    (c) => c.enabled && c.id && c.kind === "club" && Array.isArray(c.teams) && c.teams.includes(teamId)
+  );
+  if (!club) return [];
+  const entries = await fetchFeed(`channel_id=${club.id}`, club);
+  return entries
+    .filter((e) => !isShortsEntry(e))
+    .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
+    .slice(0, limit)
+    .map((e) => ({
+      videoId: e.videoId,
+      title: e.title,
+      channelLabel: e.channelLabel,
+      publishedAt: e.publishedAt?.toISOString() ?? null,
+      url: `https://www.youtube.com/watch?v=${e.videoId}`,
+    }));
+}

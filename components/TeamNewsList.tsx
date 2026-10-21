@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { NewsTag, TeamNewsItem, TeamNewsPage } from "@/lib/news";
 
@@ -18,12 +18,11 @@ function timeAgo(dateTime: string): string {
 
 type Props = {
   teamId: string;
-  /** 처음 보여 줄 개수 */
-  collapsedCount?: number;
-  /** "펼치기" 한 번에 더 보여 줄 개수 */
-  expandStep?: number;
-  /** 최대 개수 — 다 펼치면 "접기" */
+  /** 최대 개수 */
   maxCount?: number;
+  /** "전체" 목록에서 insertEvery 개마다 하나씩 끼울 요소 (구단 영상 등) — 태그 필터 중엔 안 끼운다 */
+  inserts?: ReactNode[];
+  insertEvery?: number;
   /** 태그 필터 칩 (전체 + 그 팀 소식에 있는 태그만) */
   filterable?: boolean;
   /** rgba 텍스트 색 생성기 — 팀 배경 위 가독성 */
@@ -49,9 +48,9 @@ async function fetchNews(teamId: string, tag: NewsTag | null, limit: number): Pr
 
 export default function TeamNewsList({
   teamId,
-  collapsedCount = 5,
-  expandStep = 10,
   maxCount = 30,
+  inserts = [],
+  insertEvery = 5,
   filterable = false,
   textColor,
   accentColor,
@@ -60,10 +59,8 @@ export default function TeamNewsList({
   const [tag, setTag] = useState<NewsTag | null>(null);
   const [tags, setTags] = useState<NewsTag[]>([]);
   const [items, setItems] = useState<TeamNewsItem[] | null>(null);
-  const [visibleCount, setVisibleCount] = useState(collapsedCount);
   // 팀·태그가 바뀌면 늦게 도착한 이전 응답을 버린다
   const requestKey = useRef("");
-  const topRef = useRef<HTMLDivElement | null>(null);
 
   // 팀이 바뀌면 필터 초기화
   useEffect(() => {
@@ -71,12 +68,10 @@ export default function TeamNewsList({
     setTags([]);
   }, [teamId]);
 
-  // 최대 개수까지 한 번에 받아 두고, 펼치기·접기는 화면에서만 한다
   useEffect(() => {
     const key = `${teamId}:${tag ?? ""}`;
     requestKey.current = key;
     setItems(null);
-    setVisibleCount(collapsedCount);
     fetchNews(teamId, tag, maxCount)
       .then((page) => {
         if (requestKey.current !== key) return;
@@ -86,21 +81,12 @@ export default function TeamNewsList({
       .catch(() => {
         if (requestKey.current === key) setItems([]);
       });
-  }, [teamId, tag, maxCount, collapsedCount]);
-
-  const canExpand = items !== null && visibleCount < items.length;
-  const canCollapse = items !== null && !canExpand && items.length > collapsedCount;
-
-  function collapse() {
-    setVisibleCount(collapsedCount);
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  }, [teamId, tag, maxCount]);
 
   const chips =
     filterable && tags.length > 0 ? (
       <div
-        ref={topRef}
-        className="-mx-5 mb-3 scroll-mt-4 flex gap-2 overflow-x-auto px-5 pb-1"
+        className="-mx-5 mb-3 flex gap-2 overflow-x-auto px-5 pb-1"
         style={{ scrollbarWidth: "none" }}
         role="tablist"
         aria-label="소식 분류"
@@ -133,7 +119,7 @@ export default function TeamNewsList({
       <>
         {chips}
         <ul className="flex flex-col gap-3" aria-busy>
-          {Array.from({ length: collapsedCount }, (_, i) => (
+          {Array.from({ length: 5 }, (_, i) => (
             <li
               key={i}
               className="h-[76px] animate-pulse rounded-2xl"
@@ -160,66 +146,58 @@ export default function TeamNewsList({
     <>
       {chips}
       <ul className="flex flex-col gap-1">
-        {items.slice(0, visibleCount).map((item, i) => (
-          <motion.li
-            key={item.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease, delay: Math.min(i < collapsedCount ? i : (i - collapsedCount) % expandStep, 8) * 0.04 }}
-          >
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 rounded-2xl py-2.5 active:opacity-70"
-            >
-              <div className="min-w-0 flex-1">
-                {item.tag ? (
-                  <span
-                    className="mb-1 inline-block rounded-full px-2 py-[1px] text-[11px] font-bold"
-                    style={{ background: accentColor, color: accentTextColor }}
-                  >
-                    {item.tag}
-                  </span>
-                ) : null}
-                <p
-                  className="line-clamp-2 text-[15px] font-semibold leading-snug"
-                  style={{ color: textColor(0.94) }}
+        {items.map((item, i) => {
+          const insert =
+            tag === null && (i + 1) % insertEvery === 0 ? inserts[(i + 1) / insertEvery - 1] : null;
+          return (
+            <Fragment key={item.id}>
+              <motion.li
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease, delay: Math.min(i, 8) * 0.04 }}
+              >
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-2xl py-2.5 active:opacity-70"
                 >
-                  {item.title}
-                </p>
-                <p className="mt-1 text-[12px]" style={{ color: textColor(0.55) }}>
-                  {item.source} · {timeAgo(item.dateTime)}
-                  {item.relatedCount > 0 ? ` · 관련 기사 ${item.relatedCount}` : ""}
-                </p>
-              </div>
-              {item.thumbnail ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.thumbnail}
-                  alt=""
-                  loading="lazy"
-                  className="h-16 w-16 shrink-0 rounded-xl object-cover"
-                />
-              ) : null}
-            </a>
-          </motion.li>
-        ))}
+                  <div className="min-w-0 flex-1">
+                    {item.tag ? (
+                      <span
+                        className="mb-1 inline-block rounded-full px-2 py-[1px] text-[11px] font-bold"
+                        style={{ background: accentColor, color: accentTextColor }}
+                      >
+                        {item.tag}
+                      </span>
+                    ) : null}
+                    <p
+                      className="line-clamp-2 text-[15px] font-semibold leading-snug"
+                      style={{ color: textColor(0.94) }}
+                    >
+                      {item.title}
+                    </p>
+                    <p className="mt-1 text-[12px]" style={{ color: textColor(0.55) }}>
+                      {item.source} · {timeAgo(item.dateTime)}
+                      {item.relatedCount > 0 ? ` · 관련 기사 ${item.relatedCount}` : ""}
+                    </p>
+                  </div>
+                  {item.thumbnail ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.thumbnail}
+                      alt=""
+                      loading="lazy"
+                      className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                    />
+                  ) : null}
+                </a>
+              </motion.li>
+              {insert ? <li className="py-5">{insert}</li> : null}
+            </Fragment>
+          );
+        })}
       </ul>
-      {canExpand || canCollapse ? (
-        <button
-          type="button"
-          onClick={() =>
-            canExpand
-              ? setVisibleCount((n) => Math.min(n + expandStep, items.length))
-              : collapse()
-          }
-          className="mt-3 w-full rounded-2xl py-3 text-[14px] font-semibold transition active:scale-[0.98]"
-          style={{ background: textColor(0.07), color: textColor(0.75) }}
-        >
-          {canExpand ? "펼치기" : "접기"}
-        </button>
-      ) : null}
     </>
   );
 }
