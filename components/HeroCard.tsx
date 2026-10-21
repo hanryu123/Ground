@@ -44,7 +44,7 @@ const TEAM_SHORT_STYLE = {
 
 type Props = {
   team: Team;
-  /** 올해 우리 팀 경기가 끝났는지 (useIsOffseason) — 무경기 커버 문구가 바뀐다 */
+  /** 올해 우리 팀 경기가 끝났는지 (useIsOffseason) — 무경기 커버에 OFF SEASON 라벨만 두고 멘트는 뺀다 */
   offseason?: boolean;
   /** 카드 위에 겹쳐 띄울 요소 (라이브 액티비티 복구 버튼 등) */
   children?: ReactNode;
@@ -176,8 +176,6 @@ function resolveButtonTextColor(bgHex: string): string {
   return yiq >= 160 ? "#111111" : "#ffffff";
 }
 
-const OFFSEASON_MESSAGE = "올해 야구는 여기까지예요. 스토브리그 소식으로 겨울 버텨봐요.";
-
 const PREVIEW_DISMISS_KEY = "ground-pregame-preview-dismiss-v2";
 const POSTGAME_DISMISS_KEY = "ground-postgame-report-dismiss-v2";
 
@@ -216,8 +214,9 @@ export default function HeroCard({ team, offseason = false, children }: Props) {
 
   const dateLabel = formatMatchDate(match?.game.date);
   const feedStatus = live?.status ?? "NORMAL";
+  // 비시즌 커버는 OFF SEASON 라벨 + 슬로건만 (멘트 없음)
   const feedMessage = offseason
-    ? OFFSEASON_MESSAGE
+    ? null
     : live?.message ??
     (feedStatus === "MONDAY_OFF"
       ? "오늘 월요일이라 야구 없다... 무슨 낙으로 사냐 😭"
