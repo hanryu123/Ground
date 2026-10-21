@@ -20,6 +20,8 @@ export type HighlightEntry = {
   url: string;
   thumbnailUrl: string | null;
   publishedAt: Date | null;
+  /** media:description — 숏츠 팀 매칭용 (해시태그에 구단명이 붙는 경우가 많다) */
+  description?: string;
 };
 
 /**
@@ -104,7 +106,7 @@ function titleMatchesTeams(title: string, homeTeamId: string, awayTeamId: string
   return hasHome && hasAway;
 }
 
-function parseRss(xml: string, channelId: string, channelLabel: string): HighlightEntry[] {
+export function parseRss(xml: string, channelId: string, channelLabel: string): HighlightEntry[] {
   const entries: HighlightEntry[] = [];
   const entryPattern = /<entry>([\s\S]*?)<\/entry>/g;
   let match: RegExpExecArray | null;
@@ -117,6 +119,7 @@ function parseRss(xml: string, channelId: string, channelLabel: string): Highlig
     // <media:thumbnail url="..."> 파싱
     const thumbnailUrl =
       /<media:thumbnail[^>]+url="([^"]+)"/.exec(chunk)?.[1]?.trim() ?? null;
+    const descriptionRaw = /<media:description>([\s\S]*?)<\/media:description>/.exec(chunk)?.[1];
     if (!id || !titleRaw) continue;
     const title = decodeXml(titleRaw.trim());
     const url = link?.startsWith("http") ? link : `https://www.youtube.com/watch?v=${id}`;
@@ -129,6 +132,7 @@ function parseRss(xml: string, channelId: string, channelLabel: string): Highlig
       url,
       thumbnailUrl,
       publishedAt: Number.isFinite(publishedAtMs) ? new Date(publishedAtMs) : null,
+      description: descriptionRaw ? decodeXml(descriptionRaw.trim()) : undefined,
     });
   }
   return entries;

@@ -154,16 +154,19 @@ function toClassified(a: RawArticle, row?: LlmRow): ClassifiedArticle {
   };
 }
 
-/** LLM 분류가 실패했을 때의 대체 — 제목의 구단명·애칭만 본다 (선수 이름만 나온 기사는 놓친다). */
-const TEAM_KEYWORDS: Record<string, RegExp> = {
-  lg: /LG|트윈스/,
-  kt: /KT|위즈/,
-  kia: /KIA|타이거즈/,
+/**
+ * LLM 분류가 실패했을 때의 대체 — 제목의 구단명·애칭만 본다 (선수 이름만 나온 기사는 놓친다).
+ * 영문 약칭은 다른 영단어 안에 든 경우(NCT 등)를 피하려고 앞뒤가 영문자가 아닐 때만 본다.
+ */
+export const TEAM_KEYWORDS: Record<string, RegExp> = {
+  lg: /(?<![A-Za-z])LG(?![A-Za-z])|트윈스/,
+  kt: /(?<![A-Za-z])KT(?![A-Za-z])|위즈/,
+  kia: /(?<![A-Za-z])KIA(?![A-Za-z])|타이거즈/,
   samsung: /삼성|라이온즈/,
   doosan: /두산|베어스/,
-  ssg: /SSG|랜더스/,
+  ssg: /(?<![A-Za-z])SSG(?![A-Za-z])|랜더스/,
   lotte: /롯데|자이언츠/,
-  nc: /NC|다이노스/,
+  nc: /(?<![A-Za-z])NC(?![A-Za-z])|다이노스/,
   hanwha: /한화|이글스/,
   kiwoom: /키움|히어로즈/,
 };
@@ -265,4 +268,30 @@ export async function getTeamNews(teamId: string, days = 7): Promise<TeamNewsIte
     if (Boolean(x.tag) !== Boolean(y.tag)) return x.tag ? -1 : 1;
     return y.dateTime.localeCompare(x.dateTime);
   });
+}
+
+export type TeamNewsPage = {
+  items: TeamNewsItem[];
+  /** 필터 전 전체 소식에 실제로 있는 태그 (NEWS_TAGS 순서) — 필터 칩용 */
+  tags: NewsTag[];
+  /** 필터 적용 후 전체 개수 */
+  total: number;
+  /** 다음 페이지 시작 위치, 끝이면 null */
+  nextOffset: number | null;
+};
+
+/** getTeamNews 결과를 태그로 거르고 offset/limit으로 자른다. limit이 없으면 끝까지. */
+export function pageTeamNews(
+  all: TeamNewsItem[],
+  { tag, offset = 0, limit }: { tag?: NewsTag | null; offset?: number; limit?: number }
+): TeamNewsPage {
+  const tags = NEWS_TAGS.filter((t) => all.some((i) => i.tag === t));
+  const filtered = tag ? all.filter((i) => i.tag === tag) : all;
+  const end = limit ? offset + limit : filtered.length;
+  return {
+    items: filtered.slice(offset, end),
+    tags,
+    total: filtered.length,
+    nextOffset: end < filtered.length ? end : null,
+  };
 }

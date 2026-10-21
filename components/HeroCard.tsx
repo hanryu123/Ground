@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Cormorant_Garamond } from "next/font/google";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CloudRain, User, Play, X } from "lucide-react";
 import { findTeam, heroLeftEpithetLabel, type Team } from "@/lib/teams";
@@ -44,6 +44,10 @@ const TEAM_SHORT_STYLE = {
 
 type Props = {
   team: Team;
+  /** 올해 우리 팀 경기가 끝났는지 (useIsOffseason) — 무경기 커버에 OFF SEASON 라벨만 두고 멘트는 뺀다 */
+  offseason?: boolean;
+  /** 카드 위에 겹쳐 띄울 요소 (라이브 액티비티 복구 버튼 등) */
+  children?: ReactNode;
 };
 
 function getTodayMatch(team: Team, liveGames?: LiveGame[] | null) {
@@ -175,7 +179,7 @@ function resolveButtonTextColor(bgHex: string): string {
 const PREVIEW_DISMISS_KEY = "ground-pregame-preview-dismiss-v2";
 const POSTGAME_DISMISS_KEY = "ground-postgame-report-dismiss-v2";
 
-export default function HeroCard({ team }: Props) {
+export default function HeroCard({ team, offseason = false, children }: Props) {
   // ── 라이브 KBO 데이터 (60s 폴링, 실패 시 폴백) ──
   const live = useKboToday(team.id, { withStandings: false });
   const match = useMemo(
@@ -210,8 +214,10 @@ export default function HeroCard({ team }: Props) {
 
   const dateLabel = formatMatchDate(match?.game.date);
   const feedStatus = live?.status ?? "NORMAL";
-  const feedMessage =
-    live?.message ??
+  // 비시즌 커버는 OFF SEASON 라벨 + 슬로건만 (멘트 없음)
+  const feedMessage = offseason
+    ? null
+    : live?.message ??
     (feedStatus === "MONDAY_OFF"
       ? "오늘 월요일이라 야구 없다... 무슨 낙으로 사냐 😭"
       : feedStatus === "RAIN_CANCELLED"
@@ -323,6 +329,9 @@ export default function HeroCard({ team }: Props) {
       : showPregamePreview
         ? { kind: "pregame" as const }
         : null;
+
+  // 경기 없는 날은 커버를 낮게 띄워 아래 피드가 바로 보이게 한다 (프리뷰·리포트 오버레이가 떠 있으면 풀높이 유지)
+  const isCompactCover = !match && !activeInsightOverlay;
 
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardInsetPx, setKeyboardInsetPx] = useState(0);
@@ -470,8 +479,10 @@ export default function HeroCard({ team }: Props) {
 
   return (
     <div
-      className="relative h-full w-full overflow-hidden"
+      className="relative w-full shrink-0 snap-start overflow-hidden"
       style={{
+        // 피드 스크롤 영역 기준 — 경기 있는 날은 한 화면 꽉, 없는 날은 낮은 커버
+        height: isCompactCover ? "clamp(360px, 62%, 520px)" : "100%",
         background: [
           `radial-gradient(120% 70% at 50% 18%, rgba(255,255,255,${
             isLightThemeText ? "0.22" : "0.16"
@@ -587,13 +598,32 @@ export default function HeroCard({ team }: Props) {
           initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.85, ease, delay: 0.18 }}
-          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-7 text-center ${
-            isKeyboardOpen
-              ? "pb-[calc(9rem+env(safe-area-inset-bottom,0px))] pt-[6vh]"
-              : "pb-[calc(13rem+env(safe-area-inset-bottom,0px))] pt-[14vh]"
+          className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center px-7 text-center ${
+            isCompactCover
+              ? // 낮은 커버: 슬로건을 카드 세로 가운데에 (위 아이콘·복구 버튼 높이만큼 살짝 아래로)
+                "inset-y-0 justify-center pt-14"
+              : isKeyboardOpen
+                ? "bottom-0 pb-[calc(9rem+env(safe-area-inset-bottom,0px))] pt-[6vh]"
+                : "bottom-0 pb-[calc(13rem+env(safe-area-inset-bottom,0px))] pt-[14vh]"
           }`}
         >
           <div className="flex max-w-md flex-col items-center">
+            {offseason ? (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, ease, delay: 0.05 }}
+                className={`mb-4 uppercase ${displaySerif.className}`}
+                style={{
+                  color: themedText(0.5),
+                  fontWeight: 500,
+                  fontSize: "12px",
+                  letterSpacing: "0.38em",
+                }}
+              >
+                Off Season
+              </motion.p>
+            ) : null}
             <motion.p
               key={`${team.id}-${sloganText}-1l`}
               initial={{
@@ -632,7 +662,7 @@ export default function HeroCard({ team }: Props) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, ease, delay: 0.2 }}
                 className="mt-4 px-2 text-[17px] font-semibold leading-relaxed"
-                style={{ color: themedText(0.86) }}
+                style={{ color: themedText(0.86), wordBreak: "keep-all" }}
               >
                 {feedMessage}
               </motion.p>
@@ -952,6 +982,7 @@ export default function HeroCard({ team }: Props) {
           </div>
         </motion.div>
       )}
+      {children}
       <LineupSheet
         open={isLineupOpen && hasSelectedTeamLineup}
         onClose={() => setIsLineupOpen(false)}
