@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import StandingsSection from "@/components/StandingsSection";
+import PostseasonBracket from "@/components/PostseasonBracket";
 import { useMyTeam } from "@/lib/useMyTeam";
-import { useKboToday } from "@/lib/useKboToday";
+import { useStandings } from "@/lib/useStandings";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const CONTACT_EMAIL = "ground.admiin@gmail.com";
@@ -25,15 +26,18 @@ const MAIL_TO = (() => {
  *   위해 별도 탭으로 분리. BottomNav 의 (구) MY 자리를 RANK 가 흡수.
  *
  *  ── 데이터 ──
- *   useKboToday() 로 standings 받음 (60s 폴링). HeroCard 와 동일 훅을
- *   재사용하므로 같은 세션에선 fetch 캐시 hit.
+ *   useStandings() → /api/kbo/standings (순위 + 연속·최근 10경기 + 포스트시즌 대진표, 5분 갱신).
+ *
+ *  ── 탭 ──
+ *   팀 순위 / 개인 기록. 개인 기록은 다음 단계라 지금은 비활성.
  */
 export default function RankPage() {
   const team = useMyTeam();
-  const live = useKboToday();
+  const { data, error } = useStandings();
+  const season = data?.season ?? new Date().getFullYear();
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-0 pb-10 [-webkit-overflow-scrolling:touch]">
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-black overscroll-contain px-0 pb-10 [-webkit-overflow-scrolling:touch]">
       {/* ── 헤더 ── */}
       <header className="px-7 pt-7">
         <p
@@ -58,22 +62,64 @@ export default function RankPage() {
           className="mt-2 text-[12.5px] text-white/45"
           style={{ fontWeight: 400, letterSpacing: "0.01em" }}
         >
-          2026 정규시즌 · 라이브
+          {data?.regularSeasonOver ? `${season} 정규시즌 최종 순위` : `${season} 정규시즌 · 매일 업데이트`}
         </motion.p>
       </header>
+
+      {/* ── 탭: 개인 기록은 다음 단계 ── */}
+      <div role="tablist" aria-label="순위 종류" className="mt-5 flex gap-5 border-b border-white/10 px-7">
+        <button
+          type="button"
+          role="tab"
+          aria-selected
+          className="relative pb-2.5 text-[13.5px] text-white"
+          style={{ fontWeight: 700 }}
+        >
+          팀 순위
+          <span aria-hidden className="absolute inset-x-0 bottom-[-1px] h-[2px] rounded-full bg-white" />
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={false}
+          aria-disabled
+          disabled
+          className="flex items-center gap-1.5 pb-2.5 text-[13.5px] text-white/30"
+          style={{ fontWeight: 600 }}
+        >
+          개인 기록
+          <span className="rounded-full border border-white/15 px-1.5 py-px text-[9.5px] text-white/35">
+            준비 중
+          </span>
+        </button>
+      </div>
+
+      {/* ── 포스트시즌 대진표 (접이식) ── */}
+      {data?.bracket && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease }}
+          className="mt-4"
+        >
+          <PostseasonBracket bracket={data.bracket} />
+        </motion.div>
+      )}
 
       {/* ── 표 본체 ── */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease, delay: 0.18 }}
-        className="mt-5"
+        className="mt-4"
       >
-        <StandingsSection
-          myTeamId={team.id}
-          rows={live?.standings}
-          loading={!live}
-        />
+        {error && !data ? (
+          <p className="px-7 py-10 text-center text-[13px] text-white/45">
+            순위를 불러오지 못했어요. 잠시 후 다시 열어 주세요.
+          </p>
+        ) : (
+          <StandingsSection myTeamId={team.id} rows={data?.standings} loading={!data} />
+        )}
       </motion.div>
 
       {/* ── 개발자에게 연락하기 ── */}

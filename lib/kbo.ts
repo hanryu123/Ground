@@ -920,7 +920,7 @@ const KBO_SEASON_OPENER: Record<number, string> = {
   2026: "2026-03-28",
 };
 
-function seasonOpenerForYear(year: number): string {
+export function seasonOpenerForYear(year: number): string {
   return KBO_SEASON_OPENER[year] ?? `${year}-03-22`;
 }
 
@@ -928,7 +928,7 @@ function seasonOpenerForYear(year: number): string {
  * 시즌 전체(1/1~12/31) 일정 → size=1000 한 방으로 가져옴 (KBO 시즌 ≈ 720경기).
  * 5분 캐시.
  */
-async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
+export async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
   const url =
     `${NAVER_BASE}/schedule/games` +
     `?fields=basic,statusInfo` +

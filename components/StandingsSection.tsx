@@ -1,308 +1,267 @@
 "use client";
 
-import { useMemo } from "react";
-import { motion } from "framer-motion";
 import { findTeam } from "@/lib/teams";
-import {
-  STANDINGS,
-  formatWinRate,
-  formatGamesBehind,
-  type StandingRow,
-} from "@/config/standings";
-const ease = [0.22, 1, 0.36, 1] as const;
+import TeamLogoChip from "@/components/TeamLogoChip";
+import { formatWinRate, formatGamesBehind } from "@/config/standings";
+import type { RecentRecord, StandingsTableRow } from "@/lib/standings";
 
 /**
- * 그리드 컬럼: 순위(20) · 팀명(1fr, min 48px) · 승(26) · 패(26) · 무(22) · 승률(44) · 게임차(38)
- *  - 로고 없이 팀 약칭(한글/영문)만 표기.
- *  - gap-2(8px) × 6 = 48px, 숫자 칼럼을 살짝 줄여 팀명 칼럼에 여유 확보 (SSG/NC 잘림 방지).
+ * StandingsSection — /rank 순위표. NBA 앱 순위표처럼 촘촘한 표 한 장.
+ *
+ *  ── 레이아웃 ──
+ *   순위 · 팀 두 칸은 sticky 로 왼쪽에 고정, 나머지 숫자 칸은 가로 스크롤.
+ *   sticky 칸은 아래로 지나가는 숫자를 가려야 하므로 배경을 불투명하게 칠한다.
+ *
+ *  ── 강조 ──
+ *   - 우리 팀 행: 팀 컬러 배경 (accent 가 검정인 팀은 ROW_COLOR 로 대체)
+ *   - 5위 아래: 가을야구 컷라인 점선
  */
-const STANDINGS_GRID = "20px minmax(48px,1fr) 26px 26px 22px 44px 38px";
+
+/** 표 배경이 검정이라 accent 가 검정인 팀은 실제 구단 색으로 칠한다 */
+const ROW_COLOR: Record<string, string> = {
+  lg: "#C30452",
+  kt: "#D60C1A",
+};
+
+const BG = "#000000";
+const LINE = "rgba(255,255,255,0.08)";
+const CUT_LINE = "1px dashed rgba(255,255,255,0.4)";
+const POSTSEASON_SLOTS = 5;
+
+const RANK_W = 30;
+const TEAM_W = 82;
+
+/** hex 색을 검정 위에 ratio 만큼 얹은 불투명 색 — sticky 칸 배경용 */
+function overBlack(hex: string, ratio: number): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 0xff) * ratio);
+  return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
+}
+
+function myRowColor(teamId: string): string {
+  return overBlack(ROW_COLOR[teamId] ?? findTeam(teamId).accent, 0.85);
+}
 
 type Props = {
-  /** 응원팀 id — 행 하이라이트 (acccent tint + bold) */
+  /** 응원팀 id — 행 하이라이트 */
   myTeamId: string;
-  /** 외부에서 데이터 주입할 때 사용 (없으면 STANDINGS mock 사용) */
-  rows?: StandingRow[];
-  /** 데이터 로딩 중 표시 강제 — true 면 스켈레톤 */
+  rows?: StandingsTableRow[];
+  /** true 면 스켈레톤 */
   loading?: boolean;
 };
 
-/**
- * StandingsSection — 메인 페이지 HeroCard 아래에 깔리는 KBO 순위표.
- *
- *  ── 디자인 ──
- *   - 애플 표 스타일: 선 최소화, 12~13px 본문, 헤더는 9~10px tracking-wide
- *   - 응원팀 행만 살짝 accent 틴트 + bold + 좌측 컬러 바
- *   - 화이트 8% 인터리브? → 노이즈 → 사용 안 함. 행간만 충분히.
- *
- *  ── 데이터 ──
- *   - 기본 소스: config/standings.ts (mock, 정적). 추후 API fetch 시 props.rows 주입.
- *   - 비어있으면 자동으로 스켈레톤 노출 (10행).
- */
+type Column = {
+  key: string;
+  label: string;
+  width: number;
+  render: (row: StandingsTableRow, isMe: boolean) => React.ReactNode;
+};
+
+const COLUMNS: Column[] = [
+  { key: "games", label: "경기", width: 40, render: (r) => r.games },
+  { key: "wins", label: "승", width: 36, render: (r) => r.wins },
+  { key: "losses", label: "패", width: 36, render: (r) => r.losses },
+  { key: "draws", label: "무", width: 32, render: (r) => r.draws },
+  { key: "winRate", label: "승률", width: 50, render: (r) => formatWinRate(r.winRate) },
+  { key: "gb", label: "게임차", width: 50, render: (r) => formatGamesBehind(r.gamesBehind) },
+  { key: "streak", label: "연속", width: 50, render: (r, isMe) => <StreakCell label={r.streakLabel} plain={isMe} /> },
+  { key: "last10", label: "최근 10경기", width: 104, render: (r) => formatRecent(r.last10) },
+];
+
+function formatRecent(rec: RecentRecord | null): string {
+  if (!rec) return "—";
+  return rec.draws > 0
+    ? `${rec.wins}승 ${rec.draws}무 ${rec.losses}패`
+    : `${rec.wins}승 ${rec.losses}패`;
+}
+
 export default function StandingsSection({ myTeamId, rows, loading }: Props) {
-  const data = rows ?? STANDINGS;
+  const data = rows ?? [];
   const showSkeleton = loading || data.length === 0;
 
   return (
-    <section aria-label="KBO 순위표" className="px-5 pt-7 pb-12">
-      {/* ── 글래스 카드 컨테이너 ── */}
-      <div className="rounded-3xl border border-white/10 bg-black/40 p-5 shadow-[0_18px_44px_rgba(0,0,0,0.4)] backdrop-blur-xl backdrop-saturate-150">
-        {/* ── 헤더 ── */}
-        <div className="mb-5 flex items-baseline justify-between">
-          <h2
-            className="text-[11px] uppercase tracking-[0.36em] text-white drop-shadow-md"
-            style={{
-              fontWeight: 800,
-              textShadow: "0 1px 4px rgba(0,0,0,0.4)",
-            }}
-          >
-            Standings
-          </h2>
-          <span
-            className="text-[9.5px] uppercase tracking-[0.32em] text-white/55"
-            style={{ fontWeight: 600 }}
-          >
-            2026 Regular Season
-          </span>
-        </div>
-
-        {/* ── 컬럼 가이드 (한글 약식) ── */}
-        <div
-          className="mb-2 grid items-baseline gap-2 px-3 text-[10px] tracking-[0.05em] text-white/55"
-          style={{
-            fontWeight: 700,
-            gridTemplateColumns: STANDINGS_GRID,
-          }}
+    <section aria-label="KBO 순위표" style={{ backgroundColor: BG }}>
+      <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <table
+          className="w-full border-separate border-spacing-0 text-white"
+          style={{ minWidth: RANK_W + TEAM_W + COLUMNS.reduce((s, c) => s + c.width, 0) + 16 }}
         >
-          <span className="text-center">순위</span>
-          <span>팀</span>
-          <span className="text-right">승</span>
-          <span className="text-right">패</span>
-          <span className="text-right">무</span>
-          <span className="text-right">승률</span>
-          <span className="text-right">게임차</span>
-        </div>
-
-        {/* ── 본문 ── */}
-        {showSkeleton ? (
-          <SkeletonList />
-        ) : (
-          <ul role="list" className="flex flex-col">
-            {data.map((row, i) => (
-              <Row
-                key={row.teamId}
-                row={row}
-                isMe={row.teamId === myTeamId}
-                index={i}
-              />
-            ))}
-          </ul>
-        )}
-
-        {/* ── 풋터 ── */}
-        <p
-          className="mt-6 text-center text-[9.5px] uppercase tracking-[0.32em] text-white/40"
-          style={{ fontWeight: 700 }}
-        >
-          Source · Naver Sports
-        </p>
+          <thead>
+            <tr>
+              <th
+                scope="col"
+                className="sticky left-0 z-20 pl-4 text-left"
+                style={{ ...headStyle, width: RANK_W + 16, backgroundColor: BG }}
+              >
+                #
+              </th>
+              <th
+                scope="col"
+                className="sticky z-20 text-left"
+                style={{ ...headStyle, left: RANK_W + 16, width: TEAM_W, backgroundColor: BG, boxShadow: stickyEdge }}
+              >
+                팀
+              </th>
+              {COLUMNS.map((c, i) => (
+                <th
+                  key={c.key}
+                  scope="col"
+                  className={i === COLUMNS.length - 1 ? "pr-4 text-right" : "text-right"}
+                  style={{ ...headStyle, width: c.width }}
+                >
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {showSkeleton
+              ? Array.from({ length: 10 }).map((_, i) => <SkeletonRow key={i} index={i} />)
+              : data.map((row, i) => (
+                  <Row
+                    key={row.teamId}
+                    row={row}
+                    isMe={row.teamId === myTeamId}
+                    isCut={i === POSTSEASON_SLOTS - 1 && data.length > POSTSEASON_SLOTS}
+                  />
+                ))}
+          </tbody>
+        </table>
       </div>
+
+      {!showSkeleton && (
+        <div className="flex items-center gap-2 px-4 pt-3 text-[10.5px] text-white/40">
+          <span aria-hidden className="inline-block w-5" style={{ borderTop: CUT_LINE }} />
+          <span>점선 위 {POSTSEASON_SLOTS}팀이 가을야구에 나가요</span>
+        </div>
+      )}
     </section>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────
 
+const headStyle: React.CSSProperties = {
+  height: 32,
+  fontSize: 10.5,
+  fontWeight: 600,
+  color: "rgba(255,255,255,0.45)",
+  letterSpacing: "0.02em",
+  whiteSpace: "nowrap",
+  borderBottom: `1px solid ${LINE}`,
+};
+
+/** 고정 칸 오른쪽에 얇은 선 — 스크롤된 숫자와 경계 */
+const stickyEdge = `inset -1px 0 0 ${LINE}`;
+
 function Row({
   row,
   isMe,
-  index,
+  isCut,
 }: {
-  row: StandingRow;
+  row: StandingsTableRow;
   isMe: boolean;
-  index: number;
+  isCut: boolean;
 }) {
   const t = findTeam(row.teamId);
-
-  // 진입 애니메이션은 가벼운 페이드만 — 1회성, 스크롤 인뷰 없음 (스케줄 탭 케이스 학습)
-  const enter = useMemo(
-    () => ({
-      initial: { opacity: 0, y: 6 },
-      animate: { opacity: 1, y: 0 },
-      transition: { duration: 0.32, ease, delay: Math.min(index * 0.025, 0.2) },
-    }),
-    [index]
-  );
-
-  const NUM_FONT =
-    '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif';
-  const numColor = isMe ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.78)";
-  const subNumColor = isMe ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.42)";
+  const bg = isMe ? myRowColor(row.teamId) : BG;
+  const cell: React.CSSProperties = {
+    height: 44,
+    borderBottom: isCut ? CUT_LINE : `1px solid ${LINE}`,
+    backgroundColor: isMe ? bg : undefined,
+    whiteSpace: "nowrap",
+    fontVariantNumeric: "tabular-nums",
+  };
+  const num = isMe ? "#ffffff" : "rgba(255,255,255,0.82)";
 
   return (
-    <li>
-      <motion.div
-        {...enter}
-        className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
+    <tr aria-current={isMe ? "true" : undefined}>
+      <td
+        className="sticky left-0 z-10 pl-4 text-left tabular-nums"
         style={{
-          gridTemplateColumns: STANDINGS_GRID,
-          backgroundColor: isMe ? `${t.accent}26` : "transparent",
-          border: isMe ? `1px solid ${t.accent}55` : "1px solid transparent",
+          ...cell,
+          backgroundColor: bg,
+          fontSize: 13,
+          fontWeight: 700,
+          color: isMe ? "#ffffff" : "rgba(255,255,255,0.6)",
         }}
       >
-        {/* 응원팀: 좌측 얇은 컬러 바 + 안쪽 글로우 */}
-        {isMe && (
+        {row.rank}
+      </td>
+      <th
+        scope="row"
+        className="sticky z-10 text-left"
+        style={{ ...cell, left: RANK_W + 16, backgroundColor: bg, boxShadow: stickyEdge }}
+      >
+        <span className="flex items-center gap-2">
+          <TeamLogoChip teamId={row.teamId} />
           <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-1 left-1 w-[2px] rounded-full"
-            style={{
-              backgroundColor: t.accent,
-              boxShadow: `0 0 12px ${t.accent}cc`,
-            }}
-          />
-        )}
-
-        {/* 순위 */}
-        <span
-          className="text-center tabular-nums"
+            className="truncate"
+            style={{ fontSize: 14, fontWeight: isMe ? 800 : 700, letterSpacing: "-0.02em", color: "#ffffff" }}
+          >
+            {t.short}
+          </span>
+        </span>
+      </th>
+      {COLUMNS.map((c, i) => (
+        <td
+          key={c.key}
+          className={i === COLUMNS.length - 1 ? "pr-4 text-right tabular-nums" : "text-right tabular-nums"}
           style={{
-            fontFamily: NUM_FONT,
-            fontWeight: isMe ? 900 : 700,
-            fontSize: 14,
-            color: isMe ? "#ffffff" : "rgba(255,255,255,0.75)",
-            textShadow: isMe
-              ? `0 0 10px ${t.accent}aa, 0 1px 4px rgba(0,0,0,0.5)`
-              : "0 1px 3px rgba(0,0,0,0.35)",
-            letterSpacing: "-0.01em",
+            ...cell,
+            fontSize: 13,
+            fontWeight: isMe || c.key === "winRate" ? 700 : 500,
+            color: c.key === "draws" && row.draws === 0 && !isMe ? "rgba(255,255,255,0.4)" : num,
           }}
         >
-          {row.rank}
-        </span>
-
-        {/* 팀명 (로고 대신 텍스트만) */}
-        <span
-          className="min-w-0 truncate"
-          style={{
-            fontFamily: NUM_FONT,
-            fontWeight: isMe ? 900 : 700,
-            fontSize: 14,
-            letterSpacing: "-0.02em",
-            color: isMe ? "#ffffff" : "rgba(255,255,255,0.95)",
-            textShadow: isMe
-              ? `0 1px 6px rgba(0,0,0,0.5)`
-              : "0 1px 3px rgba(0,0,0,0.35)",
-          }}
-        >
-          {t.short}
-        </span>
-
-        {/* 승 */}
-        <NumCell value={row.wins} color={numColor} bold={isMe} />
-        {/* 패 */}
-        <NumCell value={row.losses} color={numColor} bold={isMe} />
-        {/* 무 — 0 이면 한 단계 더 흐리게 */}
-        <NumCell
-          value={row.draws}
-          color={row.draws === 0 ? subNumColor : numColor}
-          bold={isMe}
-        />
-
-        {/* 승률 */}
-        <span
-          className="text-right tabular-nums"
-          style={{
-            fontFamily: NUM_FONT,
-            fontSize: 12.5,
-            fontWeight: isMe ? 700 : 600,
-            color: isMe ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.78)",
-            letterSpacing: "0.005em",
-          }}
-        >
-          {formatWinRate(row.winRate)}
-        </span>
-
-        {/* 게임차 */}
-        <span
-          className="text-right tabular-nums"
-          style={{
-            fontFamily: NUM_FONT,
-            fontSize: 12,
-            fontWeight: 500,
-            color: isMe ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.42)",
-          }}
-        >
-          {formatGamesBehind(row.gamesBehind)}
-        </span>
-      </motion.div>
-    </li>
+          {c.render(row, isMe)}
+        </td>
+      ))}
+    </tr>
   );
 }
 
-function NumCell({
-  value,
-  color,
-  bold,
-}: {
-  value: number;
-  color: string;
-  bold?: boolean;
-}) {
-  return (
-    <span
-      className="text-right tabular-nums"
-      style={{
-        fontFamily: '"Pretendard Variable", "Helvetica Neue", Inter, sans-serif',
-        fontSize: 12.5,
-        fontWeight: bold ? 700 : 500,
-        color,
-        letterSpacing: "-0.005em",
-      }}
-    >
-      {value}
-    </span>
-  );
+/** plain: 팀 컬러 배경 위라 초록·빨강 대신 흰색 */
+function StreakCell({ label, plain }: { label: string | null; plain?: boolean }) {
+  if (!label) return <span className="text-white/40">—</span>;
+  const kind = label[0];
+  const color = plain
+    ? "#ffffff"
+    : kind === "W"
+      ? "#34D27B"
+      : kind === "L"
+        ? "#FF5A5F"
+        : "rgba(255,255,255,0.6)";
+  return <span style={{ color, fontWeight: 700 }}>{label}</span>;
 }
 
 // ──────────────────────────────────────────────────────────────────
 
-function SkeletonList() {
+function SkeletonRow({ index }: { index: number }) {
+  const cell: React.CSSProperties = { height: 44, borderBottom: `1px solid ${LINE}` };
   return (
-    <ul role="list" className="flex flex-col" aria-label="순위표 로딩 중">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <li key={i}>
-            <div
-            className="relative grid items-center gap-2 rounded-2xl px-3 py-3"
-            style={{ gridTemplateColumns: STANDINGS_GRID }}
-          >
-            <ShimmerBar w={10} h={10} className="mx-auto rounded-sm" />
-            <ShimmerBar w={`${48 + ((i * 7) % 28)}%`} h={12} className="rounded" />
-            <ShimmerBar w={18} h={10} className="ml-auto rounded" />
-            <ShimmerBar w={18} h={10} className="ml-auto rounded" />
-            <ShimmerBar w={14} h={10} className="ml-auto rounded" />
-            <ShimmerBar w={32} h={10} className="ml-auto rounded" />
-            <ShimmerBar w={24} h={10} className="ml-auto rounded" />
-          </div>
-        </li>
+    <tr aria-hidden>
+      <td className="sticky left-0 z-10 pl-4" style={{ ...cell, backgroundColor: BG }}>
+        <ShimmerBar w={10} h={10} />
+      </td>
+      <td className="sticky z-10" style={{ ...cell, left: RANK_W + 16, backgroundColor: BG, boxShadow: stickyEdge }}>
+        <ShimmerBar w={40 + ((index * 7) % 24)} h={12} />
+      </td>
+      {COLUMNS.map((c, i) => (
+        <td key={c.key} className={i === COLUMNS.length - 1 ? "pr-4" : undefined} style={cell}>
+          <ShimmerBar w={Math.min(c.width - 12, 28)} h={10} className="ml-auto" />
+        </td>
       ))}
-    </ul>
+    </tr>
   );
 }
 
-function ShimmerBar({
-  w,
-  h,
-  className = "",
-}: {
-  w: number | string;
-  h: number;
-  className?: string;
-}) {
+function ShimmerBar({ w, h, className = "" }: { w: number; h: number; className?: string }) {
   return (
     <span
-      aria-hidden
-      className={`block ${className}`}
+      className={`block rounded ${className}`}
       style={{
-        width: typeof w === "number" ? `${w}px` : w,
+        width: w,
         height: h,
         background:
           "linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 100%)",
