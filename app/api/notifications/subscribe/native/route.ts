@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { ensureNotifyUser, resolveNotifyUserId } from "@/lib/notifyIdentity";
 import { resolveServerAppEnv } from "@/lib/appEnv";
+import { sendWelcomeIfFirst } from "@/lib/notifications/welcome";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +86,12 @@ export async function POST(req: Request) {
   const topics = normalizeTopics(body.topics);
   const appEnv = resolveServerAppEnv();
 
+  // 앱을 켤 때마다 같은 토큰으로 다시 등록되므로, 처음 들어온 토큰일 때만 웰컴 알림 대상이다.
+  const isNewToken = !(await prisma.nativePushToken.findUnique({
+    where: { token },
+    select: { id: true },
+  }));
+
   const saved = await prisma.nativePushToken.upsert({
     where: { token },
     update: {
@@ -107,6 +114,15 @@ export async function POST(req: Request) {
       lastSeenAt: new Date(),
     },
   });
+
+  if (isNewToken) {
+    const favoriteTeam = body.favoriteTeam ?? null;
+    after(() =>
+      sendWelcomeIfFirst({ userId, token, platform, favoriteTeam }).catch((err) => {
+        console.warn("[welcome] send failed:", (err as Error).message);
+      })
+    );
+  }
 
   return NextResponse.json({ ok: true, tokenId: saved.id });
 }
