@@ -598,12 +598,13 @@ export default function HeroCard({ team, offseason = false, children }: Props) {
           initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.85, ease, delay: 0.18 }}
-          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-7 text-center ${
+          className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center px-7 text-center ${
             isCompactCover
-              ? "pb-12 pt-24"
+              ? // 낮은 커버: 슬로건을 카드 세로 가운데에 (위 아이콘·복구 버튼 높이만큼 살짝 아래로)
+                "inset-y-0 justify-center pt-14"
               : isKeyboardOpen
-                ? "pb-[calc(9rem+env(safe-area-inset-bottom,0px))] pt-[6vh]"
-                : "pb-[calc(13rem+env(safe-area-inset-bottom,0px))] pt-[14vh]"
+                ? "bottom-0 pb-[calc(9rem+env(safe-area-inset-bottom,0px))] pt-[6vh]"
+                : "bottom-0 pb-[calc(13rem+env(safe-area-inset-bottom,0px))] pt-[14vh]"
           }`}
         >
           <div className="flex max-w-md flex-col items-center">
