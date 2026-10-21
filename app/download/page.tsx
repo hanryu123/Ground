@@ -61,8 +61,8 @@ const MOMENTS = [
   },
   {
     when: "경기 중",
-    title: "득점·홈런·삼진 실시간 편파 중계",
-    body: "점수판만 보내지 않아요. 지금 이 장면이 왜 중요한지, 팬의 감정 그대로 전해요.",
+    title: "득점 순간 실시간 편파 중계",
+    body: "점수판만 보내지 않아요. 지금 이 점수가 왜 중요한지, 팬의 감정 그대로 전해요.",
     notif: { app: "GROUND", time: "지금", title: "[7회말] 역전 투런!", text: "판이 뒤집혔습니다. 오늘 이 장면 하나로 다 보상받네요 🔥" },
     accent: "#EF4444",
   },
@@ -199,8 +199,8 @@ export default async function DownloadPage({
               극단적 편파 알림
             </h1>
             <p className="mt-6 max-w-md text-[17px] leading-relaxed text-white/65">
-              라인업부터 실시간 편파 중계, 하이라이트까지.
-              <br className="hidden sm:block" /> 내 팀의 결정적 순간을 제일 먼저 알려드려요.
+              라인업부터 실시간 편파 중계, 하이라이트 숏츠, 우리 팀 소식까지.
+              <br className="hidden sm:block" /> 경기 없는 날에도 내 팀 이야기만 모아 드려요.
             </p>
 
             {/* 다운로드 — PC: QR / 모바일: 앱스토어 버튼 */}
@@ -286,6 +286,105 @@ export default async function DownloadPage({
           <p className="mt-6 text-sm text-white/45">
             잠금화면 라이브 스코어도 지원해요. 앱을 열지 않아도 점수가 바로 보여요.
           </p>
+        </section>
+
+        {/* 경기 없는 날에도 — 피드·일정·순위 */}
+        <section className="border-t border-white/10 py-16 lg:py-24">
+          <span className="text-xs font-bold tracking-[0.18em] text-[#22C55E]">NEW</span>
+          <h2 className="mt-3 text-[28px] font-extrabold tracking-[-0.02em] sm:text-4xl">경기 없는 날에도, 비시즌에도</h2>
+          <p className="mt-3 text-white/55">앱을 열면 오늘 우리 팀 숏츠와 소식이 먼저 기다려요.</p>
+          <div className="mt-10 grid gap-5 md:grid-cols-3">
+            {/* 숏츠 */}
+            <article className="flex flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="text-xl font-bold leading-snug">우리 팀 숏츠, 피드에서 바로</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-white/60">
+                구단 공식 채널과 KBO·티빙 숏츠 중 우리 팀 것만 골라서 보여 드려요. 스크롤하면 바로 재생돼요.
+              </p>
+              <div className="mt-auto flex gap-2.5 pt-6" aria-hidden>
+                {["#C30452", "#074CA1", "#FF6600"].map((c, i) => (
+                  <div
+                    key={c}
+                    className="relative aspect-[9/16] flex-1 overflow-hidden rounded-2xl border border-white/10"
+                    style={{ background: `linear-gradient(160deg, ${c}55, #0b0c0f 75%)` }}
+                  >
+                    {i === 0 ? (
+                      <span className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 pl-0.5 text-[13px] text-black">
+                        ▶
+                      </span>
+                    ) : null}
+                    <span className="absolute inset-x-2 bottom-2 h-1.5 rounded-full bg-white/25" />
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            {/* 소식 */}
+            <article className="flex flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="text-xl font-bold leading-snug">FA·트레이드, 우리 팀 소식만</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-white/60">
+                야구 기사 중 우리 팀 이야기만 골라요. 같은 소식은 하나로 묶고, FA·트레이드 같은 큰 소식은 위로 올려요.
+              </p>
+              <ul className="mt-auto space-y-3 pt-6" aria-hidden>
+                {[
+                  { tag: "FA", w: "w-[88%]" },
+                  { tag: "트레이드", w: "w-[72%]" },
+                  { tag: "외국인", w: "w-[80%]" },
+                ].map((n) => (
+                  <li key={n.tag} className="flex items-center gap-3 rounded-2xl bg-white/[0.05] p-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="inline-block rounded-full bg-[#E0283E] px-2 py-[1px] text-[11px] font-bold">
+                        {n.tag}
+                      </span>
+                      <span className={`mt-2 block h-2 rounded-full bg-white/30 ${n.w}`} />
+                      <span className="mt-1.5 block h-2 w-1/2 rounded-full bg-white/15" />
+                    </div>
+                    <span className="h-11 w-11 shrink-0 rounded-xl bg-white/10" />
+                  </li>
+                ))}
+              </ul>
+            </article>
+
+            {/* 일정·순위 */}
+            <article className="flex flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="text-xl font-bold leading-snug">일정·순위도 한눈에</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-white/60">
+                주간 달력에서 날짜를 고르면 그날 경기만, 순위표에선 가을야구 대진표까지 바로 보여요.
+              </p>
+              <div className="mt-auto pt-6" aria-hidden>
+                <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-white/40">
+                  {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
+                    <span key={d}>{d}</span>
+                  ))}
+                  {[18, 19, 20, 21, 22, 23, 24].map((d) => (
+                    <span key={d} className="flex flex-col items-center gap-1 pt-1.5">
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-bold ${
+                          d === 21 ? "bg-white text-black" : "text-white/80"
+                        }`}
+                      >
+                        {d}
+                      </span>
+                      <span className={`h-1 w-1 rounded-full ${d % 2 === 0 ? "bg-[#E0283E]" : "bg-transparent"}`} />
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 space-y-1.5">
+                  {[1, 2, 3].map((r) => (
+                    <div
+                      key={r}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[12px] ${
+                        r === 2 ? "bg-[#E0283E]/80" : "bg-white/[0.05]"
+                      }`}
+                    >
+                      <span className="w-3 font-bold text-white/70">{r}</span>
+                      <span className="h-2 flex-1 rounded-full bg-white/25" />
+                      <span className="font-semibold tabular-nums text-white/70">.{650 - r * 30}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </article>
+          </div>
         </section>
 
         {/* 10개 구단 */}
