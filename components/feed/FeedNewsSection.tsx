@@ -30,20 +30,17 @@ function ClubVideoCard({ video, theme }: { video: ClubVideo; theme: FeedTheme })
           loading="lazy"
           className="h-full w-full object-cover"
         />
+        <span className="absolute left-2.5 top-2.5 rounded-full bg-black/55 px-2 py-[2px] text-[11px] font-bold text-white backdrop-blur-sm">
+          공식 영상
+        </span>
         <span className="absolute inset-0 flex items-center justify-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
             <Play size={18} fill="white" className="ml-0.5 text-white" />
           </span>
         </span>
       </div>
-      <span
-        className="mt-3 inline-block rounded-full px-2 py-[1px] text-[11px] font-bold"
-        style={{ background: theme.text(0.1), color: theme.text(0.7) }}
-      >
-        구단 영상
-      </span>
       <p
-        className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug"
+        className="mt-2.5 line-clamp-2 text-[15px] font-semibold leading-snug"
         style={{ color: theme.text(0.94) }}
       >
         {video.title}
