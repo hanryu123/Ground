@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendApnsMulticast } from "@/lib/apns";
+import { sendFcmMulticast } from "@/lib/firebaseAdmin";
 import { sendWebPush } from "@/lib/webPushServer";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
@@ -350,6 +351,25 @@ export async function sendMarketingPush(input: {
     if (apnsResult.failed.length > 0) {
       await prisma.nativePushToken.updateMany({
         where: { token: { in: apnsResult.failed } },
+        data: { enabled: false },
+      });
+    }
+  }
+
+  const fcmTokens = nativeTokens.filter((row) => row.platform.toLowerCase() !== "ios");
+  if (fcmTokens.length > 0) {
+    const fcmResult = await sendFcmMulticast({
+      tokens: fcmTokens.map((row) => row.token),
+      title,
+      body: msgBody,
+      url: clickUrl,
+      data: { teamId: targetTeamId ?? "all", source: "admin-marketing-push" },
+    });
+    nativeSentCount += fcmResult.ok;
+
+    if (fcmResult.failed.length > 0) {
+      await prisma.nativePushToken.updateMany({
+        where: { token: { in: fcmResult.failed } },
         data: { enabled: false },
       });
     }
