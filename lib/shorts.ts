@@ -9,17 +9,17 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  *
  *  - 채널마다 숏츠 전용 재생목록(UUSH + 채널 id 뒤 22자) RSS를 먼저 읽고, 없으면 채널 RSS를 읽는다.
  *    RSS는 최근 15개만 주므로 업로드가 잦은 채널은 14일을 다 못 채울 수 있다.
- *  - 숏츠 판별: youtube.com/shorts/{id} 가 리다이렉트 없이 200이면 숏츠 (일반 영상은 303 → /watch).
- *    (2026-10 확인: RSS 링크가 /shorts/ 인 영상과 결과가 같다.) 요청이 실패한 영상은 이번 수집에서 뺀다.
- *  - 임베드 가능 여부: oEmbed가 실패하는 영상(비공개·임베드 차단 등)은 뺀다.
- *  - 영상별 판별 결과는 바뀌지 않으므로 길게 캐시하고, 채널 목록은 15분마다 새로 읽는다.
+ *  - 숏츠 판별: RSS 항목의 <link href> 가 /shorts/{id} 인지로 본다. 별도 요청이 필요 없다.
+ *    (Phase 0 스파이크: /shorts/{id} 리다이렉트 방식과 75/75 일치 — docs/phase0-spike.md 2.3)
+ *  - 임베드 가능 여부: oEmbed가 실패하는 영상(비공개·임베드 차단 등)은 뺀다. 스파이크 표본 70개는 전부 통과했다.
+ *  - oEmbed 결과는 거의 안 바뀌므로 30일 캐시하고, 채널 목록은 15분마다 새로 읽는다.
  *
  *  기존 경기 하이라이트 버튼(fetchOfficialHighlightEntries)은 숏츠를 빼는 동작을 그대로 둔다.
  */
 
 const UA = "Mozilla/5.0 (compatible; GroundBot/2.0)";
 const MAX_AGE_DAYS = 14;
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 
 export type ShortsItem = {
   videoId: string;
@@ -63,36 +63,28 @@ function matchTeams(entry: HighlightEntry, channel: ShortsChannel): string[] {
     .map(([id]) => id);
 }
 
-type VideoCheck = { shorts: boolean; embeddable: boolean };
-
-/** 네트워크 실패면 예외 — 캐시되지 않게 한다. */
-async function checkVideo(videoId: string): Promise<VideoCheck> {
-  const [shortsRes, oembedRes] = await Promise.all([
-    fetch(`https://www.youtube.com/shorts/${videoId}`, {
-      method: "HEAD",
-      redirect: "manual",
-      headers: { "user-agent": UA },
-      cache: "no-store",
-    }),
-    fetch(
-      `https://www.youtube.com/oembed?url=${encodeURIComponent(
-        `https://www.youtube.com/watch?v=${videoId}`
-      )}&format=json`,
-      { headers: { "user-agent": UA }, cache: "no-store" }
-    ),
-  ]);
-  if (shortsRes.status >= 500 || oembedRes.status >= 500 || shortsRes.status === 429) {
-    throw new Error(`youtube check ${shortsRes.status}/${oembedRes.status}`);
-  }
-  return { shorts: shortsRes.status === 200, embeddable: oembedRes.ok };
+function isShortsEntry(entry: HighlightEntry): boolean {
+  return /youtube\.com\/shorts\//.test(entry.url);
 }
 
-function checkVideoCached(entry: HighlightEntry): Promise<VideoCheck | null> {
-  return unstable_cache(() => checkVideo(entry.videoId), ["yt-video-check", CACHE_VERSION, entry.videoId], {
-    revalidate: 7 * 86_400,
+/** 네트워크 실패면 예외 — 캐시되지 않게 한다. */
+async function checkEmbeddable(videoId: string): Promise<boolean> {
+  const res = await fetch(
+    `https://www.youtube.com/oembed?url=${encodeURIComponent(
+      `https://www.youtube.com/watch?v=${videoId}`
+    )}&format=json`,
+    { headers: { "user-agent": UA }, cache: "no-store" }
+  );
+  if (res.status >= 500 || res.status === 429) throw new Error(`oembed ${res.status}`);
+  return res.ok;
+}
+
+function checkEmbeddableCached(videoId: string): Promise<boolean> {
+  return unstable_cache(() => checkEmbeddable(videoId), ["yt-oembed", CACHE_VERSION, videoId], {
+    revalidate: 30 * 86_400,
   })().catch(() => {
-    // 판별 요청 실패 — 임베드 가능한지 모르니 이번 수집에선 빼고, 다음 수집 때 다시 본다
-    return null;
+    // 확인 요청 실패 — 이번 수집에선 빼고, 다음 수집 때 다시 본다
+    return false;
   });
 }
 
@@ -102,7 +94,7 @@ async function collectAllShorts(): Promise<ShortsItem[]> {
 
   const perChannel = await mapWithConcurrency(channels, 4, async (channel) => {
     const entries = (await fetchChannelShortsFeed(channel)).filter(
-      (e) => !e.publishedAt || e.publishedAt.getTime() >= cutoff
+      (e) => isShortsEntry(e) && (!e.publishedAt || e.publishedAt.getTime() >= cutoff)
     );
     return entries
       .map((entry) => ({ entry, teams: matchTeams(entry, channel) }))
@@ -116,11 +108,12 @@ async function collectAllShorts(): Promise<ShortsItem[]> {
     return true;
   });
 
-  const checks = await mapWithConcurrency(candidates, 8, ({ entry }) => checkVideoCached(entry));
+  const embeddable = await mapWithConcurrency(candidates, 8, ({ entry }) =>
+    checkEmbeddableCached(entry.videoId)
+  );
   const items: ShortsItem[] = [];
   candidates.forEach(({ entry, teams }, i) => {
-    const check = checks[i];
-    if (!check?.shorts || !check.embeddable) return;
+    if (!embeddable[i]) return;
     items.push({
       videoId: entry.videoId,
       title: entry.title,

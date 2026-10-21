@@ -14,6 +14,8 @@ import type { FeedTheme } from "@/components/feed/feedTheme";
  *  - 기본 음소거 자동재생. 소리 버튼은 플레이어 밖에 둔다 (YouTube 플레이어 위에 Ground UI를 덮지 않는다).
  *  - 앱이 백그라운드로 가면 즉시 정지. 영상이 끝나면(숏츠는 반복 재생으로 0초로 돌아온다) 다음 카드로 넘긴다.
  *  - 자동재생이 막힌 웹뷰에선 YouTube 플레이어 자체 재생 버튼을 누르면 재생된다.
+ *    (Capacitor 8.3.4 기본값 — iOS allowsInlineMediaPlayback=true·mediaTypesRequiringUserActionForPlayback=[],
+ *     Android setMediaPlaybackRequiresUserGesture(false) — 이라 음소거 자동재생은 코드상 된다. 실기기 미검증)
  *  - 우리 팀 영상이 없으면 블록 자체를 숨긴다.
  */
 
