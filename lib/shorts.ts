@@ -10,7 +10,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  *  - 채널마다 숏츠 전용 재생목록 RSS(playlist_id=UUSH + 채널 id 에서 "UC" 뺀 나머지)만 읽는다.
  *    채널 업로드 RSS(channel_id=)는 최신 업로드 15개라 긴 영상이 많은 채널은 숏츠가 0개로 잡힌다 (KIA).
  *    숏츠 재생목록도 최신 15개뿐이다.
- *  - 노출 기간: 구단·팬 채널은 그 팀 영상만 올리니 최근 60일까지 (비시즌·포스트시즌에 업로드가 뜸해도 블록이 비지 않게),
+ *  - 노출 기간: 구단 채널은 최근 60일, 팬 채널은 120일까지 (비시즌·포스트시즌에 업로드가 뜸해도 블록이 비지 않게),
  *    KBO·티빙은 업로드가 많고 제목 매칭이라 최근 14일만.
  *  - 숏츠 판별: RSS 항목의 <link href> 가 /shorts/{id} 인지로 본다. 별도 요청이 필요 없다.
  *    (Phase 0 스파이크: /shorts/{id} 리다이렉트 방식과 75/75 일치 — docs/phase0-spike.md 2.3)
@@ -25,9 +25,9 @@ const MAX_AGE_DAYS: Record<ShortsChannel["kind"], number> = {
   league: 14,
   broadcaster: 14,
   club: 60,
-  fan: 60,
+  fan: 120,
 };
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 
 export type ShortsItem = {
   videoId: string;
