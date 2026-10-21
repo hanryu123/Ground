@@ -486,6 +486,11 @@ async function fetchRecentLiveEventBodiesByTeam(teamIds: string[]): Promise<Map<
 }
 
 export async function GET(req: Request) {
+  // 투수 교체·탈삼진·홈런 알림은 꺼둔 상태 (알림 설정에서도 토글 제거).
+  // 다시 켜려면 Vercel env LIVE_EVENTS_ENABLED=1 + live-cron.yml 의 live-events 단계 복구 + 알림 설정 토글 복구.
+  if (process.env.LIVE_EVENTS_ENABLED !== "1") {
+    return NextResponse.json({ ok: true, skipped: "LIVE_EVENTS_DISABLED" });
+  }
   const url = new URL(req.url);
   // auth check temporarily open for debugging — re-enable after live-events confirmed working
   // const auth = authorizeCron(req, url);
