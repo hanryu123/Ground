@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
       "name": "instagram-post",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
@@ -23,6 +32,28 @@
         "3001"
       ],
       "port": 3001
+    },
+    {
+      "name": "games-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "-p",
+        "3002"
+      ],
+      "port": 3002
+    },
+    {
+      "name": "standings-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "-p",
+        "3003"
+      ],
+      "port": 3003
     }
   ]
 }
