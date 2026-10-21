@@ -30,7 +30,7 @@ export default function TodayPage() {
 
   return (
     <div
-      className="relative min-h-0 flex-1 snap-y snap-proximity overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+      className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
       style={{ background: theme.background }}
     >
       <HeroCard team={team} offseason={offseason}>

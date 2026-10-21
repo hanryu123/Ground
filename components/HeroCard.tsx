@@ -214,15 +214,11 @@ export default function HeroCard({ team, offseason = false, children }: Props) {
 
   const dateLabel = formatMatchDate(match?.game.date);
   const feedStatus = live?.status ?? "NORMAL";
-  // 비시즌 커버는 OFF SEASON 라벨 + 슬로건만 (멘트 없음)
-  const feedMessage = offseason
-    ? null
-    : live?.message ??
-    (feedStatus === "MONDAY_OFF"
-      ? "오늘 월요일이라 야구 없다... 무슨 낙으로 사냐 😭"
-      : feedStatus === "RAIN_CANCELLED"
-        ? "하... 비 와서 오늘 경기 취소됨 🌧️ 투수 로테이션 개이득인가?"
-        : null);
+  // 무경기 커버는 슬로건만 둔다 ("오늘 경기가 없다..." 같은 멘트 없음). 우천 취소 안내만 경기 카드에 남긴다.
+  const feedMessage =
+    feedStatus === "RAIN_CANCELLED"
+      ? live?.message ?? "하... 비 와서 오늘 경기 취소됨 🌧️ 투수 로테이션 개이득인가?"
+      : null;
 
   const gameStartMs = useMemo(() => {
     if (!match?.game.date || !match.game.time) return null;
@@ -656,17 +652,6 @@ export default function HeroCard({ team, offseason = false, children }: Props) {
             >
               {sloganOneLine}
             </motion.p>
-            {feedMessage ? (
-              <motion.p
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease, delay: 0.2 }}
-                className="mt-4 px-2 text-[17px] font-semibold leading-relaxed"
-                style={{ color: themedText(0.86), wordBreak: "keep-all" }}
-              >
-                {feedMessage}
-              </motion.p>
-            ) : null}
           </div>
         </motion.div>
       )}

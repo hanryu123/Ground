@@ -25,6 +25,8 @@ const PLAY_RATIO = 0.5;
 const SWIPE_PX = 40;
 const SWIPE_VELOCITY = 0.3;
 const SNAP_MS = 280;
+/** 카드가 이만큼 계속 보여야 플레이어를 띄운다 */
+const MOUNT_DELAY_MS = 500;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -128,19 +130,26 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [recompute]);
 
-  // 재생 카드가 바뀌면 그 카드에 iframe 을 띄우고, 화면 밖이면 멈춘다
+  // 재생 카드가 바뀌면 그 카드에 iframe 을 띄우고, 화면 밖이면 멈춘다.
+  // 새 iframe 은 카드가 MOUNT_DELAY_MS 동안 계속 보일 때만 띄운다 — 피드를 훑고 지나가는 중에
+  // YouTube 플레이어(약 1MB)가 로드되기 시작하면 휴대폰에서 스크롤이 크게 버벅인다.
   useEffect(() => {
     if (playingIndex === null) {
       sendCommand(iframeRef.current, "pauseVideo");
       return;
     }
-    if (playingIndex !== mountedIndex) {
+    if (playingIndex === mountedIndex) {
+      sendCommand(iframeRef.current, "playVideo");
+      return;
+    }
+    // 이전 카드 영상은 바로 멈추고, 새 카드 플레이어는 잠깐 기다렸다 띄운다
+    sendCommand(iframeRef.current, "pauseVideo");
+    const timer = window.setTimeout(() => {
       progress.current = { lastTime: 0, duration: 0 };
       setMountedIndex(playingIndex);
       setSoundOn(false);
-    } else {
-      sendCommand(iframeRef.current, "playVideo");
-    }
+    }, MOUNT_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [playingIndex, mountedIndex]);
 
   // 카드를 가운데로 — 세로로 덜 보이던 카드면 다 보이게 같이 내린다 (50% 넘으면 재생)
@@ -375,7 +384,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                       className="h-full w-full scale-[1.34] object-cover"
                     />
                     <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/45 backdrop-blur-sm">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55">
                         <Play size={18} fill="white" className="ml-0.5 text-white" />
                       </span>
                     </span>

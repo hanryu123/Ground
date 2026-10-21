@@ -30,11 +30,11 @@ function ClubVideoCard({ video, theme }: { video: ClubVideo; theme: FeedTheme })
           loading="lazy"
           className="h-full w-full object-cover"
         />
-        <span className="absolute left-2.5 top-2.5 rounded-full bg-black/55 px-2 py-[2px] text-[11px] font-bold text-white backdrop-blur-sm">
+        <span className="absolute left-2.5 top-2.5 rounded-full bg-black/55 px-2 py-[2px] text-[11px] font-bold text-white">
           공식 영상
         </span>
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60">
             <Play size={18} fill="white" className="ml-0.5 text-white" />
           </span>
         </span>

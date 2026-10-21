@@ -63,7 +63,7 @@ const MOMENTS = [
     when: "경기 중",
     title: "득점 순간 실시간 편파 중계",
     body: "점수판만 보내지 않아요. 지금 이 점수가 왜 중요한지, 팬의 감정 그대로 전해요.",
-    notif: { app: "GROUND", time: "지금", title: "[7회말] 역전 투런!", text: "판이 뒤집혔습니다. 오늘 이 장면 하나로 다 보상받네요 🔥" },
+    notif: { app: "GROUND", time: "지금", title: "[7회말] 이대호 역전 투런!", text: "판이 뒤집혔습니다. 오늘 이 장면 하나로 다 보상받네요 🔥" },
     accent: "#EF4444",
   },
   {
@@ -192,15 +192,15 @@ export default async function DownloadPage({
         {/* 히어로 */}
         <section className="grid items-center gap-12 pb-16 pt-6 lg:grid-cols-[1.05fr_1fr] lg:gap-8 lg:pb-24 lg:pt-12">
           <div>
-            <p className="mb-5 text-sm font-semibold tracking-[0.2em] text-white/50">KBO 편파 알림 앱</p>
+            <p className="mb-5 text-sm font-semibold tracking-[0.2em] text-white/50">KBO 팬덤 응원 앱</p>
             <h1 className="text-[40px] font-extrabold leading-[1.15] tracking-[-0.03em] sm:text-[56px]">
-              내 팀만 보는
+              내 팀을 위한
               <br />
               극단적 편파 알림
             </h1>
             <p className="mt-6 max-w-md text-[17px] leading-relaxed text-white/65">
-              라인업부터 실시간 편파 중계, 하이라이트 숏츠, 우리 팀 소식까지.
-              <br className="hidden sm:block" /> 경기 없는 날에도 내 팀 이야기만 모아 드려요.
+              우리팀 라인업부터 실시간 중계, 하이라이트, 최근 뉴스까지.
+              <br className="hidden sm:block" /> 경기 없는 날에도 우리 팀 이야기를 모아 드려요.
             </p>
 
             {/* 다운로드 — PC: QR / 모바일: 앱스토어 버튼 */}
@@ -320,7 +320,7 @@ export default async function DownloadPage({
 
             {/* 소식 */}
             <article className="flex flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="text-xl font-bold leading-snug">FA·트레이드, 우리 팀 소식만</h3>
+              <h3 className="text-xl font-bold leading-snug">FA·트레이드, 우리 팀 소식 가득</h3>
               <p className="mt-2 text-[15px] leading-relaxed text-white/60">
                 야구 기사 중 우리 팀 이야기만 골라요. 같은 소식은 하나로 묶고, FA·트레이드 같은 큰 소식은 위로 올려요.
               </p>
@@ -389,7 +389,7 @@ export default async function DownloadPage({
 
         {/* 10개 구단 */}
         <section className="border-t border-white/10 py-16 lg:py-20">
-          <h2 className="text-[28px] font-extrabold tracking-[-0.02em] sm:text-4xl">10개 구단 모두, 각자의 편으로</h2>
+          <h2 className="text-[28px] font-extrabold tracking-[-0.02em] sm:text-4xl">10개 구단 팬 모두, 각자의 팀을 위해!</h2>
           <p className="mt-3 text-white/55">응원팀을 고르면 그 팀 컬러와 말투로 앱 전체가 바뀌어요.</p>
           <ul className="mt-10 grid grid-cols-5 gap-4 sm:gap-6 md:grid-cols-10">
             {TEAM_LOGOS.map((t) => (

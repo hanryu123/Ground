@@ -92,13 +92,14 @@ export async function GET(req: Request) {
             : "PRE";
     const status = resolveTodayFeedStatus(date, games);
     const fallback = resolveTodayFeedMessage(status);
-    const message = fallback
+    // 화면에는 우천 취소 안내만 쓴다 (무경기 멘트는 뺐음) → LLM 은 우천 취소일 때만 부른다.
+    const message = fallback && status === "RAIN_CANCELLED"
       ? await generateTodayStatusMessageWithLlm({
           status,
           fallback,
           teamId,
         })
-      : null;
+      : fallback;
 
     // ── DB 쿼리 병렬 실행 ────────────────────────────────────────────────────
     const isResult = teamId != null && teamGame?.status === "RESULT";

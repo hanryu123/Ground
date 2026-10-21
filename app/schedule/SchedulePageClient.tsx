@@ -212,7 +212,7 @@ export default function SchedulePageClient({
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => goTo(today)}
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.24em] text-white backdrop-blur-md active:bg-white/20"
+                className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.24em] text-white active:bg-white/20"
                 style={{ fontWeight: 800 }}
               >
                 Today
@@ -683,7 +683,7 @@ function EmptyCard({
   action?: { label: string; onClick: () => void };
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/40 px-6 py-10 text-center backdrop-blur-md">
+    <div className="rounded-2xl border border-white/10 bg-black/40 px-6 py-10 text-center">
       <p className="text-[17px] text-white" style={{ fontWeight: 900 }}>
         {title}
       </p>
@@ -710,7 +710,7 @@ function LoadingCards() {
       {[0, 1, 2].map((i) => (
         <li
           key={i}
-          className="h-[112px] animate-pulse rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md"
+          className="h-[112px] animate-pulse rounded-2xl border border-white/10 bg-black/40"
         />
       ))}
     </ul>
@@ -809,7 +809,7 @@ function GameRow({
   return (
     <li
       className={[
-        "rounded-2xl border bg-black/40 backdrop-blur-md backdrop-saturate-150 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
+        "rounded-2xl border bg-black/40 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
         mine ? "" : "border-white/10",
         isResult ? "cursor-pointer select-none active:scale-[0.992] transition-transform duration-100" : "",
       ].join(" ")}
