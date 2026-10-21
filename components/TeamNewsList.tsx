@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import type { NewsTag, TeamNewsItem, TeamNewsPage } from "@/lib/news";
 
 const ease = [0.22, 1, 0.36, 1] as const;
+/** 팀 소식을 한 번에 받아 두는 개수 — 태그 필터는 이 안에서 거른다 (서버 정렬이 태그 붙은 소식 먼저) */
+const FETCH_LIMIT = 150;
 
 function timeAgo(dateTime: string): string {
   // 네이버 dateTime 은 KST 로컬 시각 (오프셋 없음)
@@ -58,30 +60,33 @@ export default function TeamNewsList({
 }: Props) {
   const [tag, setTag] = useState<NewsTag | null>(null);
   const [tags, setTags] = useState<NewsTag[]>([]);
-  const [items, setItems] = useState<TeamNewsItem[] | null>(null);
-  // 팀·태그가 바뀌면 늦게 도착한 이전 응답을 버린다
+  const [allItems, setAllItems] = useState<TeamNewsItem[] | null>(null);
+  // 팀이 바뀌면 늦게 도착한 이전 응답을 버린다
   const requestKey = useRef("");
 
-  // 팀이 바뀌면 필터 초기화
+  // 팀당 한 번만 넉넉히 받아 두고 태그 필터는 화면에서 거른다.
+  // (태그마다 요청하면 주소별 CDN 캐시가 따로라, 처음 누르는 태그는 서버 재계산·분류를 기다리느라 수 초씩 빈 화면이었다)
   useEffect(() => {
+    const key = teamId;
+    requestKey.current = key;
     setTag(null);
     setTags([]);
-  }, [teamId]);
-
-  useEffect(() => {
-    const key = `${teamId}:${tag ?? ""}`;
-    requestKey.current = key;
-    setItems(null);
-    fetchNews(teamId, tag, maxCount)
+    setAllItems(null);
+    fetchNews(teamId, null, FETCH_LIMIT)
       .then((page) => {
         if (requestKey.current !== key) return;
-        setItems(page.items);
+        setAllItems(page.items);
         setTags(page.tags);
       })
       .catch(() => {
-        if (requestKey.current === key) setItems([]);
+        if (requestKey.current === key) setAllItems([]);
       });
-  }, [teamId, tag, maxCount]);
+  }, [teamId]);
+
+  const items =
+    allItems === null
+      ? null
+      : (tag ? allItems.filter((i) => i.tag === tag) : allItems).slice(0, maxCount);
 
   const chips =
     filterable && tags.length > 0 ? (
