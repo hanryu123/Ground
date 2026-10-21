@@ -38,7 +38,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         }}
       >
         <EnvironmentBadge />
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-24">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <PageShell>{children}</PageShell>
         </main>
         <BottomNav />

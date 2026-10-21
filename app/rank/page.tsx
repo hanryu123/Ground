@@ -37,7 +37,7 @@ export default function RankPage() {
   const season = data?.season ?? new Date().getFullYear();
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-black overscroll-contain px-0 pb-10 [-webkit-overflow-scrolling:touch]">
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-black overscroll-contain px-0 pb-nav [-webkit-overflow-scrolling:touch]">
       {/* ── 헤더 ── */}
       <header className="px-7 pt-7">
         <p

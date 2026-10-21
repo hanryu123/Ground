@@ -86,6 +86,10 @@
   .safe-pb {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px));
   }
+  /* 탭 화면 스크롤 영역 맨 아래 여백 — 본문이 BottomNav 밑까지 이어지므로 탭바 높이만큼 비워 둔다 */
+  .pb-nav {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+  }
   .safe-pt {
     padding-top: calc(env(safe-area-inset-top, 0px));
   }

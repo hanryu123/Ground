@@ -21,7 +21,7 @@ import { useMyTeam } from "@/lib/useMyTeam";
  *  ── 변경 이력 ──
  *   예전엔 HeroCard 단독 한 화면 고정(overflow-hidden)이었다. 순위표는 /rank 탭으로 이전.
  *
- *  BottomNav 는 fixed 이고 main 에 pb-24 가 있어, 스크롤 영역은 BottomNav 위에서 끝난다.
+ *  BottomNav 는 fixed 이고 스크롤 영역이 그 밑까지 이어진다 (맨 아래 여백은 pb-nav).
  */
 export default function TodayPage() {
   const team = useMyTeam();
@@ -30,7 +30,7 @@ export default function TodayPage() {
 
   return (
     <div
-      className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+      className="pb-nav relative min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
       style={{ background: theme.background }}
     >
       <HeroCard team={team} offseason={offseason}>

@@ -185,7 +185,7 @@ export default function SchedulePageClient({
 
   return (
     <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
-      <section className="pb-28">
+      <section className="pb-nav">
         {/* ── 헤더: "10월 2026 ▾" + TODAY ── */}
         <header className="flex items-center justify-between px-6 pt-7">
           <button

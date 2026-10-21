@@ -31,13 +31,13 @@ export default function BottomNav() {
         className="pointer-events-none absolute inset-x-0 -top-6 h-6"
         style={{
           background:
-            "linear-gradient(to top, color-mix(in srgb, var(--app-bg, #000000) 88%, transparent), transparent)",
+            "linear-gradient(to top, rgba(0, 0, 0, 0.35), transparent)",
         }}
       />
+      {/* 흐림(backdrop-filter)은 iOS 스크롤 중 매 프레임 다시 그려져 버벅여서 뺐다 → 대신 거의 불투명하게 */}
       <div
-        className="backdrop-blur-xl backdrop-saturate-150"
         style={{
-          backgroundColor: "rgba(0, 0, 0, 0.4)",
+          backgroundColor: "rgba(0, 0, 0, 0.92)",
           color: "var(--app-text, #ffffff)",
           borderTop: "1px solid rgba(255, 255, 255, 0.1)",
         }}
