@@ -20,7 +20,4 @@ jobs:
           curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/postgame" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
 
-      - name: live-events
-        run: |
-          curl -sf -X GET "${{ secrets.APP_URL }}/api/cron/live-events" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+      # live-events(투수 교체·탈삼진·홈런 알림)는 꺼둠 — app/api/cron/live-events/route.ts 주석 참고
