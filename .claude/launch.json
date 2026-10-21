@@ -4,8 +4,25 @@
     {
       "name": "instagram-post",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "public", "-p", "4321", "--no-clipboard"],
+      "runtimeArgs": [
+        "serve",
+        "public",
+        "-p",
+        "4321",
+        "--no-clipboard"
+      ],
       "port": 4321
+    },
+    {
+      "name": "feed-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "-p",
+        "3001"
+      ],
+      "port": 3001
     }
   ]
 }

@@ -266,3 +266,29 @@ export async function getTeamNews(teamId: string, days = 7): Promise<TeamNewsIte
     return y.dateTime.localeCompare(x.dateTime);
   });
 }
+
+export type TeamNewsPage = {
+  items: TeamNewsItem[];
+  /** 필터 전 전체 소식에 실제로 있는 태그 (NEWS_TAGS 순서) — 필터 칩용 */
+  tags: NewsTag[];
+  /** 필터 적용 후 전체 개수 */
+  total: number;
+  /** 다음 페이지 시작 위치, 끝이면 null */
+  nextOffset: number | null;
+};
+
+/** getTeamNews 결과를 태그로 거르고 offset/limit으로 자른다. limit이 없으면 끝까지. */
+export function pageTeamNews(
+  all: TeamNewsItem[],
+  { tag, offset = 0, limit }: { tag?: NewsTag | null; offset?: number; limit?: number }
+): TeamNewsPage {
+  const tags = NEWS_TAGS.filter((t) => all.some((i) => i.tag === t));
+  const filtered = tag ? all.filter((i) => i.tag === tag) : all;
+  const end = limit ? offset + limit : filtered.length;
+  return {
+    items: filtered.slice(offset, end),
+    tags,
+    total: filtered.length,
+    nextOffset: end < filtered.length ? end : null,
+  };
+}
