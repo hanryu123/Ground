@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { NewsTag, TeamNewsItem, TeamNewsPage } from "@/lib/news";
 
@@ -18,12 +18,14 @@ function timeAgo(dateTime: string): string {
 
 type Props = {
   teamId: string;
-  /** 한 번에 받을 개수 (미지정 시 전체) */
-  limit?: number;
+  /** 처음 보여 줄 개수 */
+  collapsedCount?: number;
+  /** "펼치기" 한 번에 더 보여 줄 개수 */
+  expandStep?: number;
+  /** 최대 개수 — 다 펼치면 "접기" */
+  maxCount?: number;
   /** 태그 필터 칩 (전체 + 그 팀 소식에 있는 태그만) */
   filterable?: boolean;
-  /** 끝까지 내리면 limit 만큼 더 받는다 (limit 필요) */
-  infinite?: boolean;
   /** rgba 텍스트 색 생성기 — 팀 배경 위 가독성 */
   textColor: (alpha: number) => string;
   /** 태그 pill 색 */
@@ -31,20 +33,8 @@ type Props = {
   accentTextColor: string;
 };
 
-type State = {
-  items: TeamNewsItem[] | null;
-  nextOffset: number | null;
-};
-
-async function fetchPage(
-  teamId: string,
-  tag: NewsTag | null,
-  offset: number,
-  limit: number | undefined
-): Promise<TeamNewsPage> {
-  const qs = new URLSearchParams({ team: teamId });
-  if (limit) qs.set("limit", String(limit));
-  if (offset) qs.set("offset", String(offset));
+async function fetchNews(teamId: string, tag: NewsTag | null, limit: number): Promise<TeamNewsPage> {
+  const qs = new URLSearchParams({ team: teamId, limit: String(limit) });
   if (tag) qs.set("tag", tag);
   const r = await fetch(`/api/news?${qs}`);
   if (!r.ok) throw new Error(`news ${r.status}`);
@@ -59,20 +49,21 @@ async function fetchPage(
 
 export default function TeamNewsList({
   teamId,
-  limit,
+  collapsedCount = 5,
+  expandStep = 10,
+  maxCount = 30,
   filterable = false,
-  infinite = false,
   textColor,
   accentColor,
   accentTextColor,
 }: Props) {
   const [tag, setTag] = useState<NewsTag | null>(null);
   const [tags, setTags] = useState<NewsTag[]>([]);
-  const [state, setState] = useState<State>({ items: null, nextOffset: null });
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [items, setItems] = useState<TeamNewsItem[] | null>(null);
+  const [visibleCount, setVisibleCount] = useState(collapsedCount);
   // 팀·태그가 바뀌면 늦게 도착한 이전 응답을 버린다
   const requestKey = useRef("");
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
 
   // 팀이 바뀌면 필터 초기화
   useEffect(() => {
@@ -80,65 +71,36 @@ export default function TeamNewsList({
     setTags([]);
   }, [teamId]);
 
+  // 최대 개수까지 한 번에 받아 두고, 펼치기·접기는 화면에서만 한다
   useEffect(() => {
     const key = `${teamId}:${tag ?? ""}`;
     requestKey.current = key;
-    setState({ items: null, nextOffset: null });
-    setLoadingMore(false);
-    fetchPage(teamId, tag, 0, limit)
+    setItems(null);
+    setVisibleCount(collapsedCount);
+    fetchNews(teamId, tag, maxCount)
       .then((page) => {
         if (requestKey.current !== key) return;
-        setState({ items: page.items, nextOffset: page.nextOffset });
+        setItems(page.items);
         setTags(page.tags);
       })
       .catch(() => {
-        if (requestKey.current === key) setState({ items: [], nextOffset: null });
+        if (requestKey.current === key) setItems([]);
       });
-  }, [teamId, tag, limit]);
+  }, [teamId, tag, maxCount, collapsedCount]);
 
-  const loadMore = useCallback(() => {
-    if (!infinite || loadingMore || state.items === null || state.nextOffset === null) return;
-    const key = requestKey.current;
-    setLoadingMore(true);
-    fetchPage(teamId, tag, state.nextOffset, limit)
-      .then((page) => {
-        if (requestKey.current !== key) return;
-        setState((prev) => {
-          const seen = new Set((prev.items ?? []).map((i) => i.id));
-          return {
-            items: [...(prev.items ?? []), ...page.items.filter((i) => !seen.has(i.id))],
-            nextOffset: page.nextOffset,
-          };
-        });
-      })
-      .catch(() => {
-        // 다음 페이지 실패 시 더 받지 않는다 (목록은 유지)
-        if (requestKey.current === key) setState((prev) => ({ ...prev, nextOffset: null }));
-      })
-      .finally(() => {
-        if (requestKey.current === key) setLoadingMore(false);
-      });
-  }, [infinite, loadingMore, state.items, state.nextOffset, teamId, tag, limit]);
+  const canExpand = items !== null && visibleCount < items.length;
+  const canCollapse = items !== null && !canExpand && items.length > collapsedCount;
 
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !infinite) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) loadMore();
-      },
-      { rootMargin: "400px 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [infinite, loadMore]);
-
-  const { items, nextOffset } = state;
+  function collapse() {
+    setVisibleCount(collapsedCount);
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   const chips =
     filterable && tags.length > 0 ? (
       <div
-        className="-mx-5 mb-3 flex gap-2 overflow-x-auto px-5 pb-1"
+        ref={topRef}
+        className="-mx-5 mb-3 scroll-mt-4 flex gap-2 overflow-x-auto px-5 pb-1"
         style={{ scrollbarWidth: "none" }}
         role="tablist"
         aria-label="소식 분류"
@@ -171,7 +133,7 @@ export default function TeamNewsList({
       <>
         {chips}
         <ul className="flex flex-col gap-3" aria-busy>
-          {Array.from({ length: Math.min(limit ?? 5, 6) }, (_, i) => (
+          {Array.from({ length: collapsedCount }, (_, i) => (
             <li
               key={i}
               className="h-[76px] animate-pulse rounded-2xl"
@@ -198,12 +160,12 @@ export default function TeamNewsList({
     <>
       {chips}
       <ul className="flex flex-col gap-1">
-        {items.map((item, i) => (
+        {items.slice(0, visibleCount).map((item, i) => (
           <motion.li
             key={item.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease, delay: Math.min(i % (limit ?? 9), 8) * 0.04 }}
+            transition={{ duration: 0.5, ease, delay: Math.min(i < collapsedCount ? i : (i - collapsedCount) % expandStep, 8) * 0.04 }}
           >
             <a
               href={item.url}
@@ -244,13 +206,19 @@ export default function TeamNewsList({
           </motion.li>
         ))}
       </ul>
-      {infinite && nextOffset !== null ? (
-        <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
-          <span
-            className="h-1.5 w-1.5 animate-pulse rounded-full"
-            style={{ background: textColor(loadingMore ? 0.6 : 0.25) }}
-          />
-        </div>
+      {canExpand || canCollapse ? (
+        <button
+          type="button"
+          onClick={() =>
+            canExpand
+              ? setVisibleCount((n) => Math.min(n + expandStep, items.length))
+              : collapse()
+          }
+          className="mt-3 w-full rounded-2xl py-3 text-[14px] font-semibold transition active:scale-[0.98]"
+          style={{ background: textColor(0.07), color: textColor(0.75) }}
+        >
+          {canExpand ? "펼치기" : "접기"}
+        </button>
       ) : null}
     </>
   );

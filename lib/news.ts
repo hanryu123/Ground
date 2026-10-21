@@ -154,16 +154,19 @@ function toClassified(a: RawArticle, row?: LlmRow): ClassifiedArticle {
   };
 }
 
-/** LLM 분류가 실패했을 때의 대체 — 제목의 구단명·애칭만 본다 (선수 이름만 나온 기사는 놓친다). */
-const TEAM_KEYWORDS: Record<string, RegExp> = {
-  lg: /LG|트윈스/,
-  kt: /KT|위즈/,
-  kia: /KIA|타이거즈/,
+/**
+ * LLM 분류가 실패했을 때의 대체 — 제목의 구단명·애칭만 본다 (선수 이름만 나온 기사는 놓친다).
+ * 영문 약칭은 다른 영단어 안에 든 경우(NCT 등)를 피하려고 앞뒤가 영문자가 아닐 때만 본다.
+ */
+export const TEAM_KEYWORDS: Record<string, RegExp> = {
+  lg: /(?<![A-Za-z])LG(?![A-Za-z])|트윈스/,
+  kt: /(?<![A-Za-z])KT(?![A-Za-z])|위즈/,
+  kia: /(?<![A-Za-z])KIA(?![A-Za-z])|타이거즈/,
   samsung: /삼성|라이온즈/,
   doosan: /두산|베어스/,
-  ssg: /SSG|랜더스/,
+  ssg: /(?<![A-Za-z])SSG(?![A-Za-z])|랜더스/,
   lotte: /롯데|자이언츠/,
-  nc: /NC|다이노스/,
+  nc: /(?<![A-Za-z])NC(?![A-Za-z])|다이노스/,
   hanwha: /한화|이글스/,
   kiwoom: /키움|히어로즈/,
 };
