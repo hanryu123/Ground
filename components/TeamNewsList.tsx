@@ -193,7 +193,7 @@ export default function TeamNewsList({
                   ) : null}
                 </a>
               </motion.li>
-              {insert ? <li className="py-2">{insert}</li> : null}
+              {insert ? <li className="py-5">{insert}</li> : null}
             </Fragment>
           );
         })}

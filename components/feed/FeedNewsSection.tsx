@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Play } from "lucide-react";
+import { ArrowUpRight, Play } from "lucide-react";
 import TeamNewsList from "@/components/TeamNewsList";
 import type { Team } from "@/lib/teams";
 import type { ClubVideo } from "@/lib/shorts";
@@ -36,14 +36,21 @@ function ClubVideoCard({ video, theme }: { video: ClubVideo; theme: FeedTheme })
           </span>
         </span>
       </div>
+      <span
+        className="mt-3 inline-block rounded-full px-2 py-[1px] text-[11px] font-bold"
+        style={{ background: theme.text(0.1), color: theme.text(0.7) }}
+      >
+        구단 영상
+      </span>
       <p
-        className="mt-2.5 line-clamp-2 text-[15px] font-semibold leading-snug"
+        className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug"
         style={{ color: theme.text(0.94) }}
       >
         {video.title}
       </p>
-      <p className="mt-1 text-[12px]" style={{ color: theme.text(0.55) }}>
+      <p className="mt-1 flex items-center gap-1 text-[12px]" style={{ color: theme.text(0.55) }}>
         {video.channelLabel} · {timeAgo(video.publishedAt)}
+        <ArrowUpRight size={13} aria-label="YouTube에서 열기" />
       </p>
     </a>
   );
