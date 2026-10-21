@@ -920,7 +920,7 @@ const KBO_SEASON_OPENER: Record<number, string> = {
   2026: "2026-03-28",
 };
 
-function seasonOpenerForYear(year: number): string {
+export function seasonOpenerForYear(year: number): string {
   return KBO_SEASON_OPENER[year] ?? `${year}-03-22`;
 }
 
