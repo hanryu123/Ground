@@ -62,7 +62,7 @@ export default function PrivacyPage() {
             처리합니다. 수집한 정보는 알림 발송, 구독 관리, 서비스 안정화 목적 외에
             광고 추적이나 판매 목적으로 사용하지 않습니다.
           </p>
-          <p className="mt-5 text-[12px] text-white/40">시행일: 2026년 6월 4일</p>
+          <p className="mt-5 text-[12px] text-white/40">시행일: 2026년 6월 4일 · 개정일: 2026년 10월 21일</p>
         </header>
 
         <section className="mt-9 space-y-4">
@@ -104,6 +104,16 @@ export default function PrivacyPage() {
             않습니다. 다만 앱 운영을 위해 Apple Push Notification service, Firebase Cloud
             Messaging, Vercel 등 인프라 제공자가 알림 전송, 호스팅, 분석 처리 과정에서
             필요한 범위의 정보를 처리할 수 있습니다.
+          </p>
+        </PolicySection>
+
+        <PolicySection title="외부 영상과 기사">
+          <p>
+            피드의 하이라이트 영상은 YouTube 공식 플레이어로 재생합니다. 영상이 화면에
+            보이면 소리 없이 자동으로 재생되며, 이때 기기·재생 정보가 YouTube(Google)로
+            전송될 수 있습니다. 이 정보는 Google 개인정보처리방침(policies.google.com/privacy)에
+            따라 처리됩니다. 뉴스를 누르면 원문 언론사 페이지로 이동하며, 해당 사이트의
+            개인정보 처리는 각 사이트의 방침을 따릅니다.
           </p>
         </PolicySection>
 
