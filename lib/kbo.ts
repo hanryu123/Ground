@@ -1188,3 +1188,63 @@ export function getTeamRank(rows: StandingRow[], teamId: string): StandingRow | 
   const id = teamId.toLowerCase();
   return rows.find((r) => r.teamId === id) ?? null;
 }
+
+// ────────────────────────────────────────────────────────────────────
+// 시즌 단계 — 팀별 비시즌 판별 (Today 소식 화면 전환용)
+// ────────────────────────────────────────────────────────────────────
+
+export type SeasonStatus = {
+  /** 아직 올해 경기가 남은 팀 id. 정규시즌 중이면 10개 팀 전부, 비시즌이면 빈 배열. */
+  activeTeamIds: string[];
+};
+
+/**
+ * 올해 아직 경기가 남은 팀.
+ *  - 정규시즌 개막 전 → 없음 / 정규시즌 중 → 전부
+ *  - 포스트시즌 → 최종 순위 상위 5팀 중 시리즈에서 지지 않은 팀.
+ *    정규시즌 1위는 한국시리즈 일정이 잡히기 전까지 포스트시즌 경기가 하나도 없으므로
+ *    "남은 일정이 있는지"가 아니라 "탈락했는지"로 판단해야 한다.
+ *  - 한국시리즈가 끝나면 → 없음
+ */
+export async function fetchSeasonStatus(today: string = todayKstDate()): Promise<SeasonStatus> {
+  const allTeams = Object.values(NAVER_TEAM_MAP).filter((id, i, a) => a.indexOf(id) === i);
+  const year = parseInt(today.slice(0, 4), 10);
+  const games = await fetchKboSeasonGames(year);
+
+  const regular = games.filter((g) => isRegularSeasonGameId(g.id));
+  const firstRegular = regular.reduce<string | null>(
+    (min, g) => (min === null || g.date < min ? g.date : min),
+    null
+  );
+  if (!firstRegular || today < firstRegular) return { activeTeamIds: [] };
+
+  const regularOngoing = regular.some(
+    (g) => g.status === "LIVE" || (g.status !== "RESULT" && g.status !== "CANCEL" && g.date >= today)
+  );
+  if (regularOngoing) return { activeTeamIds: allTeams };
+
+  const eliminated = new Set<string>();
+  const series = new Map<string, LiveGame[]>();
+  for (const g of games) {
+    const round = getPostseasonRound(g.id);
+    if (!round || g.status === "CANCEL") continue;
+    const key = `${round}:${[g.homeId, g.awayId].sort().join("-")}`;
+    series.set(key, [...(series.get(key) ?? []), g]);
+  }
+  for (const list of series.values()) {
+    const last = [...list].sort((a, b) =>
+      a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)
+    )[list.length - 1]!;
+    const state = computePostseasonSeriesState(last, last.homeId, games, true);
+    if (!state?.outcome) continue;
+    if (state.round === "KS") return { activeTeamIds: [] };
+    eliminated.add(state.outcome === "ELIMINATED" ? last.homeId : last.awayId);
+  }
+
+  const standings = await fetchKboStandings();
+  const top5 = [...standings]
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 5)
+    .map((r) => r.teamId);
+  return { activeTeamIds: top5.filter((id) => !eliminated.has(id)) };
+}
