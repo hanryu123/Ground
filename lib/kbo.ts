@@ -928,7 +928,7 @@ function seasonOpenerForYear(year: number): string {
  * 시즌 전체(1/1~12/31) 일정 → size=1000 한 방으로 가져옴 (KBO 시즌 ≈ 720경기).
  * 5분 캐시.
  */
-async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
+export async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
   const url =
     `${NAVER_BASE}/schedule/games` +
     `?fields=basic,statusInfo` +
