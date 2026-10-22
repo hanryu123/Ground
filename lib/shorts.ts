@@ -196,3 +196,24 @@ export async function getClubLatestVideos(teamId: string, limit = 6): Promise<Cl
       url: `https://www.youtube.com/watch?v=${e.videoId}`,
     }));
 }
+
+/** 진단용 — 채널별로 받은 숏츠 수, 날짜가 채워진 수, 기간 안에 든 수, 오류 */
+export async function shortsDiagnostics() {
+  const channels = SHORTS_CHANNELS.filter((c) => c.enabled && c.id);
+  return mapWithConcurrency(channels, 4, async (channel) => {
+    const cutoff = Date.now() - MAX_AGE_DAYS[channel.kind] * 86_400_000;
+    try {
+      const feed = await getChannelShorts(channel.id, channel.label);
+      const dated = feed.filter((e) => e.publishedAt);
+      return {
+        label: channel.label,
+        entries: feed.length,
+        withDate: dated.length,
+        inWindow: dated.filter((e) => Date.parse(e.publishedAt!) >= cutoff).length,
+        matched: feed.filter((e) => matchTeams(e, channel).length > 0).length,
+      };
+    } catch (err) {
+      return { label: channel.label, error: (err as Error).message };
+    }
+  });
+}
