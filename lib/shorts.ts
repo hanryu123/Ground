@@ -27,7 +27,7 @@ const MAX_AGE_DAYS: Record<ShortsChannel["kind"], number> = {
   club: 60,
   fan: 120,
 };
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 
 export type ShortsItem = {
   videoId: string;
@@ -40,13 +40,16 @@ export type ShortsItem = {
 };
 
 // 리그·중계 채널은 농구·배구 숏츠도 올리고 "SK·삼성·KT·LG" 같은 이름이 겹친다
-const BASEBALL_RE = /KBO|야구/i;
+// 채널 페이지에서 읽은 영상은 설명(해시태그)이 없어 제목만으로 가린다 → 가을야구 제목에 자주 붙는 말도 인정
+const BASEBALL_RE = /KBO|야구|준PO|플레이오프|한국시리즈|와일드카드|팬덤중계|가을야구/i;
 const OTHER_SPORT_RE = /KBL|농구|배구|V-?리그/i;
 
 function matchTeams(entry: FeedEntry, channel: ShortsChannel): string[] {
   if (channel.teams !== "match") return channel.teams;
   const text = `${entry.title}\n${entry.description ?? ""}`;
-  if (!BASEBALL_RE.test(text) || OTHER_SPORT_RE.test(text)) return [];
+  // KBO 채널은 야구만 올리므로 야구 키워드 검사는 중계 채널(티빙)에만 한다
+  if (OTHER_SPORT_RE.test(text)) return [];
+  if (channel.kind !== "league" && !BASEBALL_RE.test(text)) return [];
   return Object.entries(TEAM_KEYWORDS)
     .filter(([, re]) => re.test(text))
     .map(([id]) => id);
