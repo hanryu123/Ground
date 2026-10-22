@@ -4,6 +4,8 @@ import { TEAMS } from "@/lib/teams";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// YouTube 일부 채널(티빙)은 한국 밖에서 숏츠 목록을 다르게 내준다 → 서울 리전에서 실행
+export const preferredRegion = "icn1";
 export const maxDuration = 60;
 
 /**
