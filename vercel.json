@@ -35,9 +35,18 @@
       "regions": [
         "icn1"
       ]
+    },
+    "app/api/cron/warm-feed/route.ts": {
+      "regions": [
+        "icn1"
+      ]
     }
   },
   "crons": [
+    {
+      "path": "/api/cron/warm-feed",
+      "schedule": "*/10 * * * *"
+    },
     {
       "path": "/api/cron/preview",
       "schedule": "30 8 * * 1-6"

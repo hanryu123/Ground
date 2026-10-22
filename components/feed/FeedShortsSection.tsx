@@ -315,7 +315,28 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     setSoundOn(!soundOn);
   }
 
-  if (!items || items.length === 0) return null;
+  // 받는 중엔 자리만 잡아 둔다 — 늦게 도착하면 블록이 갑자기 끼어들며 아래 소식이 밀렸다
+  if (items === null) {
+    return (
+      <section className="pb-2 pt-7" aria-busy aria-label={`${team.short} Moments 불러오는 중`}>
+        <div className="mb-4 px-5">
+          <h2 className="text-[20px] font-bold tracking-[-0.02em]" style={{ color: theme.text(0.95) }}>
+            {team.short} Moments
+          </h2>
+        </div>
+        <div className="flex gap-3 overflow-hidden px-5 pb-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="w-[70%] max-w-[300px] shrink-0">
+              <div className="aspect-[9/16] w-full animate-pulse rounded-2xl" style={{ background: theme.text(0.08) }} />
+              <div className="mt-2.5 h-4 w-3/4 animate-pulse rounded" style={{ background: theme.text(0.08) }} />
+              <div className="mt-2 h-3 w-1/3 animate-pulse rounded" style={{ background: theme.text(0.06) }} />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+  if (items.length === 0) return null;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const pageUrl = typeof window !== "undefined" ? window.location.href : "";
