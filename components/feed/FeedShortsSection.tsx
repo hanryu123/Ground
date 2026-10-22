@@ -5,6 +5,7 @@ import { Play, Volume2, VolumeX, ArrowUpRight } from "lucide-react";
 import type { Team } from "@/lib/teams";
 import type { ShortsItem } from "@/lib/shorts";
 import type { FeedTheme } from "@/components/feed/feedTheme";
+import { useForegroundTick } from "@/lib/useForegroundTick";
 
 /**
  * 피드 2번 블록 — 우리 팀 숏츠. YouTube 공식 iframe 임베드만 쓴다.
@@ -29,6 +30,8 @@ const SECTION_VISIBLE_RATIO = 0.55;
 const SCROLL_SETTLE_MS = 90;
 /** 카드가 이만큼 계속 보여야 플레이어를 띄운다 */
 const MOUNT_DELAY_MS = 450;
+/** 앱이 다시 앞으로 왔을 때 이보다 오래됐으면 새로 받는다 (비어 있으면 바로) */
+const REFRESH_AFTER_MS = 5 * 60_000;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -66,25 +69,45 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   const playingIndex =
     sectionVisible && pageVisible && activeIndex < itemCount ? activeIndex : null;
 
+  const foregroundTick = useForegroundTick();
+  const loaded = useRef<{ team: string; at: number; ids: string } | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    setItems(null);
-    setActiveIndex(0);
-    setMountedIndex(null);
+    const prev = loaded.current;
+    const sameTeam = prev?.team === team.id;
+    // 앱이 다시 앞으로 온 경우: 목록이 있고 아직 신선하면 그대로 둔다
+    if (sameTeam && prev.ids && Date.now() - prev.at < REFRESH_AFTER_MS) return;
+    if (!sameTeam) {
+      setItems(null);
+      setActiveIndex(0);
+      setMountedIndex(null);
+    }
     fetch(`/api/shorts?team=${encodeURIComponent(team.id)}`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((j: { items?: ShortsItem[]; moreUrl?: string }) => {
         if (cancelled) return;
-        setItems(j.items ?? []);
-        setMoreUrl(j.moreUrl ?? null);
+        const next = j.items ?? [];
+        const ids = next.map((i) => i.videoId).join(",");
+        // 새로 받은 목록이 같으면 화면을 건드리지 않는다 (보던 영상이 끊기지 않게)
+        if (!sameTeam || ids !== prev?.ids) {
+          setItems(next);
+          setMoreUrl(j.moreUrl ?? null);
+          if (sameTeam) {
+            setActiveIndex(0);
+            setMountedIndex(null);
+            scrollerRef.current?.scrollTo({ left: 0 });
+          }
+        }
+        loaded.current = { team: team.id, at: Date.now(), ids };
       })
       .catch(() => {
-        if (!cancelled) setItems([]);
+        if (!cancelled && !sameTeam) setItems([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [team.id]);
+  }, [team.id, foregroundTick]);
 
   // 섹션이 세로로 충분히 보이는지
   useEffect(() => {

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Play } from "lucide-react";
 import TeamNewsList from "@/components/TeamNewsList";
 import type { Team } from "@/lib/teams";
 import type { ClubVideo } from "@/lib/shorts";
 import type { FeedTheme } from "@/components/feed/feedTheme";
+import { useForegroundTick } from "@/lib/useForegroundTick";
 
 const INSERT_EVERY = 5;
 
@@ -60,9 +61,15 @@ function ClubVideoCard({ video, theme }: { video: ClubVideo; theme: FeedTheme })
 export default function FeedNewsSection({ team, theme }: { team: Team; theme: FeedTheme }) {
   const [videos, setVideos] = useState<ClubVideo[]>([]);
 
+  // 처음에 비어 있었으면(유튜브 일시 장애 등) 앱이 다시 앞으로 올 때 다시 받는다
+  const foregroundTick = useForegroundTick();
+  const videosTeam = useRef<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    setVideos([]);
+    if (videosTeam.current === team.id && videos.length > 0) return;
+    if (videosTeam.current !== team.id) setVideos([]);
+    videosTeam.current = team.id;
     fetch(`/api/club-videos?team=${encodeURIComponent(team.id)}`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((j: { items?: ClubVideo[] }) => {
@@ -72,7 +79,9 @@ export default function FeedNewsSection({ team, theme }: { team: Team; theme: Fe
     return () => {
       cancelled = true;
     };
-  }, [team.id]);
+    // videos.length 는 "비어 있을 때만 다시 받기" 판단용이라 의존성에서 뺀다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team.id, foregroundTick]);
 
   return (
     <section className="px-5 pb-10 pt-7" aria-labelledby="feed-news-title">
