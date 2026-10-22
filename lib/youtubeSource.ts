@@ -12,7 +12,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  *  - 캐시 키는 숏츠 노출 정책(lib/shorts.ts CACHE_VERSION)과 따로 둔다 — 정책을 바꿔도 이미 받은 채널 목록은 그대로 쓴다.
  */
 
-const FEED_CACHE_KEY = "yt-channel-feed-v1";
+const FEED_CACHE_KEY = "yt-channel-feed-v2";
 const FEED_REVALIDATE_SEC = 900;
 const RSS_TRIES = 3;
 const PAGE_LIMIT = 15;
@@ -152,16 +152,24 @@ async function scrapeChannelShorts(channelId: string, channelLabel: string): Pro
     if (items.length >= PAGE_LIMIT) break;
   }
   if (items.length === 0) throw new Error(`no shorts on page: ${channelId}`);
-  const dates = await mapWithConcurrency(items, 4, (i) => getShortPublishedAt(i.videoId));
-  return items.map((i, idx) => ({
+  // 업로드 시각은 여기서 넣지 않는다 — 채널 목록 캐시(15분)에 빈 날짜가 같이 굳지 않게, 읽을 때 채운다
+  return items.map((i) => ({
     channelId,
     channelLabel,
     videoId: i.videoId,
     title: i.title,
     url: `https://www.youtube.com/shorts/${i.videoId}`,
     thumbnailUrl: `https://i.ytimg.com/vi/${i.videoId}/hqdefault.jpg`,
-    publishedAt: dates[idx] ?? null,
+    publishedAt: null,
   }));
+}
+
+/** 날짜가 빈 숏츠(채널 페이지에서 읽은 것)는 영상별 날짜 캐시로 채운다. 실패한 건 다음 요청에서 다시 시도. */
+async function fillShortDates(entries: FeedEntry[]): Promise<FeedEntry[]> {
+  if (entries.every((e) => e.publishedAt)) return entries;
+  return mapWithConcurrency(entries, 4, async (e) =>
+    e.publishedAt ? e : { ...e, publishedAt: await getShortPublishedAt(e.videoId) }
+  );
 }
 
 async function scrapeChannelVideos(channelId: string, channelLabel: string): Promise<FeedEntry[]> {
@@ -197,8 +205,8 @@ async function scrapeChannelVideos(channelId: string, channelLabel: string): Pro
 }
 
 /** 채널 숏츠 최신 15개 — 숏츠 전용 재생목록 RSS → 실패하면 채널 숏츠 탭. 둘 다 실패하면 예외. */
-export function getChannelShorts(channelId: string, channelLabel: string): Promise<FeedEntry[]> {
-  return unstable_cache(
+export async function getChannelShorts(channelId: string, channelLabel: string): Promise<FeedEntry[]> {
+  const entries = await unstable_cache(
     async () => {
       try {
         return await fetchRss(`playlist_id=UUSH${channelId.slice(2)}`, channelId, channelLabel);
@@ -209,6 +217,7 @@ export function getChannelShorts(channelId: string, channelLabel: string): Promi
     [FEED_CACHE_KEY, "shorts", channelId],
     { revalidate: FEED_REVALIDATE_SEC }
   )();
+  return fillShortDates(entries);
 }
 
 /** 채널 업로드 최신 15개 (숏츠 포함 가능) — 업로드 RSS → 실패하면 채널 동영상 탭(일반 영상만). */
