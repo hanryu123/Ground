@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Play, Volume2, VolumeX, ArrowUpRight } from "lucide-react";
+import { track } from "@vercel/analytics";
 import type { Team } from "@/lib/teams";
 import type { ShortsItem } from "@/lib/shorts";
 import type { FeedTheme } from "@/components/feed/feedTheme";
@@ -10,17 +11,16 @@ import { useForegroundTick } from "@/lib/useForegroundTick";
 /**
  * 피드 2번 블록 — 우리 팀 숏츠. YouTube 공식 iframe 임베드만 쓴다.
  *
- *  - 좌우 넘기기는 브라우저 기본 스크롤 + scroll-snap 에 맡긴다 (iOS 에서 컴포지터 스레드로 돌아 매끄럽다).
- *    snap-stop: always 로 한 번에 한 장씩 멈추고, YouTube 숏츠 줄처럼 왼쪽 정렬 + 다음 카드가 살짝 보인다.
- *    예전엔 포인터 이벤트로 scrollLeft 를 직접 옮겼는데, 메인 스레드가 바쁘면 손가락을 못 따라와 버벅였다.
- *  - 넘기는 동안엔 React 상태를 건드리지 않는다. 스크롤이 멈춘 뒤에 가운데(왼쪽 정렬된) 카드를 한 번 정하고,
- *    섹션이 화면에 충분히 보이고 앱이 앞에 있을 때만 그 카드를 재생한다.
- *  - 플레이어(iframe)는 카드가 MOUNT_DELAY_MS 동안 머물 때만 띄운다 (훑고 지나갈 때 1MB 플레이어 로드 방지).
- *    썸네일을 아래에 깔아 두고 플레이어가 준비되면 겹쳐 보여 검은 화면 깜빡임이 없다.
- *  - 플레이어가 터치를 가져가면 좌우로 안 넘어가므로 가운데를 투명 영역으로 덮는다 (탭하면 소리 켜기).
- *    위아래 가장자리(YouTube 로고·제목·컨트롤)는 덮지 않는다 (YouTube 정책).
+ *  - 좌우 넘기기는 브라우저 기본 스크롤 + scroll-snap (한 번에 한 장, 왼쪽 정렬 + 다음 카드 살짝 보임).
+ *    넘기는 동안엔 React 상태를 건드리지 않고, 스크롤이 멈춘 뒤에 왼쪽 카드를 한 번 정한다.
+ *  - 플레이어(iframe)는 하나만 띄워 두고 영상만 바꾼다 (loadVideoById).
+ *    카드마다 iframe 을 새로 띄우면 짧은 시간에 임베드를 여러 번 여는 패턴이 돼서 YouTube 가
+ *    "로그인하여 봇이 아님을 확인하세요" 화면을 띄웠다. 플레이어는 스크롤 영역 안에 절대 위치로 두어
+ *    넘길 때 카드와 같이 밀려 나가고, 멈추면 새 카드 위치로 옮긴다 (위치만 바꾸면 iframe 이 다시 뜨지 않는다).
+ *  - 그래도 확인 화면이 뜰 수 있어 카드마다 "YouTube에서 보기"(↗)를 플레이어 밖에 둔다.
+ *  - 측정: 영상을 띄우고 PLAY_TIMEOUT_MS 안에 재생이 시작되지 않으면 Vercel Analytics 에 shorts_play_failed.
+ *  - 플레이어 가운데는 투명 영역으로 덮어 넘기기를 받고 탭하면 소리 켜기. 위아래 가장자리(YouTube 로고·컨트롤)는 덮지 않는다.
  *  - 기본 음소거 자동재생, 앱이 백그라운드로 가면 즉시 정지, 영상이 끝나면 다음 카드로.
- *  - 우리 팀 영상이 없으면 블록 자체를 숨긴다.
  */
 
 const YT_ORIGIN = "https://www.youtube.com";
@@ -28,10 +28,15 @@ const YT_ORIGIN = "https://www.youtube.com";
 const SECTION_VISIBLE_RATIO = 0.55;
 /** 스크롤 이벤트가 이만큼 멈추면 넘기기가 끝난 것으로 본다 (scrollend 미지원 브라우저용) */
 const SCROLL_SETTLE_MS = 90;
-/** 카드가 이만큼 계속 보여야 플레이어를 띄운다 */
-const MOUNT_DELAY_MS = 450;
+/** 카드가 이만큼 계속 보여야 영상을 바꾼다 */
+const LOAD_DELAY_MS = 450;
 /** 앱이 다시 앞으로 왔을 때 이보다 오래됐으면 새로 받는다 (비어 있으면 바로) */
 const REFRESH_AFTER_MS = 5 * 60_000;
+/** 영상을 띄우고 이 시간 안에 재생이 안 되면 실패로 기록하고 플레이어를 그대로 보여 준다 (확인 화면 포함) */
+const PLAY_TIMEOUT_MS = 6_000;
+/** YouTube playerState */
+const YT_PLAYING = 1;
+const YT_ENDED = 0;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -46,6 +51,8 @@ function sendCommand(iframe: HTMLIFrameElement | null, func: string, args: unkno
   iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), YT_ORIGIN);
 }
 
+type Box = { left: number; top: number; width: number; height: number };
+
 export default function FeedShortsSection({ team, theme }: { team: Team; theme: FeedTheme }) {
   const [items, setItems] = useState<ShortsItem[] | null>(null);
   const [moreUrl, setMoreUrl] = useState<string | null>(null);
@@ -53,25 +60,30 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   const [activeIndex, setActiveIndex] = useState(0);
   const [sectionVisible, setSectionVisible] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
-  // iframe 을 띄워 둔 카드 — 다른 카드로 넘어가면 내린다
-  const [mountedIndex, setMountedIndex] = useState<number | null>(null);
-  const [playerReady, setPlayerReady] = useState(false);
+  // 플레이어에 올라가 있는 카드 (null = 아직 플레이어 없음)
+  const [playerIndex, setPlayerIndex] = useState<number | null>(null);
+  // 처음 띄울 때의 영상 — 이후엔 loadVideoById 로만 바꾸므로 src 는 바뀌지 않는다
+  const [playerSrcId, setPlayerSrcId] = useState<string | null>(null);
+  const [playerShown, setPlayerShown] = useState(false);
+  const [playerBox, setPlayerBox] = useState<Box | null>(null);
   const [soundOn, setSoundOn] = useState(false);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeReady = useRef(false);
   const settleTimer = useRef<number | null>(null);
+  const playTimer = useRef<number | null>(null);
+  const loaded = useRef<{ team: string; at: number; ids: string } | null>(null);
   // 재생 중인 영상의 위치 — 반복 재생으로 넘어가는 순간을 잡는다
   const progress = useRef({ lastTime: 0, duration: 0 });
 
+  const foregroundTick = useForegroundTick();
   const itemCount = items?.length ?? 0;
   const playingIndex =
     sectionVisible && pageVisible && activeIndex < itemCount ? activeIndex : null;
 
-  const foregroundTick = useForegroundTick();
-  const loaded = useRef<{ team: string; at: number; ids: string } | null>(null);
-
+  // ── 숏츠 목록 ─────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const prev = loaded.current;
@@ -81,7 +93,8 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     if (!sameTeam) {
       setItems(null);
       setActiveIndex(0);
-      setMountedIndex(null);
+      setPlayerIndex(null);
+      setPlayerShown(false);
     }
     fetch(`/api/shorts?team=${encodeURIComponent(team.id)}`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
@@ -95,7 +108,8 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
           setMoreUrl(j.moreUrl ?? null);
           if (sameTeam) {
             setActiveIndex(0);
-            setMountedIndex(null);
+            setPlayerIndex(null);
+            setPlayerShown(false);
             scrollerRef.current?.scrollTo({ left: 0 });
           }
         }
@@ -109,19 +123,19 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     };
   }, [team.id, foregroundTick]);
 
-  // 섹션이 세로로 충분히 보이는지
+  // ── 섹션 노출 · 앱 전후면 ─────────────────────────────────
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || !itemCount) return;
     const io = new IntersectionObserver(
-      ([entry]) => setSectionVisible(Boolean(entry?.isIntersecting && entry.intersectionRatio >= SECTION_VISIBLE_RATIO)),
+      ([entry]) =>
+        setSectionVisible(Boolean(entry?.isIntersecting && entry.intersectionRatio >= SECTION_VISIBLE_RATIO)),
       { threshold: [0, SECTION_VISIBLE_RATIO, 1] }
     );
     io.observe(el);
     return () => io.disconnect();
   }, [itemCount]);
 
-  // 앱 백그라운드 → 즉시 정지
   useEffect(() => {
     const onVisibility = () => {
       const visible = document.visibilityState === "visible";
@@ -132,17 +146,19 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  // 넘기기가 멈추면 왼쪽에 맞춰진 칸을 정한다 (넘기는 동안엔 아무 상태도 바꾸지 않는다)
+  // ── 넘기기가 멈추면 왼쪽 카드를 정한다 ────────────────────
   const settle = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const left = scroller.scrollLeft + parseFloat(getComputedStyle(scroller).scrollPaddingLeft || "0");
     let best = 0;
     let bestDist = Infinity;
-    Array.from(scroller.children).forEach((el, i) => {
-      const dist = Math.abs((el as HTMLElement).offsetLeft - left);
+    Array.from(scroller.children).forEach((el) => {
+      const node = el as HTMLElement;
+      if (node.dataset.slot === undefined) return; // 플레이어 레이어는 칸이 아니다
+      const dist = Math.abs(node.offsetLeft - left);
       if (dist < bestDist) {
-        best = i;
+        best = Number(node.dataset.slot);
         bestDist = dist;
       }
     });
@@ -169,26 +185,58 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     };
   }, [itemCount, settle]);
 
-  // 재생 카드가 바뀌면 그 카드에 iframe 을 띄우고, 화면 밖이면 멈춘다
+  // ── 플레이어 위치: 플레이어가 맡은 카드의 영상 칸 위 ───────
+  const measure = useCallback(() => {
+    if (playerIndex === null) return;
+    const card = cardRefs.current[playerIndex];
+    if (!card) return;
+    setPlayerBox({ left: card.offsetLeft, top: card.offsetTop, width: card.offsetWidth, height: card.offsetHeight });
+  }, [playerIndex]);
+
+  useLayoutEffect(() => {
+    measure();
+  }, [measure, itemCount]);
+
+  useEffect(() => {
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [measure]);
+
+  // ── 재생할 카드가 바뀌면: 플레이어를 숨기고, 잠깐 머물면 그 카드로 옮겨 영상만 바꾼다 ──
   useEffect(() => {
     if (playingIndex === null) {
       sendCommand(iframeRef.current, "pauseVideo");
       return;
     }
-    if (playingIndex === mountedIndex) {
+    if (playingIndex === playerIndex) {
       sendCommand(iframeRef.current, "playVideo");
       return;
     }
-    // 이전 카드 영상은 바로 멈추고, 새 카드 플레이어는 잠깐 머물면 띄운다
     sendCommand(iframeRef.current, "pauseVideo");
+    setPlayerShown(false);
     const timer = window.setTimeout(() => {
+      const item = items?.[playingIndex];
+      if (!item) return;
       progress.current = { lastTime: 0, duration: 0 };
-      setPlayerReady(false);
-      setMountedIndex(playingIndex);
       setSoundOn(false);
-    }, MOUNT_DELAY_MS);
+      setPlayerIndex(playingIndex);
+      if (iframeRef.current && iframeReady.current) {
+        sendCommand(iframeRef.current, "mute");
+        sendCommand(iframeRef.current, "loadVideoById", [item.videoId]);
+      } else {
+        setPlayerSrcId(item.videoId); // 첫 플레이어
+      }
+      // 재생이 시작되면 보여 준다. 시간 안에 안 되면 실패로 기록하고 그대로 보여 준다 (확인 화면이면 사용자가 보게)
+      if (playTimer.current !== null) window.clearTimeout(playTimer.current);
+      playTimer.current = window.setTimeout(() => {
+        playTimer.current = null;
+        setPlayerShown(true);
+        track("shorts_play_failed", { team: team.id, channel: item.channelLabel });
+      }, PLAY_TIMEOUT_MS);
+      track("shorts_play_attempt", { team: team.id });
+    }, LOAD_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [playingIndex, mountedIndex]);
+  }, [playingIndex, playerIndex, items, team.id]);
 
   // 카드를 왼쪽에 맞춰 보여 준다 — 세로로 덜 보이던 카드면 다 보이게 같이 내린다
   const scrollToCard = useCallback((index: number) => {
@@ -196,7 +244,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
   }, []);
 
-  // 영상이 끝나면 다음 카드로
+  // ── 플레이어 이벤트: 재생 시작 → 보이기, 끝 → 다음 카드 ───────
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== YT_ORIGIN || e.source !== iframeRef.current?.contentWindow) return;
@@ -206,11 +254,23 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
       } catch {
         return;
       }
-      // 숏츠 임베드는 끝나면 ENDED(0) 없이 처음부터 다시 돈다 → 끝 근처에서 0초로 돌아오면 끝난 걸로 본다
       const info = data.info as { playerState?: number; currentTime?: number; duration?: number } | null;
-      let ended = data.event === "onStateChange" && data.info === 0;
+      const state =
+        data.event === "onStateChange" && typeof data.info === "number"
+          ? data.info
+          : data.event === "infoDelivery"
+            ? info?.playerState
+            : undefined;
+      if (state === YT_PLAYING) {
+        if (playTimer.current !== null) {
+          window.clearTimeout(playTimer.current);
+          playTimer.current = null;
+        }
+        setPlayerShown(true);
+      }
+      // 숏츠 임베드는 끝나면 ENDED 없이 처음부터 다시 돈다 → 끝 근처에서 0초로 돌아오면 끝난 걸로 본다
+      let ended = state === YT_ENDED;
       if (data.event === "infoDelivery" && info) {
-        if (info.playerState === 0) ended = true;
         if (typeof info.duration === "number" && info.duration > 0) progress.current.duration = info.duration;
         if (typeof info.currentTime === "number") {
           const { lastTime, duration } = progress.current;
@@ -218,21 +278,28 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
           progress.current.lastTime = info.currentTime;
         }
       }
-      if (ended && mountedIndex !== null) {
+      if (ended && playerIndex !== null) {
         progress.current = { lastTime: 0, duration: 0 };
-        scrollToCard(mountedIndex + 1);
+        scrollToCard(playerIndex + 1);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [mountedIndex, scrollToCard]);
+  }, [playerIndex, scrollToCard]);
+
+  useEffect(
+    () => () => {
+      if (playTimer.current !== null) window.clearTimeout(playTimer.current);
+    },
+    []
+  );
 
   function onIframeLoad() {
     const iframe = iframeRef.current;
+    iframeReady.current = true;
     // 상태 이벤트(onStateChange)를 받으려면 먼저 listening 을 보내야 한다
     iframe?.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "ground-shorts", channel: "widget" }), YT_ORIGIN);
     sendCommand(iframe, "addEventListener", ["onStateChange"]);
-    setPlayerReady(true);
   }
 
   function toggleSound() {
@@ -251,6 +318,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   if (!items || items.length === 0) return null;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const pageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   return (
     <section className="pb-2 pt-7" aria-labelledby="feed-shorts-title">
@@ -276,10 +344,11 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
       >
         {items.map((item, index) => {
-          const mounted = mountedIndex === index;
+          const active = playerIndex === index && playerShown;
           return (
             <div
               key={item.videoId}
+              data-slot={index}
               className="w-[70%] max-w-[300px] shrink-0 snap-start"
               style={{ scrollSnapStop: "always" }}
             >
@@ -289,13 +358,12 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                 }}
                 className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl bg-black"
               >
-                {/* 썸네일은 항상 깔아 둔다 — 플레이어가 준비될 때까지 검은 화면 대신 보인다 */}
                 <button
                   type="button"
                   onClick={() => scrollToCard(index)}
                   className="absolute inset-0 h-full w-full"
                   aria-label={`${item.title} 재생`}
-                  tabIndex={mounted ? -1 : 0}
+                  tabIndex={active ? -1 : 0}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -306,34 +374,12 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                     draggable={false}
                     className="h-full w-full scale-[1.34] object-cover"
                   />
-                  {!mounted ? (
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55">
-                        <Play size={18} fill="white" className="ml-0.5 text-white" />
-                      </span>
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55">
+                      <Play size={18} fill="white" className="ml-0.5 text-white" />
                     </span>
-                  ) : null}
+                  </span>
                 </button>
-
-                {mounted ? (
-                  <>
-                    <iframe
-                      ref={iframeRef}
-                      src={`${YT_ORIGIN}/embed/${item.videoId}?autoplay=1&mute=1&playsinline=1&enablejsapi=1&rel=0&origin=${encodeURIComponent(origin)}`}
-                      title={item.title}
-                      className="absolute inset-0 h-full w-full transition-opacity duration-300"
-                      style={{ opacity: playerReady ? 1 : 0 }}
-                      allow="autoplay; encrypted-media; picture-in-picture"
-                      allowFullScreen
-                      onLoad={onIframeLoad}
-                    />
-                    <div
-                      className="absolute inset-x-0 bottom-[18%] top-[12%]"
-                      onClick={toggleSound}
-                      aria-hidden
-                    />
-                  </>
-                ) : null}
               </div>
 
               <div className="mt-2.5 flex items-start gap-2">
@@ -348,7 +394,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                     {item.channelLabel} · {timeAgo(item.publishedAt)}
                   </p>
                 </div>
-                {mounted ? (
+                {playerIndex === index ? (
                   <button
                     type="button"
                     onClick={toggleSound}
@@ -359,6 +405,17 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
                     {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
                   </button>
                 ) : null}
+                {/* 플레이어에 확인 화면이 떠도 볼 수 있게 — YouTube 앱(또는 브라우저)에서 바로 연다 */}
+                <a
+                  href={`https://www.youtube.com/shorts/${item.videoId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-90"
+                  style={{ background: theme.text(0.1), color: theme.text(0.85) }}
+                  aria-label="YouTube에서 보기"
+                >
+                  <ArrowUpRight size={16} />
+                </a>
               </div>
             </div>
           );
@@ -369,12 +426,47 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
             href={moreUrl}
             target="_blank"
             rel="noopener noreferrer"
+            data-slot={items.length}
             className="flex aspect-[9/16] w-[40%] max-w-[180px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl text-center"
             style={{ background: theme.text(0.07), color: theme.text(0.8), scrollSnapStop: "always" }}
           >
             <ArrowUpRight size={22} />
             <span className="px-3 text-[13px] font-semibold leading-snug">YouTube에서 더 보기</span>
           </a>
+        ) : null}
+
+        {/* 플레이어 하나 — 스크롤 영역 안 절대 위치라 넘길 때 카드와 같이 밀려 나가고, 멈추면 새 카드로 옮긴다 */}
+        {playerSrcId && playerBox ? (
+          <div
+            className="pointer-events-none absolute z-10 overflow-hidden rounded-2xl transition-opacity duration-300"
+            style={{
+              left: playerBox.left,
+              top: playerBox.top,
+              width: playerBox.width,
+              height: playerBox.height,
+              opacity: playerShown ? 1 : 0,
+            }}
+            aria-hidden={!playerShown}
+          >
+            <iframe
+              ref={iframeRef}
+              src={`${YT_ORIGIN}/embed/${playerSrcId}?autoplay=1&mute=1&playsinline=1&enablejsapi=1&rel=0&origin=${encodeURIComponent(origin)}&widget_referrer=${encodeURIComponent(pageUrl)}`}
+              title="YouTube Shorts"
+              className="h-full w-full"
+              style={{ pointerEvents: playerShown ? "auto" : "none" }}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+              onLoad={onIframeLoad}
+            />
+            {/* 가운데만 덮어 넘기기는 스크롤로 넘기고, 탭하면 소리 켜기 (위아래 YouTube 로고·컨트롤은 덮지 않음) */}
+            <div
+              className="absolute inset-x-0 bottom-[18%] top-[12%]"
+              style={{ pointerEvents: playerShown ? "auto" : "none" }}
+              onClick={toggleSound}
+              aria-hidden
+            />
+          </div>
         ) : null}
       </div>
     </section>
