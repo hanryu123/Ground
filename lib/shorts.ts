@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { SHORTS_CHANNELS, type ShortsChannel } from "@/config/shortsChannels";
-import { parseRss, type HighlightEntry } from "@/lib/highlightFeed";
+import { getChannelShorts, getChannelUploads, type FeedEntry } from "@/lib/youtubeSource";
 import { TEAM_KEYWORDS } from "@/lib/news";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
@@ -27,7 +27,7 @@ const MAX_AGE_DAYS: Record<ShortsChannel["kind"], number> = {
   club: 60,
   fan: 120,
 };
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 
 export type ShortsItem = {
   videoId: string;
@@ -39,28 +39,11 @@ export type ShortsItem = {
   teams: string[];
 };
 
-async function fetchFeed(query: string, channel: ShortsChannel): Promise<HighlightEntry[]> {
-  try {
-    const res = await fetch(`https://www.youtube.com/feeds/videos.xml?${query}`, {
-      headers: { "user-agent": UA, accept: "application/xml,text/xml;q=0.9,*/*;q=0.8" },
-      next: { revalidate: 900 },
-    });
-    if (!res.ok) return [];
-    return parseRss(await res.text(), channel.id, channel.label);
-  } catch {
-    return [];
-  }
-}
-
-function fetchChannelShortsFeed(channel: ShortsChannel): Promise<HighlightEntry[]> {
-  return fetchFeed(`playlist_id=UUSH${channel.id.slice(2)}`, channel);
-}
-
 // 리그·중계 채널은 농구·배구 숏츠도 올리고 "SK·삼성·KT·LG" 같은 이름이 겹친다
 const BASEBALL_RE = /KBO|야구/i;
 const OTHER_SPORT_RE = /KBL|농구|배구|V-?리그/i;
 
-function matchTeams(entry: HighlightEntry, channel: ShortsChannel): string[] {
+function matchTeams(entry: FeedEntry, channel: ShortsChannel): string[] {
   if (channel.teams !== "match") return channel.teams;
   const text = `${entry.title}\n${entry.description ?? ""}`;
   if (!BASEBALL_RE.test(text) || OTHER_SPORT_RE.test(text)) return [];
@@ -69,7 +52,7 @@ function matchTeams(entry: HighlightEntry, channel: ShortsChannel): string[] {
     .map(([id]) => id);
 }
 
-function isShortsEntry(entry: HighlightEntry): boolean {
+function isShortsEntry(entry: FeedEntry): boolean {
   return /youtube\.com\/shorts\//.test(entry.url);
 }
 
@@ -99,8 +82,14 @@ async function collectAllShorts(): Promise<ShortsItem[]> {
 
   const perChannel = await mapWithConcurrency(channels, 4, async (channel) => {
     const cutoff = Date.now() - MAX_AGE_DAYS[channel.kind] * 86_400_000;
-    const entries = (await fetchChannelShortsFeed(channel)).filter(
-      (e) => isShortsEntry(e) && (!e.publishedAt || e.publishedAt.getTime() >= cutoff)
+    // RSS·채널 페이지 둘 다 실패하고 캐시도 없을 때만 빈 목록 (다음 요청에서 다시 시도)
+    const feed = await getChannelShorts(channel.id, channel.label).catch((err) => {
+      console.warn(`[shorts] ${channel.label} feed unavailable:`, (err as Error).message);
+      return [] as FeedEntry[];
+    });
+    // 업로드 시각을 모르는 영상은 뺀다 — 기간 거르기를 그냥 통과해 몇 년 전 숏츠가 섞이는 걸 막는다
+    const entries = feed.filter(
+      (e) => isShortsEntry(e) && e.publishedAt !== null && Date.parse(e.publishedAt) >= cutoff
     );
     return entries
       .map((entry) => ({ entry, teams: matchTeams(entry, channel) }))
@@ -124,7 +113,7 @@ async function collectAllShorts(): Promise<ShortsItem[]> {
       videoId: entry.videoId,
       title: entry.title,
       channelLabel: entry.channelLabel,
-      publishedAt: entry.publishedAt?.toISOString() ?? null,
+      publishedAt: entry.publishedAt,
       thumbnailUrl: entry.thumbnailUrl,
       teams,
     });
@@ -132,8 +121,10 @@ async function collectAllShorts(): Promise<ShortsItem[]> {
   return items.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
 }
 
+// 채널별 목록은 youtubeSource 에서 따로 캐시한다. 여기선 합친 결과를 짧게만 둔다
+// (한 채널이 일시적으로 비어 있어도 5분 안에 다시 합친다).
 const getAllShortsCached = unstable_cache(collectAllShorts, ["team-shorts-all", CACHE_VERSION], {
-  revalidate: 900,
+  revalidate: 300,
 });
 
 /**
@@ -186,16 +177,19 @@ export async function getClubLatestVideos(teamId: string, limit = 6): Promise<Cl
     (c) => c.enabled && c.id && c.kind === "club" && Array.isArray(c.teams) && c.teams.includes(teamId)
   );
   if (!club) return [];
-  const entries = await fetchFeed(`channel_id=${club.id}`, club);
+  const entries = await getChannelUploads(club.id, club.label).catch((err) => {
+    console.warn(`[club-videos] ${club.label} feed unavailable:`, (err as Error).message);
+    return [] as FeedEntry[];
+  });
   return entries
     .filter((e) => !isShortsEntry(e))
-    .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
+    .sort((a, b) => Date.parse(b.publishedAt ?? "0") - Date.parse(a.publishedAt ?? "0"))
     .slice(0, limit)
     .map((e) => ({
       videoId: e.videoId,
       title: e.title,
       channelLabel: e.channelLabel,
-      publishedAt: e.publishedAt?.toISOString() ?? null,
+      publishedAt: e.publishedAt,
       url: `https://www.youtube.com/watch?v=${e.videoId}`,
     }));
 }
