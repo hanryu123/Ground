@@ -1,5 +1,17 @@
 {
   "buildCommand": "next build",
+  "functions": {
+    "app/api/shorts/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/club-videos/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/preview",

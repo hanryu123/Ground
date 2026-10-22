@@ -4,8 +4,7 @@ import { TEAMS } from "@/lib/teams";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// YouTube 일부 채널(티빙)은 한국 밖에서 숏츠 목록을 다르게 내준다 → 서울 리전에서 실행
-export const preferredRegion = "icn1";
+// YouTube 일부 채널(티빙)은 한국 밖에서 숏츠 목록을 주지 않는다 → vercel.json functions 에서 이 라우트만 서울(icn1)
 
 /**
  * GET /api/club-videos?team=lg
