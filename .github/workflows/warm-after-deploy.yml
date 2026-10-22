@@ -1,0 +1,16 @@
+name: Warm feed after deploy
+
+# Vercel 이 production 배포 성공을 GitHub 에 알리면(deployment_status) 바로 피드 캐시를 채운다.
+# 빌드가 새로 되면 데이터 캐시가 사실상 비어서, 10분 크론이 돌기 전 첫 사용자가 숏츠 계산(~40초)을 기다렸다.
+on:
+  deployment_status:
+
+jobs:
+  warm:
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: warm-feed
+        run: |
+          curl -sf --max-time 290 -X GET "${{ secrets.APP_URL }}/api/cron/warm-feed" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
