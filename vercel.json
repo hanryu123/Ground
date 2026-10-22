@@ -10,6 +10,31 @@
       "regions": [
         "icn1"
       ]
+    },
+    "app/api/news/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/kbo/schedule/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/kbo/games/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/kbo/season/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/kbo/standings/route.ts": {
+      "regions": [
+        "icn1"
+      ]
     }
   },
   "crons": [
