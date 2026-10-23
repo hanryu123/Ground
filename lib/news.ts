@@ -123,7 +123,8 @@ ${lines}`;
       }),
     });
     if (!res.ok) {
-      console.warn("[news] classify failed:", res.status);
+      const body = await res.text().catch(() => "");
+      console.warn("[news] classify failed:", res.status, body.slice(0, 300));
       return null;
     }
     const json = (await res.json()) as {
