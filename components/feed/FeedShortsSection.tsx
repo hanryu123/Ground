@@ -21,6 +21,8 @@ import { useForegroundTick } from "@/lib/useForegroundTick";
  *  - 측정: 영상을 띄우고 PLAY_TIMEOUT_MS 안에 재생이 시작되지 않으면 Vercel Analytics 에 shorts_play_failed.
  *  - 플레이어 가운데는 투명 영역으로 덮어 넘기기를 받고 탭하면 소리 켜기. 위아래 가장자리(YouTube 로고·컨트롤)는 덮지 않는다.
  *  - 기본 음소거 자동재생, 앱이 백그라운드로 가면 즉시 정지, 영상이 끝나면 다음 카드로.
+ *  - 재생된 숏츠는 기기에 기억해 두고, 목록을 받을 때 안 본 숏츠를 앞으로 보낸다
+ *    (비시즌엔 새 업로드가 드물어 며칠씩 같은 영상이 앞에 있었다). 새로 올라온 숏츠는 안 본 것이라 자연히 앞에 온다.
  */
 
 const YT_ORIGIN = "https://www.youtube.com";
@@ -37,6 +39,39 @@ const PLAY_TIMEOUT_MS = 6_000;
 /** YouTube playerState */
 const YT_PLAYING = 1;
 const YT_ENDED = 0;
+/** 본 숏츠 기록 — videoId → 처음 재생한 시각 */
+const SEEN_KEY = "ground.shorts.seen";
+const SEEN_MAX = 400;
+
+function readSeen(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function markSeen(videoId: string) {
+  try {
+    const seen = readSeen();
+    if (seen[videoId]) return;
+    seen[videoId] = Date.now();
+    const ids = Object.keys(seen);
+    if (ids.length > SEEN_MAX) {
+      ids.sort((a, b) => seen[a]! - seen[b]!);
+      for (const id of ids.slice(0, ids.length - SEEN_MAX)) delete seen[id];
+    }
+    localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+  } catch {
+    // 저장 못 해도 재생엔 영향 없음
+  }
+}
+
+/** 안 본 숏츠 먼저, 본 숏츠는 뒤로 — 각 무리 안에서는 서버 순서를 그대로 둔다 */
+function unseenFirst(items: ShortsItem[]): ShortsItem[] {
+  const seen = readSeen();
+  return [...items.filter((i) => !seen[i.videoId]), ...items.filter((i) => seen[i.videoId])];
+}
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -100,7 +135,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((j: { items?: ShortsItem[]; moreUrl?: string }) => {
         if (cancelled) return;
-        const next = j.items ?? [];
+        const next = unseenFirst(j.items ?? []);
         const ids = next.map((i) => i.videoId).join(",");
         // 새로 받은 목록이 같으면 화면을 건드리지 않는다 (보던 영상이 끊기지 않게)
         if (!sameTeam || ids !== prev?.ids) {
@@ -267,6 +302,8 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
           playTimer.current = null;
         }
         setPlayerShown(true);
+        const playing = playerIndex !== null ? items?.[playerIndex] : undefined;
+        if (playing) markSeen(playing.videoId);
       }
       // 숏츠 임베드는 끝나면 ENDED 없이 처음부터 다시 돈다 → 끝 근처에서 0초로 돌아오면 끝난 걸로 본다
       let ended = state === YT_ENDED;
@@ -285,7 +322,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [playerIndex, scrollToCard]);
+  }, [playerIndex, items, scrollToCard]);
 
   useEffect(
     () => () => {
