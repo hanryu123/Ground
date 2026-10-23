@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canSpendLlm, ensureLlmTables, recordLlmUsage } from "@/lib/llmBudget";
 import { TEAMS } from "@/lib/teams";
@@ -265,37 +266,52 @@ function classifyAndStore(day: string, batch: RawArticle[]): Promise<Map<string,
  * 2026-10-21~22 에는 캐시 키에 함수 코드가 들어가는 탓에 배포마다 일주일 치를 다시 분류해 크레딧을 다 썼다.
  * 새 기사만 BATCH_SIZE 씩 Claude 로 분류하고, 예산이 없거나 실패하면 키워드 분류로 보여 준다 (저장하지 않아 나중에 다시 시도).
  */
-async function classifyDayUncached(date: string): Promise<ClassifiedArticle[]> {
+async function classifyDayUncached(date: string): Promise<{ items: ClassifiedArticle[]; complete: boolean }> {
   const raw = await fetchDayArticles(date, date === kstDate());
   const ids = raw.map((a) => `${a.oid}-${a.aid}`);
   const stored = await loadStored(ids).catch((err) => {
     console.warn("[news] load failed:", (err as Error).message);
     return null;
   });
-  if (!stored) return raw.map((a) => toClassified(a, classifyByKeyword(a)));
+  if (!stored) return { items: raw.map((a) => toClassified(a, classifyByKeyword(a))), complete: false };
 
   const missing = raw.filter((a) => !stored.has(`${a.oid}-${a.aid}`));
-  const batches: RawArticle[][] = [];
-  for (let i = 0; i < missing.length; i += BATCH_SIZE) batches.push(missing.slice(i, i + BATCH_SIZE));
-  const results = await mapWithConcurrency(batches, 2, (b) => classifyAndStore(date, b));
-  for (const r of results) r?.forEach((c, id) => stored.set(id, c));
+  if (missing.length > 0) {
+    // 새 기사 분류는 응답을 붙잡지 않고 응답 뒤에 한다 — 그동안은 키워드 분류로 보여 주고, 다음 요청부터 DB 결과를 쓴다.
+    // (분류를 기다리면 새 기사가 들어올 때마다 소식 목록이 수 초씩 비어 있었다)
+    const batches: RawArticle[][] = [];
+    for (let i = 0; i < missing.length; i += BATCH_SIZE) batches.push(missing.slice(i, i + BATCH_SIZE));
+    const job = () => mapWithConcurrency(batches, 2, (b) => classifyAndStore(date, b)).then(() => {});
+    try {
+      after(job);
+    } catch {
+      void job(); // 요청 밖(스크립트 등)에서 불렸을 때
+    }
+  }
 
-  return raw.map((a) => toClassified(a, stored.get(`${a.oid}-${a.aid}`) ?? classifyByKeyword(a)));
+  return {
+    items: raw.map((a) => toClassified(a, stored.get(`${a.oid}-${a.aid}`) ?? classifyByKeyword(a))),
+    complete: missing.length === 0,
+  };
 }
 
 /** 같은 인스턴스에서 같은 날짜를 짧게 재사용 (DB 왕복 줄이기) */
-const dayMemo = new Map<string, { at: number; value: Promise<ClassifiedArticle[]> }>();
+const dayMemo = new Map<string, { at: number; value: Promise<{ items: ClassifiedArticle[]; complete: boolean }> }>();
 
-function classifyDay(date: string): Promise<ClassifiedArticle[]> {
-  const ttl = date === kstDate() ? 5 * 60_000 : 60 * 60_000;
+async function classifyDay(date: string): Promise<ClassifiedArticle[]> {
   const hit = dayMemo.get(date);
-  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  if (hit) {
+    const { complete } = await hit.value.catch(() => ({ complete: false }));
+    // 분류가 덜 끝난 날은 30초 뒤 DB 에서 다시 읽는다
+    const ttl = !complete ? 30_000 : date === kstDate() ? 5 * 60_000 : 60 * 60_000;
+    if (Date.now() - hit.at < ttl) return (await hit.value).items;
+  }
   const value = classifyDayUncached(date).catch((err) => {
     dayMemo.delete(date);
     throw err;
   });
   dayMemo.set(date, { at: Date.now(), value });
-  return value;
+  return (await value).items;
 }
 
 function storyKey(story: string): string {
