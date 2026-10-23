@@ -1,3 +1,4 @@
+import { claudeFetch } from "@/lib/llmBudget";
 import { findTeam } from "@/lib/teams";
 import type { TodayFeedStatus } from "@/lib/kbo";
 
@@ -46,7 +47,7 @@ export async function generateTodayStatusMessageWithLlm(input: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 900);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await claudeFetch("status", ANTHROPIC_MODEL, {
       method: "POST",
       headers: {
         "content-type": "application/json",

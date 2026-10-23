@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTeamNews, NEWS_TAGS, pageTeamNews, type NewsTag } from "@/lib/news";
 import { TEAMS } from "@/lib/teams";
+import { llmUsageThisMonth } from "@/lib/llmBudget";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,14 @@ export const maxDuration = 120;
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
+  // ?debug=llm — 이번 달 Claude 사용량·예산 (금액만, 진단용)
+  if (searchParams.get("debug") === "llm") {
+    try {
+      return NextResponse.json({ ok: true, ...(await llmUsageThisMonth()) }, { headers: { "Cache-Control": "no-store" } });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    }
+  }
   const team = searchParams.get("team") ?? "";
   if (!TEAMS.some((t) => t.id === team)) {
     return NextResponse.json({ ok: false, error: "unknown_team" }, { status: 400 });

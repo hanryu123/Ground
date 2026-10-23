@@ -1,4 +1,5 @@
-import { unstable_cache } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { canSpendLlm, ensureLlmTables, recordLlmUsage } from "@/lib/llmBudget";
 import { TEAMS } from "@/lib/teams";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
@@ -7,17 +8,16 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  *
  *  - 네이버 뉴스 목록 API는 팀 필터가 동작하지 않아(팀 코드를 넣어도 같은 목록) 직접 분류한다.
  *    제목에 선수 이름만 나오는 기사가 많아 키워드 대신 LLM 분류를 쓴다.
- *  - 지난 날짜 분류 결과는 바뀌지 않으므로 하루 단위로 길게 캐시하고, 오늘만 30분마다 갱신한다.
+ *  - 분류 결과는 기사별로 DB 에 저장해 한 번만 분류한다. Claude 호출은 lib/llmBudget 예산 안에서만.
  */
 
 const NAVER_NEWS = "https://api-gw.sports.naver.com/news/articles/kbaseball";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
-const ANTHROPIC_MODEL = process.env.NEWS_LLM_MODEL ?? "claude-haiku-4-5";
+const ANTHROPIC_MODEL = process.env.NEWS_LLM_MODEL ?? "claude-haiku-5-5";
 const PAGE_SIZE = 100;
 const MAX_PAGES = 5;
-const BATCH_SIZE = 40;
-const CACHE_VERSION = "v1";
+const BATCH_SIZE = 50;
 
 export const NEWS_TAGS = ["FA", "트레이드", "외국인", "코칭스태프", "계약", "부상", "은퇴·방출"] as const;
 export type NewsTag = (typeof NEWS_TAGS)[number];
@@ -82,28 +82,27 @@ async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArti
 
 const TEAM_GUIDE = TEAMS.map((t) => `${t.id}=${t.name}`).join(", ");
 
-type LlmRow = { i: number; teams?: string[]; tag?: string | null; story?: string };
+type LlmRow = { i: number; teams: string[]; tag: string | null; story: string };
 
-/** 실패하면 null — 호출 측이 예외로 바꿔 실패 결과가 캐시되지 않게 한다. */
+/**
+ * 기사 묶음을 Claude 로 분류. 실패·예산 초과면 null.
+ * 비용을 줄이려고 제목만 보내고, 답은 JSON 대신 한 줄 형식("번호|구단들|태그|사건")으로 받는다.
+ */
 async function classifyBatch(batch: RawArticle[]): Promise<LlmRow[] | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey || !(await canSpendLlm("news"))) return null;
 
-  const lines = batch
-    .map((a, i) => `${i}\t${a.title}\t${(a.subContent ?? "").replace(/\s+/g, " ").slice(0, 140)}`)
-    .join("\n");
+  const lines = batch.map((a, i) => `${i}\t${a.title.replace(/\s+/g, " ")}`).join("\n");
+  const prompt = `KBO 야구 기사 제목 목록이다. 각 줄은 "번호\\t제목"이다.
+기사마다 한 줄씩 "번호|구단|태그|사건" 형식으로만 답해라. 다른 말은 쓰지 마라.
 
-  const prompt = `KBO 야구 기사 목록이다. 각 줄은 "번호\\t제목\\t본문 앞부분"이다.
-기사마다 아래를 판단해 JSON 배열로만 답해라. 설명은 쓰지 마라.
-
-- teams: 기사의 주인공 구단 id 배열. 구단: ${TEAM_GUIDE}
-  선수·감독 이름만 나와도 소속 구단을 넣는다. 트레이드처럼 두 구단이 걸리면 둘 다.
-  리그 전체 이야기(국가대표, 규정, 시상식 일반)거나 확실하지 않으면 [].
-- tag: ${NEWS_TAGS.join(", ")} 중 하나, 해당 없으면 null.
+- 구단: 기사의 주인공 구단 id, 여럿이면 쉼표로. 구단: ${TEAM_GUIDE}
+  선수·감독 이름만 나와도 소속 구단을 쓴다. 리그 전체 이야기거나 확실하지 않으면 비운다.
+- 태그: ${NEWS_TAGS.join(", ")} 중 하나, 해당 없으면 비운다.
   (외국인=외국인 선수 영입·재계약, 코칭스태프=감독·코치 선임/교체, 계약=FA 외 연봉·다년 계약)
-- story: 같은 사건을 다룬 기사끼리 같아지도록 쓴 짧은 키. "선수명 사건" 형태 (예: "강백호 FA 계약").
+- 사건: 같은 사건을 다룬 기사끼리 같아지도록 쓴 짧은 키, "선수명 사건" 형태.
 
-형식: [{"i":0,"teams":["kia"],"tag":null,"story":"김도영 만루홈런"}, ...]
+예: 0|kia|FA|김도영 FA 계약
 
 ${lines}`;
 
@@ -117,7 +116,9 @@ ${lines}`;
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 4000,
+        max_tokens: 3000,
+        // Haiku 5.5 는 기본으로 생각(thinking)을 켠다 — 단순 분류라 끄고 출력 토큰을 아낀다
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -125,12 +126,20 @@ ${lines}`;
       console.warn("[news] classify failed:", res.status);
       return null;
     }
-    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const json = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+      usage?: Parameters<typeof recordLlmUsage>[2];
+    };
+    void recordLlmUsage("news", ANTHROPIC_MODEL, json.usage);
     const text = json.content?.find((c) => c.type === "text")?.text ?? "";
-    const start = text.indexOf("[");
-    const end = text.lastIndexOf("]");
-    if (start < 0 || end <= start) return null;
-    return JSON.parse(text.slice(start, end + 1)) as LlmRow[];
+    const rows: LlmRow[] = [];
+    for (const line of text.split("\n")) {
+      const [idx, teams = "", tag = "", story = ""] = line.split("|").map((x) => x.trim());
+      const i = Number(idx);
+      if (!Number.isInteger(i) || i < 0 || i >= batch.length) continue;
+      rows.push({ i, teams: teams ? teams.split(",").map((t) => t.trim()) : [], tag: tag || null, story });
+    }
+    return rows.length > 0 ? rows : null;
   } catch (err) {
     console.warn("[news] classify error:", (err as Error).message);
     return null;
@@ -139,8 +148,9 @@ ${lines}`;
 
 const TEAM_IDS = new Set(TEAMS.map((t) => t.id));
 
-function toClassified(a: RawArticle, row?: LlmRow): ClassifiedArticle {
-  const tag = NEWS_TAGS.includes(row?.tag as NewsTag) ? (row!.tag as NewsTag) : null;
+type StoredClass = { teams: string[]; tag: NewsTag | null; story: string };
+
+function toClassified(a: RawArticle, c?: StoredClass): ClassifiedArticle {
   return {
     id: `${a.oid}-${a.aid}`,
     title: a.title,
@@ -148,9 +158,17 @@ function toClassified(a: RawArticle, row?: LlmRow): ClassifiedArticle {
     thumbnail: a.thumbnail ?? null,
     url: `https://m.sports.naver.com/kbaseball/article/${a.oid}/${a.aid}`,
     dateTime: a.dateTime,
-    teams: (row?.teams ?? []).filter((t) => TEAM_IDS.has(t)),
-    tag,
-    story: (row?.story ?? a.title).replace(/\s+/g, " ").trim(),
+    teams: c?.teams ?? [],
+    tag: c?.tag ?? null,
+    story: (c?.story || a.title).replace(/\s+/g, " ").trim(),
+  };
+}
+
+function normalizeRow(row: LlmRow): StoredClass {
+  return {
+    teams: row.teams.filter((t) => TEAM_IDS.has(t)),
+    tag: NEWS_TAGS.includes(row.tag as NewsTag) ? (row.tag as NewsTag) : null,
+    story: row.story,
   };
 }
 
@@ -180,50 +198,103 @@ const TAG_KEYWORDS: Array<[NewsTag, RegExp]> = [
   ["계약", /계약|연봉/],
 ];
 
-function classifyByKeyword(a: RawArticle): ClassifiedArticle {
-  return toClassified(a, {
-    i: 0,
+function classifyByKeyword(a: RawArticle): StoredClass {
+  return {
     teams: Object.entries(TEAM_KEYWORDS)
       .filter(([, re]) => re.test(a.title))
       .map(([id]) => id),
     tag: TAG_KEYWORDS.find(([, re]) => re.test(a.title))?.[0] ?? null,
-  });
+    story: a.title,
+  };
 }
 
-/**
- * 기사 묶음 하나를 분류. 묶음에 든 기사 id 조합으로 캐시하므로 같은 기사를 두 번 분류하지 않는다.
- * 실패하면 예외 → 캐시되지 않고, 이번 요청만 키워드 분류로 대체한다.
- */
-function classifyBatchCached(batch: RawArticle[]): Promise<ClassifiedArticle[]> {
-  const ids = batch.map((a) => `${a.oid}-${a.aid}`).join(",");
-  return unstable_cache(
-    async () => {
-      const rows = await classifyBatch(batch);
-      if (!rows) throw new Error("news classification failed");
-      const byIndex = new Map(rows.map((r) => [r.i, r]));
-      return batch.map((a, i) => toClassified(a, byIndex.get(i)));
-    },
-    ["team-news-batch", CACHE_VERSION, ids],
-    { revalidate: 14 * 86_400 }
-  )().catch((err) => {
-    console.warn("[news] LLM 분류 실패, 키워드로 대체:", (err as Error).message);
-    return batch.map(classifyByKeyword);
-  });
-}
-
-/**
- * 하루치 기사를 오래된 순으로 BATCH_SIZE씩 묶어 분류한다.
- * 오래된 순으로 묶어야 새 기사가 들어와도 앞쪽 묶음이 그대로라 캐시가 유지되고, 마지막 묶음만 다시 분류된다.
- */
-async function classifyDay(date: string): Promise<ClassifiedArticle[]> {
-  const raw = await fetchDayArticles(date, date === kstDate());
-  const sorted = [...raw].sort((x, y) =>
-    x.dateTime === y.dateTime ? x.aid.localeCompare(y.aid) : x.dateTime.localeCompare(y.dateTime)
+async function loadStored(ids: string[]): Promise<Map<string, StoredClass>> {
+  const out = new Map<string, StoredClass>();
+  if (ids.length === 0) return out;
+  await ensureLlmTables();
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; teams: string[]; tag: string | null; story: string }>>(
+    `SELECT "id", "teams", "tag", "story" FROM "NewsClassification" WHERE "id" = ANY($1::text[])`,
+    ids
   );
+  for (const r of rows) out.set(r.id, { teams: r.teams, tag: (r.tag as NewsTag | null) ?? null, story: r.story });
+  return out;
+}
+
+async function storeClassified(day: string, entries: Array<[string, StoredClass]>): Promise<void> {
+  if (entries.length === 0) return;
+  const params: unknown[] = [];
+  const values = entries.map(([id, c], k) => {
+    params.push(id, day, c.teams, c.tag, c.story);
+    const b = k * 5;
+    return `($${b + 1}, $${b + 2}, $${b + 3}::text[], $${b + 4}, $${b + 5})`;
+  });
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "NewsClassification" ("id", "day", "teams", "tag", "story") VALUES ${values.join(", ")}
+     ON CONFLICT ("id") DO NOTHING`,
+    ...params
+  );
+}
+
+// 같은 묶음을 동시에 여러 번 분류하지 않게 (여러 팀·요청이 같은 날짜를 동시에 볼 때)
+const inFlight = new Map<string, Promise<Map<string, StoredClass> | null>>();
+
+function classifyAndStore(day: string, batch: RawArticle[]): Promise<Map<string, StoredClass> | null> {
+  const key = batch.map((a) => `${a.oid}-${a.aid}`).join(",");
+  const running = inFlight.get(key);
+  if (running) return running;
+  const job = (async () => {
+    const rows = await classifyBatch(batch);
+    if (!rows) return null;
+    const byIndex = new Map(rows.map((r) => [r.i, normalizeRow(r)]));
+    const entries: Array<[string, StoredClass]> = batch.map((a, i) => [
+      `${a.oid}-${a.aid}`,
+      byIndex.get(i) ?? { teams: [], tag: null, story: a.title },
+    ]);
+    await storeClassified(day, entries).catch((err) =>
+      console.warn("[news] store failed:", (err as Error).message)
+    );
+    return new Map(entries);
+  })().finally(() => inFlight.delete(key));
+  inFlight.set(key, job);
+  return job;
+}
+
+/**
+ * 하루치 기사 분류. 한 번 분류한 기사는 DB(NewsClassification)에 남아 배포·리전과 상관없이 다시 분류하지 않는다.
+ * 2026-10-21~22 에는 캐시 키에 함수 코드가 들어가는 탓에 배포마다 일주일 치를 다시 분류해 크레딧을 다 썼다.
+ * 새 기사만 BATCH_SIZE 씩 Claude 로 분류하고, 예산이 없거나 실패하면 키워드 분류로 보여 준다 (저장하지 않아 나중에 다시 시도).
+ */
+async function classifyDayUncached(date: string): Promise<ClassifiedArticle[]> {
+  const raw = await fetchDayArticles(date, date === kstDate());
+  const ids = raw.map((a) => `${a.oid}-${a.aid}`);
+  const stored = await loadStored(ids).catch((err) => {
+    console.warn("[news] load failed:", (err as Error).message);
+    return null;
+  });
+  if (!stored) return raw.map((a) => toClassified(a, classifyByKeyword(a)));
+
+  const missing = raw.filter((a) => !stored.has(`${a.oid}-${a.aid}`));
   const batches: RawArticle[][] = [];
-  for (let i = 0; i < sorted.length; i += BATCH_SIZE) batches.push(sorted.slice(i, i + BATCH_SIZE));
-  const results = await mapWithConcurrency(batches, 4, classifyBatchCached);
-  return results.flat();
+  for (let i = 0; i < missing.length; i += BATCH_SIZE) batches.push(missing.slice(i, i + BATCH_SIZE));
+  const results = await mapWithConcurrency(batches, 2, (b) => classifyAndStore(date, b));
+  for (const r of results) r?.forEach((c, id) => stored.set(id, c));
+
+  return raw.map((a) => toClassified(a, stored.get(`${a.oid}-${a.aid}`) ?? classifyByKeyword(a)));
+}
+
+/** 같은 인스턴스에서 같은 날짜를 짧게 재사용 (DB 왕복 줄이기) */
+const dayMemo = new Map<string, { at: number; value: Promise<ClassifiedArticle[]> }>();
+
+function classifyDay(date: string): Promise<ClassifiedArticle[]> {
+  const ttl = date === kstDate() ? 5 * 60_000 : 60 * 60_000;
+  const hit = dayMemo.get(date);
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  const value = classifyDayUncached(date).catch((err) => {
+    dayMemo.delete(date);
+    throw err;
+  });
+  dayMemo.set(date, { at: Date.now(), value });
+  return value;
 }
 
 function storyKey(story: string): string {

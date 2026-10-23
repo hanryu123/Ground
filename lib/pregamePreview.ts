@@ -1,3 +1,4 @@
+import { claudeFetch } from "@/lib/llmBudget";
 import { findTeam } from "@/lib/teams";
 import type { LiveGame } from "@/lib/kbo";
 import {
@@ -407,7 +408,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(ANTHROPIC_URL, {
+      const res = await claudeFetch("preview", ANTHROPIC_MODEL, {
         method: "POST",
         headers: {
           "content-type": "application/json",

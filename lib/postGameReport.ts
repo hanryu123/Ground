@@ -1,3 +1,4 @@
+import { claudeFetch } from "@/lib/llmBudget";
 import { findTeam, TEAMS } from "@/lib/teams";
 import { fetchTeamMomentum, type TeamMomentum } from "@/lib/teamMomentum";
 import {
@@ -1255,7 +1256,7 @@ ${facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(ANTHROPIC_URL, {
+      const res = await claudeFetch("postgame", ANTHROPIC_MODEL, {
         method: "POST",
         headers: {
           "content-type": "application/json",

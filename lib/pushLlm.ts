@@ -1,3 +1,4 @@
+import { claudeFetch } from "@/lib/llmBudget";
 import { TEAMS, findTeam } from "@/lib/teams";
 import {
   buildCopyStyleBrief,
@@ -114,7 +115,8 @@ type GenerateScorePushOptions = {
 };
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-haiku-4-5";
+// 2026-10-23 Haiku 4.5 → 5.5 (단가 1/10). 5.5 는 기본으로 생각을 켜고 temperature 기본값 외엔 400 이라 둘 다 손본다.
+const ANTHROPIC_MODEL = "claude-haiku-5-5";
 
 function compactText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -1538,7 +1540,7 @@ async function tryLiveEventLlmCall(apiKey: string, input: GenerateLiveEventInput
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const nonce = Date.now() % 9999 + attempt * 1000;
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await claudeFetch("push", ANTHROPIC_MODEL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -1548,7 +1550,7 @@ async function tryLiveEventLlmCall(apiKey: string, input: GenerateLiveEventInput
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
         max_tokens: 80,
-        temperature: 1.0,
+        thinking: { type: "disabled" },
         system: buildLiveEventSystemPrompt(input),
         messages: [{ role: "user", content: `${buildLiveEventUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n(seed:${nonce})` }],
       }),
@@ -1655,7 +1657,7 @@ export async function generateScorePushCopyWithOptions(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const nonce = Date.now() % 9999 + attempt * 1000;
     try {
-      const res = await fetch(ANTHROPIC_URL, {
+      const res = await claudeFetch("push", ANTHROPIC_MODEL, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -1665,7 +1667,7 @@ export async function generateScorePushCopyWithOptions(
         body: JSON.stringify({
           model: ANTHROPIC_MODEL,
           max_tokens: options.maxTokens ?? 80,
-          temperature: options.temperature ?? 1.0,
+          thinking: { type: "disabled" },
           system: buildSystemPrompt(input, input.recentBodies ?? []),
           messages: [{ role: "user", content: `${buildUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n\n(variation_seed: ${nonce})` }],
         }),
@@ -1840,7 +1842,7 @@ export async function generateClutchPushCopy(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const nonce = Date.now() % 9999 + attempt * 1000;
     try {
-      const res = await fetch(ANTHROPIC_URL, {
+      const res = await claudeFetch("push", ANTHROPIC_MODEL, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -1850,7 +1852,7 @@ export async function generateClutchPushCopy(
         body: JSON.stringify({
           model: ANTHROPIC_MODEL,
           max_tokens: 100,
-          temperature: 1.0,
+          thinking: { type: "disabled" },
           system: buildClutchSystemPrompt(input),
           messages: [{ role: "user", content: `${buildClutchUserPrompt(input)}${postseasonPromptBlock(input.postseasonContext)}\n(seed:${nonce})` }],
         }),
