@@ -18,7 +18,7 @@ import {
 } from "@/lib/games";
 import { STANDINGS, type StandingRow } from "@/config/standings";
 import { NAVER_BASE } from "@/lib/naverApi";
-import { fetchKboOfficialRange, type KboOfficialGame } from "@/lib/kboOfficial";
+import { fetchKboOfficialRange, fetchKboOfficialSeason, type KboOfficialGame } from "@/lib/kboOfficial";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
@@ -1028,7 +1028,20 @@ export function seasonOpenerForYear(year: number): string {
  * 시즌 전체(1/1~12/31) 일정 → size=1000 한 방으로 가져옴 (KBO 시즌 ≈ 720경기).
  * 5분 캐시.
  */
+/** 시즌 전체 경기 — KBO 공식 월별 일정표가 1순위, 실패하면 네이버 */
 export async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
+  try {
+    const official = await fetchKboOfficialSeason(year);
+    return official
+      .map((g) => adaptNaverGame(kboOfficialToNaver(g), `${year}-01-01`))
+      .filter((g): g is LiveGame => Boolean(g));
+  } catch (err) {
+    console.warn(`[kbo] official season ${year} failed, trying naver:`, (err as Error).message);
+  }
+  return fetchNaverSeasonGames(year);
+}
+
+async function fetchNaverSeasonGames(year: number): Promise<LiveGame[]> {
   const url =
     `${NAVER_BASE}/schedule/games` +
     `?fields=basic,statusInfo` +
@@ -1041,6 +1054,7 @@ export async function fetchKboSeasonGames(year: number): Promise<LiveGame[]> {
       referer: "https://m.sports.naver.com/",
     },
     next: { revalidate: 300 },
+    signal: AbortSignal.timeout(4000),
   });
   if (!res.ok) throw new Error(`naver season HTTP ${res.status}`);
   const json = (await res.json()) as {

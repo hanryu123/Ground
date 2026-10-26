@@ -114,6 +114,7 @@ async function fetchGameDetail(gameId: string, past: boolean) {
       },
       // 지난 경기는 바뀔 일이 없어 길게 캐시
       next: { revalidate: past ? 3600 : 60 },
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
     return ((await res.json()) as NaverGameDetail)?.result?.game ?? null;

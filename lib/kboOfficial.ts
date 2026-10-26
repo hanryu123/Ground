@@ -181,3 +181,119 @@ export async function fetchKboOfficialRange(
   const days = await Promise.all(dates.map((date) => fetchKboOfficialDay(date, options)));
   return days.flat();
 }
+
+// ────────────────────────────────────────────────────────────────────
+// 시즌 일정 — 월별 일정표(GetScheduleList). 결과·취소·포스트시즌 차전까지 나온다.
+// ────────────────────────────────────────────────────────────────────
+
+const KBO_SCHEDULE_URL = "https://www.koreabaseball.com/ws/Schedule.asmx/GetScheduleList";
+/** 정규시즌 계열 / 포스트시즌 계열 */
+const SCHEDULE_SERIES = ["0,9,6", "3,4,5,7"] as const;
+
+type ScheduleCell = { Text?: string | null; Class?: string | null };
+
+function stripTags(html: string | null | undefined): string {
+  return (html ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** "PO 1차전" → 5 같은 포스트시즌 SR_ID (네이버 경기 ID 앞자리) */
+function postseasonSeriesId(remark: string): number {
+  if (/준\s*PO|준플레이오프/.test(remark)) return 3;
+  if (/WC|와일드카드/.test(remark)) return 4;
+  if (/KS|한국시리즈/.test(remark)) return 7;
+  if (/PO|플레이오프/.test(remark)) return 5;
+  return 0;
+}
+
+function parseScheduleRows(
+  rows: Array<{ row?: ScheduleCell[] }>,
+  year: number,
+  postseason: boolean
+): KboOfficialGame[] {
+  const out: KboOfficialGame[] = [];
+  let currentDate: string | null = null;
+  for (const { row } of rows) {
+    if (!row) continue;
+    const dayCell = row.find((c) => c.Class === "day");
+    const dayMatch = dayCell ? /(\d{2})\.(\d{2})/.exec(stripTags(dayCell.Text)) : null;
+    if (dayMatch) currentDate = `${year}-${dayMatch[1]}-${dayMatch[2]}`;
+    const playIdx = row.findIndex((c) => c.Class === "play");
+    if (playIdx < 0 || !currentDate) continue;
+    const kboGameId = /gameId=(\w{13})/.exec(JSON.stringify(row))?.[1];
+    if (!kboGameId) continue;
+    const time = /(\d{2}:\d{2})/.exec(stripTags(row.find((c) => c.Class === "time")?.Text))?.[1] ?? "00:00";
+    const stadium = stripTags(row[playIdx + 5]?.Text);
+    const remark = stripTags(row[playIdx + 6]?.Text);
+    const scores = [...(row[playIdx]?.Text ?? "").matchAll(/<span class="(?:win|lose|same)">(\d+)<\/span>/g)].map((m) =>
+      Number(m[1])
+    );
+    const cancelled = /취소/.test(remark);
+    const finished = !cancelled && scores.length === 2;
+    const seriesId = postseason ? postseasonSeriesId(remark) || 5 : 0;
+    out.push({
+      gameId: kboToNaverGameId(kboGameId, seriesId, year),
+      date: currentDate,
+      time,
+      awayTeamCode: kboGameId.slice(8, 10),
+      homeTeamCode: kboGameId.slice(10, 12),
+      stadium,
+      statusCode: cancelled ? "CANCEL" : finished ? "RESULT" : "BEFORE",
+      cancel: cancelled,
+      statusInfo: cancelled ? remark : finished ? "경기종료" : "경기전",
+      inning: null,
+      inningHalf: null,
+      awayScore: finished ? scores[0]! : 0,
+      homeScore: finished ? scores[1]! : 0,
+      homeStarterName: null,
+      awayStarterName: null,
+      winningPitcherName: null,
+      losingPitcherName: null,
+      savePitcherName: null,
+    });
+  }
+  return out;
+}
+
+async function fetchScheduleMonth(year: number, month: number, series: string): Promise<KboOfficialGame[]> {
+  const res = await fetch(KBO_SCHEDULE_URL, {
+    method: "POST",
+    headers: KBO_HEADERS,
+    body: `leId=1&srIdList=${series}&seasonId=${year}&gameMonth=${String(month).padStart(2, "0")}&teamId=`,
+    cache: "no-store",
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`kbo schedule HTTP ${res.status}`);
+  const json = (await res.json()) as { rows?: Array<{ row?: ScheduleCell[] }> };
+  return parseScheduleRows(json.rows ?? [], year, series !== SCHEDULE_SERIES[0]);
+}
+
+const seasonMemo = new Map<number, { at: number; value: Promise<KboOfficialGame[]> }>();
+
+/**
+ * 한 시즌 전체 일정 (3~11월, 정규시즌 + 포스트시즌). 같은 인스턴스에서 5분 재사용.
+ * 오늘 경기는 일정표에 진행 중 점수가 끝난 경기처럼 보일 수 있어 하루치 실시간 목록으로 덮어쓴다.
+ */
+export function fetchKboOfficialSeason(year: number): Promise<KboOfficialGame[]> {
+  const hit = seasonMemo.get(year);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.value;
+  const value = (async () => {
+    const jobs: Array<Promise<KboOfficialGame[]>> = [];
+    for (let month = 3; month <= 11; month++) {
+      for (const series of SCHEDULE_SERIES) jobs.push(fetchScheduleMonth(year, month, series));
+    }
+    const games = (await Promise.all(jobs)).flat();
+    if (games.length === 0) throw new Error(`kbo schedule empty: ${year}`);
+    const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    if (games.some((g) => g.date === today)) {
+      const live = await fetchKboOfficialDay(today).catch(() => null);
+      if (live) {
+        const byId = new Map(live.map((g) => [g.gameId, g]));
+        return games.map((g) => byId.get(g.gameId) ?? g);
+      }
+    }
+    return games;
+  })();
+  seasonMemo.set(year, { at: Date.now(), value });
+  value.catch(() => seasonMemo.delete(year));
+  return value;
+}

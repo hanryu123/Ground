@@ -71,6 +71,7 @@ async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArti
       {
         headers: { "User-Agent": UA, Referer: "https://m.sports.naver.com/" },
         next: { revalidate: isToday ? 1800 : 86_400 },
+        signal: AbortSignal.timeout(5000),
       }
     );
     if (!res.ok) break;
