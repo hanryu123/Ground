@@ -9,9 +9,10 @@ import SchedulePageClient from "./SchedulePageClient";
  *  ── 렌더 전략 ──
  *   - 첫 화면은 오늘이 속한 달 일정 + 오늘 경기 상세를 SSR 로 박아 보낸다 (깜빡임 없음).
  *   - 다른 날짜·달은 클라이언트에서 /api/kbo/games 로 그때그때 가져온다.
- *   - 60초 ISR.
+ *   - 요청마다 렌더 (네이버 응답은 fetch 캐시 60초).
+ *     빌드 서버(미국)에서는 네이버 API 가 막혀 미리 렌더하다 빌드가 실패해서 정적 생성을 끈다 (lib/naverApi.ts).
  */
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function SchedulePage() {
   const today = todayKstDate();
