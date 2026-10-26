@@ -297,3 +297,68 @@ export function fetchKboOfficialSeason(year: number): Promise<KboOfficialGame[]>
   value.catch(() => seasonMemo.delete(year));
   return value;
 }
+
+// ────────────────────────────────────────────────────────────────────
+// 선발 라인업 — 게임센터 라인업 분석(GetLineUpAnalysis). 발표 전엔 LINEUP_CK:false
+// ────────────────────────────────────────────────────────────────────
+
+const KBO_LINEUP_URL = "https://www.koreabaseball.com/ws/Schedule.asmx/GetLineUpAnalysis";
+
+export type KboLineupItem = { order: string; name: string; position: string };
+
+/** 네이버 경기 ID → KBO 경기 ID·시리즈·시즌 */
+export function naverToKboGameId(naverGameId: string): { kboGameId: string; seriesId: number; season: number } | null {
+  if (!/^\d{8}[A-Z]{4}\d\d{4}$/.test(naverGameId)) return null;
+  const season = Number(naverGameId.slice(-4));
+  const prefix = naverGameId.slice(0, 4);
+  const seriesId = prefix === String(season) ? 0 : Number(prefix[0]);
+  return { kboGameId: `${season}${naverGameId.slice(4, 13)}`, seriesId, season };
+}
+
+function parseLineupTable(raw: unknown): KboLineupItem[] {
+  const text = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof text !== "string") return [];
+  const table = JSON.parse(text) as { rows?: Array<{ row?: ScheduleCell[] }> };
+  const out: KboLineupItem[] = [];
+  for (const { row } of table.rows ?? []) {
+    const [order, position, name] = (row ?? []).map((c) => stripTags(c.Text));
+    if (order && /^\d$/.test(order) && name && position) out.push({ order, name, position });
+  }
+  return out;
+}
+
+/** 홈·원정 선발 라인업 (타자 1~9번 + 선발투수). 발표 전이면 둘 다 null */
+export async function fetchKboOfficialLineups(
+  naverGameId: string
+): Promise<{ homeLineup: KboLineupItem[] | null; awayLineup: KboLineupItem[] | null }> {
+  const ids = naverToKboGameId(naverGameId);
+  if (!ids) throw new Error(`bad game id: ${naverGameId}`);
+  const res = await fetch(KBO_LINEUP_URL, {
+    method: "POST",
+    headers: KBO_HEADERS,
+    body: `leId=1&srId=${ids.seriesId}&seasonId=${ids.season}&gameId=${ids.kboGameId}`,
+    cache: "no-store",
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!res.ok) throw new Error(`kbo lineup HTTP ${res.status}`);
+  const blocks = (await res.json()) as unknown[];
+  const announced = (blocks[0] as Array<{ LINEUP_CK?: boolean }> | undefined)?.[0]?.LINEUP_CK === true;
+  if (!announced) return { homeLineup: null, awayLineup: null };
+  // blocks[1]·[3] = 홈, blocks[2]·[4] = 원정 (KBO 응답 순서)
+  const firstTeam = (blocks[1] as Array<{ T_ID?: string }> | undefined)?.[0]?.T_ID;
+  const homeCode = ids.kboGameId.slice(10, 12);
+  const [homeTable, awayTable] = firstTeam === homeCode ? [blocks[3], blocks[4]] : [blocks[4], blocks[3]];
+  const home = parseLineupTable(homeTable);
+  const away = parseLineupTable(awayTable);
+
+  // 선발투수는 경기 목록에서
+  const date = `${ids.season}-${ids.kboGameId.slice(4, 6)}-${ids.kboGameId.slice(6, 8)}`;
+  const game = (await fetchKboOfficialDay(date).catch(() => [])).find((g) => g.gameId === naverGameId);
+  if (game?.homeStarterName) home.push({ order: "P", name: game.homeStarterName, position: "선발투수" });
+  if (game?.awayStarterName) away.push({ order: "P", name: game.awayStarterName, position: "선발투수" });
+
+  return {
+    homeLineup: home.filter((i) => i.order !== "P").length >= 9 ? home : null,
+    awayLineup: away.filter((i) => i.order !== "P").length >= 9 ? away : null,
+  };
+}

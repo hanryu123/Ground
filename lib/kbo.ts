@@ -18,7 +18,7 @@ import {
 } from "@/lib/games";
 import { STANDINGS, type StandingRow } from "@/config/standings";
 import { NAVER_BASE } from "@/lib/naverApi";
-import { fetchKboOfficialRange, fetchKboOfficialSeason, type KboOfficialGame } from "@/lib/kboOfficial";
+import { fetchKboOfficialLineups, fetchKboOfficialRange, fetchKboOfficialSeason, type KboOfficialGame } from "@/lib/kboOfficial";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
@@ -568,6 +568,13 @@ async function fetchGameLineups(
   gameId: string,
   cacheMode: KboFetchCacheMode = "cached"
 ): Promise<{ homeLineup: LineupItem[] | null; awayLineup: LineupItem[] | null }> {
+  // KBO 공식 게임센터가 1순위 (네이버 API 가 서버 요청을 막는 날이 있다 — lib/kboOfficial.ts)
+  try {
+    const official = await fetchKboOfficialLineups(gameId);
+    if (official.homeLineup || official.awayLineup) return official;
+  } catch {
+    // 아래 네이버로
+  }
   try {
     const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/preview`, naverFetchOptions(cacheMode));
     if (res.ok) {
