@@ -13,7 +13,7 @@ const displaySerif = Cormorant_Garamond({
 
 const APP_STORE_ID = "6776453107";
 const APP_STORE_URL = `https://apps.apple.com/kr/app/id${APP_STORE_ID}`;
-const CONTACT_EMAIL = "ground.admiin@gmail.com";
+const CONTACT_EMAIL = "ground.admin@gmail.com";
 
 export const metadata: Metadata = {
   title: "GROUND — 내 팀만을 위한 편파 야구 알림",

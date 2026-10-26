@@ -8,7 +8,7 @@ import { useMyTeam } from "@/lib/useMyTeam";
 import { useStandings } from "@/lib/useStandings";
 
 const ease = [0.22, 1, 0.36, 1] as const;
-const CONTACT_EMAIL = "ground.admiin@gmail.com";
+const CONTACT_EMAIL = "ground.admin@gmail.com";
 
 const MAIL_TO = (() => {
   const subject = encodeURIComponent("[GROUND 피드백] 야구 찐팬의 한마디");
