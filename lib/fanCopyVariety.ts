@@ -51,6 +51,8 @@ type PregameFallbackInput = {
   momentumSummary: string;
   streakLabel?: string | null;
   lastGameLine?: string | null;
+  /** 포스트시즌 경기 — 정규시즌식 연승·직전 경기 문장 대신 시리즈 문장을 쓴다 */
+  postseason?: boolean;
 };
 
 type LiveFallbackInput = {
@@ -288,10 +290,10 @@ function buildLastGameMood(line: string): string {
   const clean = compact(line).replace(/^\d{4}-\d{2}-\d{2}\s+/, "");
   const result = clean.match(/\s([승패무])$/)?.[1];
   const score = clean.replace(/\s[승패무]$/, "");
-  if (result === "승") return `${score}, 좋은 기억은 짧게 챙기고 더 욕심낼 밤입니다.`;
-  if (result === "패") return `${score}, 팬들 속에 남은 찝찝함부터 지워야 할 밤입니다.`;
-  if (result === "무") return `${score}, 웃기도 찡그리기도 애매했던 밤입니다.`;
-  return `${clean} 여운이 아직 남아 있습니다.`;
+  if (result === "승") return `지난 경기 ${score} 승리, 오늘도 이어 가 봅시다.`;
+  if (result === "패") return `지난 경기 ${score} 패배는 잊고 오늘 새로 시작합니다.`;
+  if (result === "무") return `지난 경기 ${score} 무승부, 오늘은 승부를 내야죠.`;
+  return `지난 경기 ${clean}, 오늘은 새 경기입니다.`;
 }
 
 export function buildCopyStyleBrief(input: {
@@ -723,87 +725,68 @@ export function buildVariedPostgameFallback(input: PostgameFallbackInput): { hea
   };
 }
 
+/**
+ * 경기 전 프리뷰 대체 문구 (Claude 가 실패하거나 거절됐을 때).
+ * 2026-10-26 "4연승 숫자가 괜히 붙은 게 아닙니다. KIA는 오늘도 먼저 밀 명분이 충분합니다" 같은 꼬인 문장이 나가서,
+ * 비유·말장난 없이 사실 + 짧은 응원 한마디로 다시 썼다. 데이터에 없는 사실(상대 전적, 부상 등)은 쓰지 않는다.
+ */
 export function buildVariedPregameFallback(input: PregameFallbackInput): { title: string; lines: string[] } {
   const seed = `${input.seed}:${input.team}:${input.opp}:${input.starter ?? ""}`;
   const starterSubject = input.starter ? withSubjectParticle(input.starter) : null;
-  const teamSubject = withSubjectParticle(input.team);
-  const teamTopic = withTopicParticle(input.team);
-  const oppSubject = withSubjectParticle(input.opp);
-  const streakTopic = input.streakLabel ? withTopicParticle(input.streakLabel) : null;
   const title = pickOffset(seed, [
-    `🔥 ${input.team} 오늘 말 나옵니다`,
-    `🎙️ ${input.opp}전 한 장면 대기`,
-    `⚾ ${input.team} 팬심 집합`,
-    `🏟️ ${input.team} 쪽 소리부터`,
-    `📌 ${input.opp}전 체크 포인트`,
-    `🎧 ${input.team} 경기 전 호출`,
-    `🔥 오늘 ${input.team} 각입니다`,
-    `⚾ ${input.opp}전 그냥 못 넘깁니다`,
-    `🧢 ${input.team} 팬들 모이세요`,
-    `🥁 ${input.opp}전 북소리 체크`,
-    `📡 ${input.team} 쪽 신호 옵니다`,
-    `🎬 ${input.opp}전 첫 컷 대기`,
+    `⚾ 오늘 ${input.opp}전 미리보기`,
+    `🔥 ${input.team}, 곧 ${input.opp}전 시작`,
+    `📌 ${input.opp}전 관전 포인트`,
+    `⚾ ${input.team} vs ${input.opp}, 곧 플레이볼`,
+    `🎙️ 경기 전 ${input.team} 프리뷰`,
+    `📣 ${input.team} 팬들, 곧 시작합니다`,
   ], "pv-title");
   const starterLine = input.starter
     ? pickOffset(seed, [
-        `선발 ${input.starter}, 오늘은 구속 숫자보다 ${input.opp} 타자 반응으로 답을 받아야 합니다.`,
-        `${starterSubject} 첫 헛스윙 하나만 꺼내도 ${input.team} 팬들 채팅창 온도가 달라집니다.`,
-        `마운드 위 ${input.starter}에게 필요한 건 거창한 서사가 아니라 낮게 깔리는 첫 장면입니다.`,
-        `${input.starter} 공 끝에 ${input.opp} 방망이가 늦으면, 시작부터 ${input.team} 쪽 소리가 커집니다.`,
-        `오늘 ${input.starter} 이름표는 예고편이 아닙니다. 초반 타석 반응으로 바로 검증받습니다.`,
-        `선발 ${input.starter}가 카운트 싸움을 빨리 유리하게 만들면 ${input.team} 응원은 훨씬 편해집니다.`,
-        `오늘 ${input.starter}의 숙제는 간단합니다. ${input.opp} 중심타선 앞에 복잡한 생각을 심는 겁니다.`,
-        `타자 눈높이를 흔드는 공 하나, ${input.starter}에게는 그 장면이 출발점입니다.`,
-        `${starterSubject} 낮은 존을 먼저 열면 ${input.opp} 타선 플랜도 길게 꼬입니다.`,
-        `오늘 ${input.starter}에게 필요한 건 과한 영웅담보다 ${input.opp} 배트 타이밍을 늦추는 공입니다.`,
+        `오늘 ${input.team} 선발은 ${input.starter}입니다. 초반 이닝을 얼마나 깔끔하게 막느냐가 첫 포인트예요.`,
+        `${starterSubject} 5회까지 버텨 주면 ${input.team} 불펜 운영이 훨씬 편해집니다.`,
+        `선발 ${input.starter}, ${input.opp} 상위 타선을 처음 만나는 1회가 중요합니다.`,
+        `마운드는 ${input.starter}에게 맡깁니다. 볼넷만 줄여도 경기가 한결 편해집니다.`,
       ], "pv-starter")
-    : `${input.team} 마운드는 오늘 첫 좋은 카운트부터 팬들 어깨를 펴게 만들어야 합니다.`;
+    : `${input.team} 선발은 아직 발표 전입니다. 발표되면 앱에서 바로 확인할 수 있어요.`;
   const momentumLine = (() => {
+    if (input.postseason) {
+      return pickOffset(seed, [
+        `가을야구는 한 경기 한 경기가 결승입니다. ${input.team}, 오늘도 잡고 갑시다.`,
+        `포스트시즌은 한 점이 무겁습니다. ${input.team}, 오늘도 끝까지 갑시다.`,
+        `이번 시리즈, 오늘 경기가 흐름을 정합니다. ${input.team} 응원 시작합니다.`,
+      ], "pv-postseason");
+    }
     if (input.streakLabel && /연승/.test(input.streakLabel)) {
       return pickOffset(seed, [
-        `${input.team} ${input.streakLabel}, 팬들 표정이 조심스럽게 건방져질 타이밍입니다.`,
-        `${input.streakLabel} 숫자가 괜히 붙은 게 아닙니다. ${teamTopic} 오늘도 먼저 밀 명분이 충분합니다.`,
-        `요즘 ${input.team} 알림은 열어볼 맛이 있습니다. ${input.streakLabel} 옆에 하나 더 붙일 시간입니다.`,
+        `${input.team} 지금 ${input.streakLabel} 중입니다. 오늘 하나 더 늘려 봅시다.`,
+        `요즘 ${input.team} 경기 보는 맛이 있습니다. ${input.streakLabel}, 오늘도 이어 갑시다.`,
       ], "pv-streak-win");
     }
     if (input.streakLabel && /연패/.test(input.streakLabel)) {
       return pickOffset(seed, [
-        `${input.team} ${input.streakLabel}, 긴말보다 선취점 하나가 제일 큰 사과문입니다.`,
-        `${streakTopic} 더 길어지면 밈이 됩니다. ${input.team} 팬들은 오늘 그 농담을 끝내고 싶습니다.`,
-        `${input.team} 팬심은 요 며칠 오래 끓었습니다. 오늘은 좋은 타구 하나부터 숨통을 틔워야죠.`,
+        `${input.team} 지금 ${input.streakLabel} 중입니다. 오늘은 먼저 점수를 내고 분위기를 바꿨으면 합니다.`,
+        `${input.streakLabel}, 이제 끊을 때가 됐습니다. 오늘 ${input.opp}전에서 끊어 봅시다.`,
       ], "pv-streak-loss");
     }
     if (input.lastGameLine) {
-      return `${buildLastGameMood(input.lastGameLine)} ${teamTopic} 오늘 첫 찬스부터 말투를 바꿔야죠.`;
+      return buildLastGameMood(input.lastGameLine);
     }
-    return `${input.team} 최근 메모는 ${input.momentumSummary}입니다. 오늘은 숫자보다 먼저 장면을 가져와야죠.`;
+    return `오늘 ${input.team}의 상대는 ${input.opp}입니다. 첫 점수를 누가 먼저 내느냐부터 보겠습니다.`;
   })();
   const matchupLine = pickOffset(seed, [
-    `${input.opp} 상대로는 큰소리보다 작은 빈틈을 먼저 잡는 쪽이 재밌어집니다.`,
-    `${input.opp} 이름값에 눌릴 경기 아닙니다. ${input.team} 쪽 한 방이 먼저 나오면 말투가 바뀝니다.`,
-    `${input.opp} 벤치가 계산기 꺼내게 만들 장면, 오늘 초반에 하나면 충분합니다.`,
-    `${input.opp}전 알림은 밍밍하면 안 됩니다. 팬들 손가락이 멈출 이유를 만들어야죠.`,
-    `${input.opp} 이름만 떠도 예민해지는 팬심, 오늘은 그 촉까지 전력입니다.`,
-    `${input.opp}전은 한 번 밀리면 말이 길어집니다. ${teamTopic} 먼저 짧고 세게 보여줘야죠.`,
-    `${oppSubject} 편하게 스윙하게 두면 손해입니다. ${teamTopic} 초반부터 귀찮게 굴어야 합니다.`,
-    `${input.opp} 상대로는 첫 좋은 수비 하나도 분위기 자산입니다. 허투루 넘길 장면이 없습니다.`,
-    `${input.opp}전 키워드는 선명합니다. ${teamSubject} 먼저 팬들 목소리를 키우면 됩니다.`,
-    `${oppSubject} 계산한 경기표에 ${input.team} 쪽 변수를 하나 꽂아 넣어야 합니다.`,
+    `${input.opp} 상대로는 선취점이 중요합니다. 먼저 점수를 내면 경기가 편해집니다.`,
+    `${input.opp} 타선은 한 번 불붙으면 무섭습니다. 위기 때 투수 교체 타이밍을 지켜보세요.`,
+    `득점권 찬스가 오늘의 포인트입니다. 기회가 왔을 때 한 방이 필요합니다.`,
+    `${input.opp} 선발이 공을 많이 던지게 만들수록 ${input.team}에 유리합니다.`,
+    `수비 하나가 승부를 가를 수도 있습니다. 실책 없이만 가면 됩니다.`,
   ], "pv-matchup");
   const closer = pickOffset(seed, [
-    `${input.time ?? "경기 시간"} 시작, 오늘 알림은 군더더기 빼고 장면으로만 가겠습니다.`,
-    `초반 흐름 놓치면 단톡방 복습부터 해야 할 수도 있습니다.`,
-    `팬 모드 켜두세요. 오늘은 작은 타구 하나에도 어깨가 먼저 반응할 수 있습니다.`,
-    `초반 세 타석 안에 오늘 ${input.team} 경기의 농도가 보일 겁니다.`,
-    `경기 전부터 ${input.team} 팬들 엄지는 이미 알림 위에서 대기 중입니다.`,
-    `오늘은 길게 설명하지 않겠습니다. ${input.team} 팬들이 먼저 알아볼 장면만 잡겠습니다.`,
-    `${input.time ?? "플레이볼"} 전부터 채팅창 예열됐습니다. 이제 그 열을 경기장 쪽으로 넘겨야죠.`,
-    `이 알림은 예고편입니다. 본편에서는 ${input.team} 쪽 박수가 먼저 터져야 합니다.`,
-    `작은 카운트 하나도 그냥 지나치지 않겠습니다. 오늘은 ${input.team} 쪽 디테일을 보겠습니다.`,
-    `팬들 마음은 이미 좌석에 앉았습니다. 이제 ${teamSubject} 첫 신호만 보내면 됩니다.`,
-    `오늘은 거창한 예언보다 빠른 반응입니다. 좋은 장면 나오면 바로 물겠습니다.`,
-    `중계석 말투도 준비 끝입니다. ${teamSubject} 먼저 소리를 키우면 그대로 따라가겠습니다.`,
-    `손가락은 알림 위에, 눈은 첫 타석에 두면 됩니다. 오늘 ${input.team} 포인트 놓치지 않겠습니다.`,
+    `${input.time ? `${input.time} 플레이볼입니다. ` : ""}점수 나면 바로 알려 드릴게요.`,
+    `경기 중에도 ${input.team} 득점 소식은 바로 보내 드리겠습니다.`,
+    `곧 시작합니다. 중요한 장면은 놓치지 않게 알려 드릴게요.`,
+    `라인업이 발표되면 앱에서 바로 확인할 수 있어요.`,
+    `오늘도 ${input.team} 편에서 끝까지 같이 보겠습니다.`,
   ], "pv-close");
   return {
     title,

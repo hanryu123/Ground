@@ -222,6 +222,7 @@ function buildFallback(
     momentumSummary: momentum.summary,
     streakLabel: momentum.streak?.label ?? null,
     lastGameLine: momentum.lastGameLine,
+    postseason: Boolean(input.postseasonContext),
   });
   const normalizedLines =
     normalizePreviewLines(varied.lines, `${input.date}:${input.game.id}:${input.teamId}:fallback`) ??
@@ -229,7 +230,10 @@ function buildFallback(
   const resumeLine = input.leagueResumeContext
     ? `${input.leagueResumeContext} 오늘은 기다린 만큼 첫 장면부터 더 크게 봐야죠.`
     : null;
-  const postseasonLine = input.postseasonContext ? `${input.postseasonContext}.` : null;
+  // "플레이오프 1차전 · 시리즈 첫 경기" → "오늘은 플레이오프 1차전, 시리즈 첫 경기입니다."
+  const postseasonLine = input.postseasonContext
+    ? `오늘은 ${input.postseasonContext.split(" · ").join(", ")}입니다.`
+    : null;
   const leadLines = [postseasonLine, resumeLine].filter((line): line is string => Boolean(line));
   return {
     title: varied.title,
