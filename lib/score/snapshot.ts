@@ -1,6 +1,7 @@
 import { todayKstDate } from "@/lib/kbo";
 import type { LiveScoreGame, LiveScoreStatus } from "@/lib/score/types";
 import { NAVER_BASE, NAVER_PROXIED } from "@/lib/naverApi";
+import { fetchKboOfficialDay } from "@/lib/kboOfficial";
 
 /**
  * 네이버 라이브 스코어 어댑터 — 단순 fetch + 정규화.
@@ -170,7 +171,41 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<Res
   }
 }
 
+/**
+ * 라이브 스코어 — KBO 공식 사이트가 1순위, 실패하면 네이버.
+ * (2026-10-26 네이버 API 가 Vercel 서버 요청을 막아 점수 알림이 멈췄다 — lib/kboOfficial.ts)
+ */
 export async function fetchLiveScoreSnapshot(date: string = todayKstDate()): Promise<LiveScoreGame[]> {
+  try {
+    const games = await fetchKboOfficialDay(date, { live: true, timeoutMs: 3000 });
+    return games
+      .map((g): LiveScoreGame | null => {
+        const homeTeam = NAVER_TEAM_MAP[g.homeTeamCode.toUpperCase()];
+        const awayTeam = NAVER_TEAM_MAP[g.awayTeamCode.toUpperCase()];
+        if (!homeTeam || !awayTeam) return null;
+        const status = resolveStatus({ statusCode: g.statusCode, cancel: g.cancel, statusInfo: g.statusInfo });
+        return {
+          externalId: g.gameId,
+          homeTeam,
+          awayTeam,
+          homeScore: g.homeScore,
+          awayScore: g.awayScore,
+          currentInning: g.inning,
+          currentInningHalf: g.inningHalf,
+          currentInningLabel: g.inning != null ? `${g.inning}회${g.inningHalf ?? ""}` : null,
+          status,
+          cancelReason: status === "CANCEL" ? (g.statusInfo.includes("우천") ? "RAIN" : "OTHER") : null,
+          gameDate: parseGameDate(undefined, `${g.date}T${g.time}:00+09:00`),
+        } satisfies LiveScoreGame;
+      })
+      .filter((g): g is LiveScoreGame => Boolean(g));
+  } catch (error) {
+    console.warn("[snapshot] kbo official failed, trying naver:", (error as Error).message);
+  }
+  return fetchNaverLiveScoreSnapshot(date);
+}
+
+async function fetchNaverLiveScoreSnapshot(date: string): Promise<LiveScoreGame[]> {
   const url =
     `${NAVER_BASE}/schedule/games` +
     `?fields=basic,statusInfo,score` +

@@ -18,6 +18,7 @@ import {
 } from "@/lib/games";
 import { STANDINGS, type StandingRow } from "@/config/standings";
 import { NAVER_BASE } from "@/lib/naverApi";
+import { fetchKboOfficialRange, type KboOfficialGame } from "@/lib/kboOfficial";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
@@ -208,6 +209,8 @@ function naverFetchOptions(cacheMode: KboFetchCacheMode = "cached") {
     ...(cacheMode === "live"
       ? { cache: "no-store" as const }
       : { next: { revalidate: 60 } }),
+    // 네이버가 서버 요청을 막으면 응답 없이 매달린다 — 오래 기다리지 않는다
+    signal: AbortSignal.timeout(4000),
   };
 }
 
@@ -296,7 +299,50 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
  *  - fromDate / toDate 는 YYYY-MM-DD (포함). 동일 날짜면 단일일치 호출과 동일.
  *  - 라이브가 죽으면 throw (상위에서 결정해라). 단일 day fetch 는 별도 함수에서 정적 폴백.
  */
+function kboOfficialToNaver(g: KboOfficialGame): NaverScheduleGame {
+  return {
+    gameId: g.gameId,
+    gameDate: g.date.replaceAll("-", ""),
+    gameDateTime: `${g.date}T${g.time}:00`,
+    gtime: g.time,
+    homeTeamCode: g.homeTeamCode,
+    awayTeamCode: g.awayTeamCode,
+    stadium: g.stadium,
+    statusCode: g.statusCode,
+    cancel: g.cancel,
+    statusInfo: g.statusInfo,
+    homeStarterName: g.homeStarterName ?? undefined,
+    awayStarterName: g.awayStarterName ?? undefined,
+    homeTeamScore: g.homeScore,
+    awayTeamScore: g.awayScore,
+    winningPitcherName: g.winningPitcherName ?? undefined,
+    losingPitcherName: g.losingPitcherName ?? undefined,
+    savePitcherName: g.savePitcherName ?? undefined,
+  };
+}
+
+/**
+ * 날짜 범위 경기 — KBO 공식 사이트가 1순위, 실패하면 네이버.
+ * (2026-10-26 네이버 API 가 Vercel 서버 요청을 막았다 — lib/kboOfficial.ts)
+ */
 async function fetchKboGamesRange(
+  fromDate: string,
+  toDate: string,
+  options?: { cacheMode?: KboFetchCacheMode }
+): Promise<LiveGame[]> {
+  try {
+    const official = await fetchKboOfficialRange(fromDate, toDate, { live: options?.cacheMode === "live" });
+    const games = official
+      .map((g) => adaptNaverGame(kboOfficialToNaver(g), fromDate))
+      .filter((g): g is LiveGame => Boolean(g));
+    if (games.length > 0) return games;
+  } catch (err) {
+    console.warn("[kbo] official schedule failed, trying naver:", (err as Error).message);
+  }
+  return fetchNaverGamesRange(fromDate, toDate, options);
+}
+
+async function fetchNaverGamesRange(
   fromDate: string,
   toDate: string,
   options?: { cacheMode?: KboFetchCacheMode }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { findTeam } from "@/lib/teams";
+import { NAVER_PROXIED } from "@/lib/naverApi";
 import { isScheduledOffDay, todayKstDate } from "@/lib/kbo";
 import { finishCronRun, startCronRun } from "@/lib/cronRunLogger";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
@@ -151,6 +153,16 @@ function parseScoreAlertKey(key: string | null | undefined): { home: number; awa
   const m = key.match(/^(\d+):(\d+)$/);
   if (!m) return null;
   return { home: Number.parseInt(m[1], 10), away: Number.parseInt(m[2], 10) };
+}
+
+/** 문자중계 없이 점수 변화만으로 만든 장면 문구 — 예: "7회말 삼성 2득점" */
+function formatScoreOnlyPlayText(game: LiveScoreGame, prevHome: number, prevAway: number): string {
+  const homeDelta = game.homeScore - prevHome;
+  const awayDelta = game.awayScore - prevAway;
+  const inning = game.currentInningLabel ? `${game.currentInningLabel} ` : "";
+  if (homeDelta > 0 && awayDelta <= 0) return `${inning}${findTeam(game.homeTeam).short} ${homeDelta}득점`;
+  if (awayDelta > 0 && homeDelta <= 0) return `${inning}${findTeam(game.awayTeam).short} ${awayDelta}득점`;
+  return `${inning}스코어 변동`;
 }
 
 function hasCompleteScoringFact(context: ScoringPlayContext | null): context is ScoringPlayContext {
@@ -654,9 +666,16 @@ export async function GET(req: Request) {
                 game,
                 previousHomeScore: alertPreviousHomeScore,
                 previousAwayScore: alertPreviousAwayScore,
+                // 서울 밖에서 중계 경로를 거칠 땐(네이버가 막힌 상황) 오래 기다리지 않고 점수만으로 보낸다
+                timeoutMs: NAVER_PROXIED ? 2000 : undefined,
               });
 
-        if (!hasCompleteScoringFact(relayScoringContext)) {
+        // 문자중계를 아예 못 받은 경우(네이버가 서버 요청을 막는 날 등)엔 득점 장면 없이 점수만으로 보낸다.
+        // 받았는데 아직 득점 장면이 안 올라온 경우는 다음 회차에 다시 본다.
+        const relayUnreachable =
+          relayScoringContext === null && !fastMode && hasBudget(deadlineAt, MIN_ALERT_BUDGET_MS);
+
+        if (!relayUnreachable && !hasCompleteScoringFact(relayScoringContext)) {
           if (scoreChanged && !previous.lastScoreAlertKey) {
             await prisma.game.updateMany({
               where: { id: updated.id, lastScoreAlertKey: null },
@@ -676,8 +695,10 @@ export async function GET(req: Request) {
         });
         if (dedupe.count === 0) continue;
 
-        const scoringPlayContext = relayScoringContext;
-        const latestPlayText = formatScoringPlayText(scoringPlayContext);
+        const scoringPlayContext = hasCompleteScoringFact(relayScoringContext) ? relayScoringContext : null;
+        const latestPlayText = scoringPlayContext
+          ? formatScoringPlayText(scoringPlayContext)
+          : formatScoreOnlyPlayText(game, alertPreviousHomeScore, alertPreviousAwayScore);
 
         const result = await dispatchScoreAlertsForGame({
           game,
@@ -686,7 +707,8 @@ export async function GET(req: Request) {
           dbGameId: updated.id,
           latestPlayText,
           scoringPlayContext,
-          fastMode,
+          // 득점 장면을 모르면 Claude 가 선수·장면을 지어내지 않게 미리 써 둔 문구만 쓴다
+          fastMode: fastMode || !scoringPlayContext,
           llmTimeoutMs: SCORE_LLM_TIMEOUT_MS,
           llmRetryTimeoutMs: null,
           pushTimeoutMs: SCORE_PUSH_TIMEOUT_MS,
