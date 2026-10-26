@@ -482,9 +482,63 @@ function parseLineupFromNode(node: unknown, side: "home" | "away"): LineupItem[]
   });
 }
 
+type NaverPreviewPlayer = { playerName?: string; positionName?: string; batorder?: number | string };
+type NaverPreviewResponse = {
+  result?: {
+    previewData?: {
+      homeTeamLineUp?: { fullLineUp?: NaverPreviewPlayer[] } | null;
+      awayTeamLineUp?: { fullLineUp?: NaverPreviewPlayer[] } | null;
+    } | null;
+  };
+};
+/** 타순이 이만큼 채워져야 라인업 발표로 본다 (발표 전엔 선발투수만 들어 있다) */
+const MIN_ANNOUNCED_BATTERS = 9;
+
+function previewSideLineup(players: NaverPreviewPlayer[] | undefined): LineupItem[] | null {
+  const out: LineupItem[] = [];
+  let batters = 0;
+  for (const p of players ?? []) {
+    const name = readString(p.playerName);
+    const position = readString(p.positionName);
+    if (!name || !position) continue;
+    const order = readOrder(p.batorder) ?? (position.includes("투수") ? "P" : null);
+    if (!order) continue;
+    if (order !== "P") batters++;
+    out.push({ order, name, position });
+  }
+  if (batters < MIN_ANNOUNCED_BATTERS) return null;
+  return out.sort((a, b) => {
+    const ao = a.order === "P" ? 99 : Number.parseInt(a.order, 10);
+    const bo = b.order === "P" ? 99 : Number.parseInt(b.order, 10);
+    return ao - bo;
+  });
+}
+
+/**
+ * 라인업 — 네이버 경기 프리뷰(previewData.*TeamLineUp.fullLineUp).
+ * 2026 가을 기준 /lineup 엔드포인트는 끝난 경기도 lineUpData: null 이라, 프리뷰가 비면 그때만 예전 엔드포인트를 본다.
+ */
 async function fetchGameLineups(
   gameId: string,
   cacheMode: KboFetchCacheMode = "cached"
+): Promise<{ homeLineup: LineupItem[] | null; awayLineup: LineupItem[] | null }> {
+  try {
+    const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/preview`, naverFetchOptions(cacheMode));
+    if (res.ok) {
+      const data = ((await res.json()) as NaverPreviewResponse)?.result?.previewData;
+      const home = previewSideLineup(data?.homeTeamLineUp?.fullLineUp);
+      const away = previewSideLineup(data?.awayTeamLineUp?.fullLineUp);
+      if (home || away) return { homeLineup: home, awayLineup: away };
+    }
+  } catch {
+    // 아래 예전 엔드포인트로
+  }
+  return fetchGameLineupsLegacy(gameId, cacheMode);
+}
+
+async function fetchGameLineupsLegacy(
+  gameId: string,
+  cacheMode: KboFetchCacheMode
 ): Promise<{ homeLineup: LineupItem[] | null; awayLineup: LineupItem[] | null }> {
   try {
     const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}/lineup`, naverFetchOptions(cacheMode));
