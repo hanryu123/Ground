@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canSpendLlm, ensureLlmTables, recordLlmUsage } from "@/lib/llmBudget";
 import { TEAMS } from "@/lib/teams";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { NAVER_BASE } from "@/lib/naverApi";
 
 /**
  * 우리 팀 소식 — 네이버 스포츠 야구 뉴스를 날짜별로 받아 Claude로 팀·태그를 분류한다.
@@ -12,7 +13,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  *  - 분류 결과는 기사별로 DB 에 저장해 한 번만 분류한다. Claude 호출은 lib/llmBudget 예산 안에서만.
  */
 
-const NAVER_NEWS = "https://api-gw.sports.naver.com/news/articles/kbaseball";
+const NAVER_NEWS = `${NAVER_BASE}/news/articles/kbaseball`;
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 const ANTHROPIC_MODEL = process.env.NEWS_LLM_MODEL ?? "claude-haiku-5-5";

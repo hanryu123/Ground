@@ -7,8 +7,8 @@ import {
   hasForbiddenFanCliche,
   sanitizeBoringFanCopy,
 } from "@/lib/fanCopyVariety";
+import { NAVER_BASE } from "@/lib/naverApi";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = process.env.POSTGAME_LLM_MODEL ?? "claude-sonnet-4-6";
 

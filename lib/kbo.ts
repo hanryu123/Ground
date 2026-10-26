@@ -17,8 +17,8 @@ import {
   type GameResult,
 } from "@/lib/games";
 import { STANDINGS, type StandingRow } from "@/config/standings";
+import { NAVER_BASE } from "@/lib/naverApi";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 

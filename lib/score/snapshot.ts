@@ -1,5 +1,6 @@
 import { todayKstDate } from "@/lib/kbo";
 import type { LiveScoreGame, LiveScoreStatus } from "@/lib/score/types";
+import { NAVER_BASE, NAVER_PROXIED } from "@/lib/naverApi";
 
 /**
  * 네이버 라이브 스코어 어댑터 — 단순 fetch + 정규화.
@@ -7,7 +8,6 @@ import type { LiveScoreGame, LiveScoreStatus } from "@/lib/score/types";
  * 일정/선발/라인업이 필요한 곳은 `lib/kbo` 를 사용한다.
  */
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 
@@ -176,7 +176,8 @@ export async function fetchLiveScoreSnapshot(date: string = todayKstDate()): Pro
     `?fields=basic,statusInfo,score` +
     `&upperCategoryId=kbaseball&categoryId=kbo` +
     `&fromDate=${date}&toDate=${date}&size=200`;
-  const res = await fetchJsonWithTimeout(url, 1200);
+  // 서울 중계를 거치면 왕복이 한 번 더 붙는다
+  const res = await fetchJsonWithTimeout(url, NAVER_PROXIED ? 4000 : 1200);
   if (!res.ok) throw new Error(`naver score HTTP ${res.status}`);
   const json = (await res.json()) as {
     result?: { games?: NaverScheduleGameRaw[] };

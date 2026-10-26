@@ -9,10 +9,10 @@
  */
 
 import { NextResponse } from "next/server";
+import { NAVER_BASE } from "@/lib/naverApi";
 
 export const runtime = "nodejs";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 

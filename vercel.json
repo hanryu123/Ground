@@ -1,6 +1,7 @@
 {
   "buildCommand": "next build",
   "functions": {
+    "app/api/naver/[...path]/route.ts": { "regions": ["icn1"] },
     "app/api/shorts/route.ts": {
       "regions": [
         "icn1"

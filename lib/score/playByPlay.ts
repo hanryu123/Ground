@@ -1,5 +1,6 @@
 import { findTeam } from "@/lib/teams";
 import type { LiveScoreGame } from "@/lib/score/types";
+import { NAVER_BASE } from "@/lib/naverApi";
 
 export type ScoringSide = "home" | "away";
 
@@ -457,7 +458,7 @@ export async function fetchScoringPlayContext(input: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 3000);
     const res = await fetch(
-      `https://api-gw.sports.naver.com/schedule/games/${input.game.externalId}/relay`,
+      `${NAVER_BASE}/schedule/games/${input.game.externalId}/relay`,
       {
         headers: {
           "user-agent": SCORE_NAVER_UA,

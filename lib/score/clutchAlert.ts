@@ -19,8 +19,8 @@ import {
 } from "@/services/notificationService";
 import { generateClutchPushCopy } from "@/lib/pushLlm";
 import type { LiveScoreGame } from "@/lib/score/types";
+import { NAVER_BASE } from "@/lib/naverApi";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 

@@ -8,12 +8,12 @@ import { buildLiveFallbackCopy } from "@/lib/fanCopyVariety";
 import { isKboGameHour } from "@/lib/cronGuard";
 import { prisma } from "@/lib/prisma";
 import { mergeNonRegressingScore, type ScorePair } from "@/lib/score/monotonic";
+import { NAVER_BASE } from "@/lib/naverApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 45;
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 

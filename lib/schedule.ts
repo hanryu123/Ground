@@ -16,8 +16,8 @@ import {
   type LiveGame,
 } from "@/lib/kbo";
 import { highlightUrlForFinishedGame } from "@/lib/games";
+import { NAVER_BASE } from "@/lib/naverApi";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0 Safari/537.36";

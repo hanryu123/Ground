@@ -598,6 +598,16 @@ export async function GET(req: Request) {
           (game.homeScore > previousAlertScore.home || game.awayScore > previousAlertScore.away);
         if (!scoreChanged && !hasPendingScoreAlert) continue;
 
+        // 경기 중 상태를 한 번도 못 보고 끝난 뒤에야 점수를 처음 본 경우(점수 수집이 막혔던 날 등)엔
+        // 지난 점수 알림을 뒤늦게 보내지 않는다 — 경기 결과는 postgame 이 알린다. 끝내기처럼 LIVE→RESULT 는 그대로 보낸다.
+        if (game.status === "RESULT" && previous.status !== "LIVE") {
+          await prisma.game.updateMany({
+            where: { id: updated.id },
+            data: { lastScoreAlertKey: scoreAlertKey },
+          });
+          continue;
+        }
+
         const alertPreviousHomeScore = hasPendingScoreAlert && previousAlertScore
           ? previousAlertScore.home
           : previous.homeScore;

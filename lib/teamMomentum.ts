@@ -1,7 +1,7 @@
 import { addDaysKst, type LiveGame } from "@/lib/kbo";
 import { findTeam } from "@/lib/teams";
+import { NAVER_BASE } from "@/lib/naverApi";
 
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 

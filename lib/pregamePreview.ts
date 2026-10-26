@@ -12,6 +12,7 @@ import {
   hasForbiddenFanCliche,
   sanitizeBoringFanCopy,
 } from "@/lib/fanCopyVariety";
+import { NAVER_BASE } from "@/lib/naverApi";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL =
@@ -19,7 +20,6 @@ const ANTHROPIC_MODEL =
   process.env.POSTGAME_LLM_MODEL ??
   process.env.PUSH_LLM_MODEL ??
   "claude-sonnet-4-6";
-const NAVER_BASE = "https://api-gw.sports.naver.com";
 const NAVER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 GroundBot/1.0";
 const PREGAME_LLM_TEMPERATURE = 1.0;
