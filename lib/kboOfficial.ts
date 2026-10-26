@@ -90,7 +90,8 @@ function adapt(raw: KboRaw): KboOfficialGame | null {
   const season = raw.SEASON_ID ?? Number(raw.G_DT.slice(0, 4));
   const cancelName = clean(raw.CANCEL_SC_NM) ?? "";
   const cancelled = raw.GAME_STATE_SC === "4" || (raw.CANCEL_SC_ID != null && raw.CANCEL_SC_ID !== "0" && /취소/.test(cancelName));
-  const suspended = !cancelled && /중단|서스펜디드/.test(cancelName);
+  // GAME_STATE_SC: 1 경기전 · 2 경기중 · 3 종료 · 4 취소 · 5 서스펜디드
+  const suspended = !cancelled && (raw.GAME_STATE_SC === "5" || /중단|서스펜디드/.test(cancelName));
   const statusCode = cancelled
     ? "CANCEL"
     : suspended
