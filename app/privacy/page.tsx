@@ -21,13 +21,17 @@ const collectedItems = [
     body: "응원팀, 알림 주제 설정, 온보딩 완료 여부, 알림 수신 상태",
   },
   {
+    title: "Android 출시 알림 신청 (선택)",
+    body: "다운로드 페이지에서 직접 입력한 이메일 주소와 신청 경로. Android 출시 안내 메일을 한 번 보내는 데만 쓰고, 발송 후 지체 없이 삭제합니다. 앱 안에서는 이메일을 받지 않습니다.",
+  },
+  {
     title: "서비스 이용 정보",
     body: "알림 발송 및 수신 기록, 알림함 읽음 상태, 접속 환경과 페이지 이용에 관한 집계성 분석 정보",
   },
 ];
 
 const notCollectedItems = [
-  "이름, 전화번호, 이메일 주소",
+  "이름, 전화번호 (이메일은 Android 출시 알림을 직접 신청한 경우만)",
   "정확한 위치 정보",
   "연락처, 사진, 캘린더",
   "결제 정보",
@@ -62,7 +66,7 @@ export default function PrivacyPage() {
             처리합니다. 수집한 정보는 알림 발송, 구독 관리, 서비스 안정화 목적 외에
             광고 추적이나 판매 목적으로 사용하지 않습니다.
           </p>
-          <p className="mt-5 text-[12px] text-white/40">시행일: 2026년 6월 4일 · 개정일: 2026년 10월 21일</p>
+          <p className="mt-5 text-[12px] text-white/40">시행일: 2026년 6월 4일 · 개정일: 2026년 10월 26일</p>
         </header>
 
         <section className="mt-9 space-y-4">
