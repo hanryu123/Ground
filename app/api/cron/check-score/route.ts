@@ -1,8 +1,9 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findTeam } from "@/lib/teams";
 import { NAVER_PROXIED } from "@/lib/naverApi";
-import { fetchKboScoringContext, rememberKboBoxScore } from "@/lib/score/kboScoringPlay";
+import { fetchDaumScoringContext } from "@/lib/score/daumScoringPlay";
+import { fetchKboScoringContext } from "@/lib/score/kboScoringPlay";
 import { isScheduledOffDay, todayKstDate } from "@/lib/kbo";
 import { finishCronRun, startCronRun } from "@/lib/cronRunLogger";
 import { shouldSkipCronInAlpha } from "@/lib/appEnv";
@@ -168,7 +169,7 @@ function formatScoreOnlyPlayText(game: LiveScoreGame, prevHome: number, prevAway
 
 function hasCompleteScoringFact(context: ScoringPlayContext | null): context is ScoringPlayContext {
   if (!context) return false;
-  if (context.source !== "naver-relay" && context.source !== "kbo-boxscore") return false;
+  if (context.source === "score-delta-fallback") return false;
   if (!context.batter.name) return false;
   if (context.play.resultType === "UNKNOWN") return false;
   return Boolean(context.play.resultLabel);
@@ -609,14 +610,7 @@ export async function GET(req: Request) {
           previousAlertScore != null &&
           previous.lastScoreAlertKey !== scoreAlertKey &&
           (game.homeScore > previousAlertScore.home || game.awayScore > previousAlertScore.away);
-        if (!scoreChanged && !hasPendingScoreAlert) {
-          // 다음 득점 때 누가 쳤는지 정확히 고르려고, 경기 중엔 타점 기록을 응답 뒤에 미리 받아 둔다
-          if (game.status === "LIVE") {
-            const externalId = game.externalId;
-            after(() => rememberKboBoxScore(externalId));
-          }
-          continue;
-        }
+        if (!scoreChanged && !hasPendingScoreAlert) continue;
 
         // 경기 중 상태를 한 번도 못 보고 끝난 뒤에야 점수를 처음 본 경우(점수 수집이 막혔던 날 등)엔
         // 지난 점수 알림을 뒤늦게 보내지 않는다 — 경기 결과는 postgame 이 알린다. 끝내기처럼 LIVE→RESULT 는 그대로 보낸다.
@@ -667,15 +661,21 @@ export async function GET(req: Request) {
           continue;
         }
 
-        // 득점 장면: KBO 공식 박스스코어(선수·결과·타점)가 1순위, 못 찾으면 네이버 문자중계
-        const kboScoringContext =
+        // 득점 장면: 다음 문자중계(경기 중) → KBO 공식 박스스코어(경기가 끝난 뒤에만 열림) → 네이버 문자중계
+        const scoringInput = {
+          game,
+          previousHomeScore: alertPreviousHomeScore,
+          previousAwayScore: alertPreviousAwayScore,
+        };
+        const daumScoringContext =
           fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
             ? null
-            : await fetchKboScoringContext({
-                game,
-                previousHomeScore: alertPreviousHomeScore,
-                previousAwayScore: alertPreviousAwayScore,
-              }).catch(() => null);
+            : await fetchDaumScoringContext(scoringInput).catch(() => null);
+        const kboScoringContext =
+          daumScoringContext ??
+          (fastMode || game.status !== "RESULT" || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
+            ? null
+            : await fetchKboScoringContext(scoringInput).catch(() => null));
         const relayScoringContext = kboScoringContext
           ? kboScoringContext
           : fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
