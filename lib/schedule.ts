@@ -131,7 +131,10 @@ export async function fetchDayGames(date: string): Promise<DayGamesPayload> {
     games = season.filter((g) => g.date === date);
   }
 
-  const details = await Promise.all(games.map((g) => fetchGameDetail(g.id)));
+  // KBO 공식 목록에 선발·승패 투수가 다 있으면 네이버 상세는 부르지 않는다 (네이버가 막히면 3초씩 기다렸다)
+  const needsDetail = (g: LiveGame) =>
+    g.homePitcher === "미정" || g.awayPitcher === "미정" || (g.result != null && !g.result.winningPitcher && g.result.winnerId != null);
+  const details = await Promise.all(games.map((g) => (needsDetail(g) ? fetchGameDetail(g.id) : null)));
   const enriched = games.map((g, i) => {
     const d = details[i];
     if (!d) return withHighlight(g);
