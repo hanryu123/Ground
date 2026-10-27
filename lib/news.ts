@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canSpendLlm, ensureLlmTables, recordLlmUsage } from "@/lib/llmBudget";
 import { TEAMS } from "@/lib/teams";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { createHash } from "node:crypto";
 import { NAVER_BASE } from "@/lib/naverApi";
 
 /**
@@ -32,6 +33,8 @@ type RawArticle = {
   sourceName: string;
   thumbnail?: string;
   dateTime: string;
+  /** 네이버 밖 기사(Google 뉴스)의 원문 주소 — 없으면 네이버 기사 주소를 만든다 */
+  url?: string;
 };
 
 type ClassifiedArticle = {
@@ -62,7 +65,26 @@ function kstDate(offsetDays = 0): string {
   return new Date(Date.now() + 9 * 3600_000 - offsetDays * 86_400_000).toISOString().slice(0, 10);
 }
 
+/**
+ * 하루치 기사 — 네이버가 1순위, 네이버가 안 되면 Google 뉴스.
+ * 2026-10-26 부터 네이버 스포츠 API 가 Vercel 서버 요청을 막아(lib/naverApi.ts) 임시로 Google 뉴스를 쓴다.
+ * 네이버가 다시 되면 코드 수정 없이 네이버로 돌아간다. 네이버가 실패하면 10분 동안은 네이버를 건너뛴다.
+ */
+let naverDownUntil = 0;
+
 async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArticle[]> {
+  if (Date.now() >= naverDownUntil) {
+    try {
+      return await fetchNaverDayArticles(date, isToday);
+    } catch (err) {
+      naverDownUntil = Date.now() + 10 * 60_000;
+      console.warn("[news] naver unavailable, using google news:", (err as Error).message);
+    }
+  }
+  return (await fetchGoogleArticles()).filter((a) => a.dateTime.startsWith(date));
+}
+
+async function fetchNaverDayArticles(date: string, isToday: boolean): Promise<RawArticle[]> {
   const ymd = date.replaceAll("-", "");
   const all: RawArticle[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -71,16 +93,101 @@ async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArti
       {
         headers: { "User-Agent": UA, Referer: "https://m.sports.naver.com/" },
         next: { revalidate: isToday ? 1800 : 86_400 },
-        signal: AbortSignal.timeout(5000),
+        // 막혔을 땐 응답 없이 매달린다 — 짧게 끊고 Google 뉴스로 넘어간다
+        signal: AbortSignal.timeout(3000),
       }
     );
-    if (!res.ok) break;
+    if (!res.ok) {
+      if (page === 1) throw new Error(`naver news HTTP ${res.status}`);
+      break;
+    }
     const json = (await res.json()) as { result?: { newsList?: RawArticle[] } };
     const list = json.result?.newsList ?? [];
     all.push(...list);
     if (list.length < PAGE_SIZE) break;
   }
   return all;
+}
+
+// ── Google 뉴스 (네이버 대체) ─────────────────────────────────────────
+
+function decodeXml(text: string): string {
+  return text
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function xmlTag(item: string, tag: string): string | null {
+  const m = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(item);
+  return m ? decodeXml(m[1]!).trim() : null;
+}
+
+/** RFC 822 시각 → 네이버와 같은 KST 로컬 문자열 "YYYY-MM-DDTHH:mm:ss" */
+function toKstLocal(rfc822: string): string | null {
+  const ms = Date.parse(rfc822);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms + 9 * 3600_000).toISOString().slice(0, 19);
+}
+
+async function fetchGoogleTeamArticles(teamName: string): Promise<RawArticle[]> {
+  const q = encodeURIComponent(`"${teamName}" when:7d`);
+  const res = await fetch(`https://news.google.com/rss/search?q=${q}&hl=ko&gl=KR&ceid=KR:ko`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 1800 },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`google news HTTP ${res.status}`);
+  const xml = await res.text();
+  const out: RawArticle[] = [];
+  for (const [, item] of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const rawTitle = xmlTag(item!, "title");
+    const link = xmlTag(item!, "link");
+    const dateTime = toKstLocal(xmlTag(item!, "pubDate") ?? "");
+    const source = xmlTag(item!, "source") ?? "";
+    if (!rawTitle || !link || !dateTime) continue;
+    // 제목 끝의 " - 언론사" 를 뗀다
+    const title = source && rawTitle.endsWith(` - ${source}`) ? rawTitle.slice(0, -(source.length + 3)) : rawTitle;
+    out.push({
+      oid: "g",
+      aid: createHash("sha1").update(link).digest("hex").slice(0, 16),
+      title,
+      sourceName: source,
+      dateTime,
+      url: link,
+    });
+  }
+  return out;
+}
+
+let googleMemo: { at: number; value: Promise<RawArticle[]> } | null = null;
+
+/** 10개 구단 이름으로 찾은 최근 7일 기사 (같은 제목은 하나로). 같은 인스턴스에서 10분 재사용 */
+function fetchGoogleArticles(): Promise<RawArticle[]> {
+  if (googleMemo && Date.now() - googleMemo.at < 10 * 60_000) return googleMemo.value;
+  const value = (async () => {
+    const perTeam = await mapWithConcurrency(TEAMS, 5, (t) =>
+      fetchGoogleTeamArticles(t.name).catch((err) => {
+        console.warn(`[news] google ${t.name} failed:`, (err as Error).message);
+        return [] as RawArticle[];
+      })
+    );
+    const seen = new Set<string>();
+    return perTeam.flat().filter((a) => {
+      const key = a.title.replace(/[^\p{L}\p{N}]/gu, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+  googleMemo = { at: Date.now(), value };
+  value.catch(() => {
+    googleMemo = null;
+  });
+  return value;
 }
 
 const TEAM_GUIDE = TEAMS.map((t) => `${t.id}=${t.name}`).join(", ");
@@ -160,7 +267,7 @@ function toClassified(a: RawArticle, c?: StoredClass): ClassifiedArticle {
     title: a.title,
     source: a.sourceName,
     thumbnail: a.thumbnail ?? null,
-    url: `https://m.sports.naver.com/kbaseball/article/${a.oid}/${a.aid}`,
+    url: a.url ?? `https://m.sports.naver.com/kbaseball/article/${a.oid}/${a.aid}`,
     dateTime: a.dateTime,
     teams: c?.teams ?? [],
     tag: c?.tag ?? null,
