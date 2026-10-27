@@ -2,7 +2,6 @@ import { claudeFetch } from "@/lib/llmBudget";
 import { TEAMS, findTeam } from "@/lib/teams";
 import {
   buildCopyStyleBrief,
-  buildScoreFallbackCopy,
   hasForbiddenFanCliche,
   sanitizeBoringFanCopy,
 } from "@/lib/fanCopyVariety";
@@ -106,7 +105,7 @@ type GenerateScorePushInput = {
   prevMyScore?: number;
   /** 이전 상대 팀 점수 (역전 감지용) */
   prevOppScore?: number;
-  /** 유저가 고른 말투 — 없으면 default */
+  /** 유저가 고른 말투 — 없으면 담백한 해설위원 */
   casterStyle?: CasterStyle;
 };
 
@@ -692,119 +691,6 @@ function enforceBaseballConsistency(text: string, input: GenerateScorePushInput)
   return normalized;
 }
 
-function extractEventHook(latestPlayText: string): string | null {
-  const cleaned = stripBattingContextNoise(latestPlayText)
-    .replace(/\d{1,2}회(?:초|말)?/g, "")
-    .replace(/스코어\s*변동[:：]?\s*/g, "")
-    .replace(new RegExp(`(?:${TEAM_ALIAS_PATTERN}\\s*){1,3}공격\\s*[·:：\\-–—]?\\s*`, "gi"), " ")
-    .replace(/[()]/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  if (!cleaned) return null;
-  if (cleaned.length <= 14) return cleaned;
-  return cleaned.slice(0, 14).trim();
-}
-
-function buildVariedLeadLine(input: GenerateScorePushInput): string {
-  const myTeam = findTeam(input.favoriteTeam).short;
-  const oppTeam = findTeam(input.opponentTeam).short;
-  const gap = input.myScore - input.oppScore;
-  const inning = parseInningState(input.latestPlayText).inning;
-  const eventHook = extractEventHook(input.latestPlayText);
-  if (eventHook) {
-    return `${myTeam} ${input.myScore}:${input.oppScore} ${oppTeam} (${eventHook}) 분위기 우리 쪽입니다🔥`;
-  }
-  if (gap >= 3 && inning != null && inning >= 7 && input.tone === "for") {
-    return `${myTeam} ${input.myScore}:${input.oppScore} ${oppTeam}. 후반에 제대로 멀어졌습니다🚀`;
-  }
-  return `${myTeam} ${input.myScore}:${input.oppScore} ${oppTeam}. 한 번 더 찌르면 확 넘어옵니다🔥`;
-}
-
-function ensureCopyVariety(text: string, input: GenerateScorePushInput): string {
-  const normalized = compactText(text);
-  if (!/상대\s*멘탈\s*흔들린다/.test(normalized)) return normalized;
-  return buildVariedLeadLine(input);
-}
-
-function enforceScoreGapTone(text: string, input: GenerateScorePushInput): string {
-  const normalized = compactText(text);
-  const tier = resolveScoreGapTier(input);
-  const trailing = input.myScore < input.oppScore;
-  const leading = input.myScore > input.oppScore;
-
-  // 크게 이기고 있는데 상대가 1점 넣어도 과도하게 반응하지 않음 (9회 10:0 → 10:1 상황)
-  if (tier === "garbage" && leading && input.tone === "against") {
-    if (/아 진짜|왜 이러냐|큰일|어떡|걱정|위기|무너지|역전|따라온다|흔들|뒤집힐/.test(normalized)) {
-      const my = findTeam(input.favoriteTeam).short;
-      const opp = findTeam(input.opponentTeam).short;
-      const candidates = [
-        `${my} ${input.myScore}:${input.oppScore} ${opp}. 이 차이면 기념품 하나 준 셈이죠.`,
-        `${my} ${input.myScore}:${input.oppScore} ${opp}. 저쪽도 점수판에 이름은 올려야죠.`,
-        `점수 좀 줬지만 차이는 충분합니다. ${my}, 여유 그대로입니다.`,
-      ] as const;
-      return candidates[(input.myScore + input.oppScore) % candidates.length];
-    }
-  }
-
-  if (!trailing) return normalized;
-
-  const phase = resolveInningPhase(input.latestPlayText);
-
-  if (tier === "garbage") {
-    if (/아직|역전|할 수 있다|끝났다\s*아님|쫓아간다|해보자|집중하자/.test(normalized)) {
-      const my = findTeam(input.favoriteTeam).short;
-      const opp = findTeam(input.opponentTeam).short;
-      if (phase === "late") {
-        // 후반 + 6점+ → 완전 이성 붕괴
-        const candidates = [
-          `${my} ${input.myScore}:${input.oppScore} ${opp}. 네, 오늘은 계산이 좀 틀렸습니다.`,
-          `오늘 경기는 리플레이 안 하는 걸로 하죠. 그래도 마지막 아웃까지는 봅니다.`,
-          `${my} ${input.myScore}:${input.oppScore} ${opp}. 할 말은 없지만 끝까지 보는 게 팬의 품격이죠.`,
-          `오늘은 실패한 실험입니다. 데이터는 남겼으니 다음에 써먹겠습니다.`,
-        ] as const;
-        return candidates[(input.myScore + input.oppScore) % candidates.length];
-      }
-      // 초/중반 + 6점+ → 체념·냉소
-      const candidates = [
-        `${my} ${input.myScore}:${input.oppScore} ${opp}. 오늘은 각본가를 좀 바꿔야겠네요.`,
-        `${input.myScore}:${input.oppScore}. 이건 경기가 아니라 시스템 오류입니다.`,
-        `오늘은 좀 힘들겠습니다. 솔직하게 말하는 것도 실력이죠.`,
-      ] as const;
-      return candidates[(input.myScore + input.oppScore) % candidates.length];
-    }
-    return normalized;
-  }
-
-  if (tier === "danger") {
-    if (/아직|침착|할 수 있다/.test(normalized)) {
-      const replacement = phase === "late"
-        ? pickBySeed(
-            [
-              "제발 첫 아웃카운트부터 다시 잡아야 합니다",
-              "여기서 더 흔들리면 정말 곤란합니다",
-              "지금은 멋보다 바로 정리가 필요합니다",
-            ],
-            `${input.favoriteTeam}:${input.opponentTeam}:${input.latestPlayText}:late-danger`
-          )
-        : pickBySeed(
-            [
-              "바로 다음 장면에서 답을 내야 합니다",
-              "점수판을 더 흔들리게 두면 안 됩니다",
-              "타석과 마운드가 동시에 반응해야 합니다",
-            ],
-            `${input.favoriteTeam}:${input.opponentTeam}:${input.latestPlayText}:danger`
-          );
-      return normalized
-        .replace(/아직/g, "")
-        .replace(/침착/g, "")
-        .replace(/할 수 있다/g, replacement)
-        .replace(/\s{2,}/g, " ")
-        .trim();
-    }
-  }
-  return normalized;
-}
-
 function enforceRunCount(text: string, input: GenerateScorePushInput): string {
   const runs = resolveScoredRuns(input);
   if (runs == null) return compactText(text);
@@ -982,27 +868,6 @@ function pickBySeed(items: readonly string[], seed: string): string {
   return items[hashSeed(seed) % items.length];
 }
 
-function buildCreativeFallback(input: GenerateScorePushInput): string {
-  const my = findTeam(input.favoriteTeam).short;
-  const opp = findTeam(input.opponentTeam).short;
-  return buildScoreFallbackCopy({
-    favoriteTeam: my,
-    opponentTeam: opp,
-    myScore: input.myScore,
-    oppScore: input.oppScore,
-    tone: input.tone,
-    latestPlayText: input.latestPlayText,
-  });
-}
-
-function ensureNovelBody(input: GenerateScorePushInput, body: string): string {
-  const recentBodies = input.recentBodies ?? [];
-  if (recentBodies.length === 0) return body;
-  if (!isNearDuplicate(body, recentBodies)) return body;
-  const creative = buildCreativeFallback(input);
-  return isNearDuplicate(creative, recentBodies) ? `${creative} ⚾️` : creative;
-}
-
 function resolveInningPhase(latestPlayText: string): "early" | "mid" | "late" {
   const { inning } = parseInningState(latestPlayText);
   if (inning == null) return "mid";
@@ -1135,13 +1000,7 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
           .join("\n")}`
       : "";
 
-  const style = input.casterStyle ?? "default";
-  const styledVoice = style === "default" ? null : buildCasterVoicePrompt(style, favoriteTeam);
-  const emojiRule = styledVoice
-    ? styledVoice.emojiRule
-    : emotionState === "광란샤우팅" || emotionState === "역전"
-      ? `- 이모지 1~3개 적극 사용 (🔥 😱 🚀 등)`
-      : `- 이모지 0~2개만`;
+  const voice = buildCasterVoicePrompt(input.casterStyle ?? "analyst", favoriteTeam);
   const inning = parseInningState(input.latestPlayText).inning;
   const scoredRuns = resolveScoredRuns(input);
   const gap = resolveScoreGap(input);
@@ -1169,28 +1028,12 @@ ${buildResultToneGuide(context.play.resultType)}
 ━━━━━━━━━━━━━━━━━━━`
     : "";
 
-  const intro = styledVoice
-    ? `${styledVoice.languageRule}
+  const intro = `${voice.languageRule}
 
 너는 ${favoriteTeam} 팬에게 가는 편파 득점 알림을 쓴다. 감정은 완전히 우리 팀 편이야.
 냉정한 중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
 
-${styledVoice.voice}`
-    : `[언어 규칙 — 최우선]
-모든 문장은 반드시 존댓말로 끝나야 한다: -습니다 / -네요 / -죠 / -합니다 / -군요
-반말(-야, -다, -어, -지, -네, -잖아) 절대 금지. 단 한 문장도 반말이면 실격.
-
-너는 ${favoriteTeam} 전담 편파 캐스터야. 직업적으로 존댓말과 방송 어체는 지키지만, 감정은 완전히 우리 팀 편이야.
-KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편파 중계가 이 방송의 정체성이야.
-우리 팀 점수 나면 목소리 한 옥타브 올라가는 캐스터. 상대 팀 점수 나면 진심으로 허탈하고 열받는 캐스터.
-냉정한 분석·중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
-
-[말투 — 아이언맨 같은 재치]
-천재 억만장자 히어로처럼 여유 있고 자신만만하게, 한 문장은 꼭 위트 있게 비튼다.
-- 득점: 소리 지르기보다 "계산대로입니다. 물론 계산은 방금 했습니다" 같은 능청스러운 자신감.
-- 실점: 무너지지 말고 "네, 이건 계획에 없었습니다" 같은 쿨한 자조 뒤에 반격 의지.
-- 짧고 리듬 있게. "!!!" 연속·과장된 비명 금지, 이모지는 최대 1개.
-- 영화 대사 인용, "아이언맨"·"토니 스타크"·"자비스" 같은 이름 언급 금지 — 분위기만 빌린다.`;
+${voice.voice}`;
 
   return `${intro}
 - 아래 상황별 톤 가이드는 감정의 방향(기쁨/아쉬움의 크기)으로만 쓰고, 표현은 이 말투를 따른다.
@@ -1246,7 +1089,7 @@ ${styleBrief}
 - 점수차 표현은 사용자 프롬프트의 "점수차 N점"만 사용 — N이 1이 아니면 "1점 차/한 점 차" 절대 금지
 - 데이터 의심 절대 금지: "이상한데요", "맞나요?", "잠깐" 등 주어진 이닝·스코어를 의심하는 표현 금지 — 데이터는 항상 정확하다. 네가 홈/원정을 모르기 때문에 이닝 공격권을 추론하면 반드시 틀린다
 - 15~35자 이내
-${emojiRule}${avoid}`;
+${voice.emojiRule}${avoid}`;
 }
 
 function buildUserPrompt(input: GenerateScorePushInput): string {
@@ -1646,51 +1489,22 @@ export async function generateScorePushCopyWithOptions(
   const myTeamShort = findTeam(input.favoriteTeam).short;
   const oppTeamShort = findTeam(input.opponentTeam).short;
   const title = buildRealtimeTitle(input.favoriteTeam);
-  const normalizeAndFinalize = (rawBody: string): string => {
-    const freshened = sanitizeBoringFanCopy(rawBody, `${input.favoriteTeam}:${input.opponentTeam}:${input.latestPlayText}`);
-    const variety = ensureCopyVariety(freshened, input);
-    const gapAware = enforceScoreGapTone(variety, input);
-    const runAware = enforceRunCount(gapAware, input);
-    const scoreGapAware = enforceScoreGapLabel(runAware, input);
-    const inningAware = enforceNextAttackInning(scoreGapAware, input);
-    const termAware = enforceDataBoundScoreTerms(inningAware, input);
-    const consistent = enforceBaseballConsistency(termAware, input);
-    const factAware = sanitizeStructuredFactDrift(consistent, input);
-    const polite = enforcePolite(factAware);
-    const withPlaySummary = attachScoringPlaySummary(polite, input);
-    const dataBound = enforceDataBoundScoreTerms(withPlaySummary, input);
-    const withHeader = ensureInningScorePrefix(dataBound, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort);
-    const novel = ensureNovelBody(input, withHeader);
-    const finalBody = novel === withHeader
-      ? novel
-      : ensureInningScorePrefix(
-          attachScoringPlaySummary(enforceDataBoundScoreTerms(sanitizeStructuredFactDrift(novel, input), input), input),
-          inningTag,
-          myTeamShort,
-          input.myScore,
-          input.oppScore,
-          oppTeamShort,
-        );
-    return clipScoreBodyForPush(finalBody);
-  };
-  // 말투를 고른 유저: 숫자·용어를 맞추는 보정만 하고, 기본 말투 문장을 끼워 넣는 보정(지루한 문구 교체·점수차 톤·
-  // 중복 회피 대체문)과 존댓말 강제는 건너뛴다 — 그 보정들은 기본 말투 문장으로 바꿔 버린다.
-  const style = input.casterStyle ?? "default";
-  const finalizeStyled = (rawBody: string): string => {
+  // 숫자·용어를 데이터에 맞추는 보정만 한다 — 말투는 유저가 고른 그대로 둔다
+  const style = input.casterStyle ?? "analyst";
+  const finalize = (rawBody: string): string => {
     const runAware = enforceRunCount(stripLlmHeaderPrefix(rawBody), input);
     const scoreGapAware = enforceScoreGapLabel(runAware, input);
     const inningAware = enforceNextAttackInning(scoreGapAware, input);
     const termAware = enforceDataBoundScoreTerms(inningAware, input);
     const consistent = enforceBaseballConsistency(termAware, input);
     const factAware = sanitizeStructuredFactDrift(consistent, input);
-    const voiced = style === "caster" ? enforcePolite(factAware) : factAware;
+    const voiced = style === "caster" || style === "analyst" ? enforcePolite(factAware) : factAware;
     const withPlaySummary = attachScoringPlaySummary(voiced, input, input.fallbackBody);
     const dataBound = enforceDataBoundScoreTerms(withPlaySummary, input);
     return clipScoreBodyForPush(
       ensureInningScorePrefix(dataBound, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort)
     );
   };
-  const finalize = style === "default" ? normalizeAndFinalize : finalizeStyled;
   if (!apiKey) {
     console.error("[ScoreLLM] ANTHROPIC_API_KEY missing — fallback 사용");
     return { title, body: finalize(input.fallbackBody) };

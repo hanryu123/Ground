@@ -2,7 +2,6 @@ import type { CasterStyle } from "@/lib/notifications/casterStyle";
 
 /**
  * 말투별 득점 알림 — 점수만 알 때 쓰는 통문장과, Claude 에게 줄 말투 지시.
- * "default" 말투의 문장은 pushTemplate 에 그대로 있다.
  *
  * 문장은 pushLlm 의 데이터 보정(enforceRunCount·enforceScoreGapLabel·enforceDataBoundScoreTerms)을 통과해도 깨지지 않게 쓴다:
  *  - 점수차는 항상 "N점 차"로만 (그냥 "N점"·"한 점 앞섭니다"는 이번 득점 수로 바뀐다)
@@ -38,7 +37,7 @@ const vocative = (team: string) => `${team}${hasFinalConsonant(team) ? "아" : "
 const withPartner = (team: string) => `${team}${hasFinalConsonant(team) ? "이랑" : "랑"}`;
 
 type Line = string | ((gap: number, teamShort: string) => string);
-type StyledStyle = Exclude<CasterStyle, "default">;
+type StyledStyle = CasterStyle;
 
 const LINES: Record<StyledStyle, Record<ScoreSituation, Line[]>> = {
   // 주책 바가지 찐팬 — 선수 이름을 모르는 점수만 알림이라 팀 이름에 대고 고백한다
@@ -428,7 +427,7 @@ export function buildStyledScoreLines(style: StyledStyle, situation: ScoreSituat
   return LINES[style][situation].map((line) => (typeof line === "string" ? line : line(gap, teamShort)));
 }
 
-/** Claude 시스템 프롬프트 — 언어 규칙과 말투. default 는 pushLlm 의 기존 문구를 쓴다. */
+/** Claude 시스템 프롬프트 — 언어 규칙과 말투 */
 export function buildCasterVoicePrompt(style: StyledStyle, teamShort: string): { languageRule: string; voice: string; emojiRule: string } {
   switch (style) {
     case "diehard":

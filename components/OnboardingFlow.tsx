@@ -358,13 +358,14 @@ export default function OnboardingFlow({ onComplete }: Props) {
             <button
               type="button"
               onClick={goBackToTeamSelect}
-              className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/20 text-white/80"
+              className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-700 shadow-sm"
               aria-label="팀 다시 선택"
             >
               <ArrowLeft size={16} />
             </button>
             <h1 className="text-[28px] font-semibold tracking-tight">누가 알려드릴까요?</h1>
-            <p className="mt-2 text-[13px] text-white/60">
+            {/* 팀 배경이 흰색(LG·두산)이어도 보이게 — 글자는 테마 글자색, 카드는 불투명 흰 카드 */}
+            <p className="mt-2 text-[13px] opacity-70">
               {selectedTeam?.short ?? "우리 팀"} 점수가 나면 이 말투로 알림이 와요. 나중에 알림 설정에서 바꿀 수 있어요.
             </p>
 
@@ -375,10 +376,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
                     <button
                       type="button"
                       onClick={() => chooseCasterStyle(style.id)}
-                      className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm transition hover:bg-black/30"
+                      className="w-full rounded-2xl border border-black/5 bg-white/95 px-4 py-3 text-left shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition hover:bg-white"
                     >
-                      <span className="block text-[15px] font-semibold">{style.label}</span>
-                      <span className="mt-1 block break-keep text-[12px] leading-snug text-white/65">
+                      <span className="block text-[15px] font-semibold" style={{ color: cardAccent }}>
+                        {style.label}
+                      </span>
+                      <span className="mt-1 block break-keep text-[12px] leading-snug text-gray-600">
                         “{style.sample}”
                       </span>
                     </button>

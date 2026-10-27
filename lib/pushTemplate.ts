@@ -112,7 +112,7 @@ export function buildBiasedScoreCopy(input: {
   /** 직전 점수 — 있으면 선취점·역전 허용 같은 장면을 구분한다 */
   prevMyScore?: number;
   prevOppScore?: number;
-  /** 유저가 고른 말투 — 없으면 default */
+  /** 유저가 고른 말투 — 없으면 담백한 해설위원 */
   style?: CasterStyle;
 }): { title: string; body: string } {
   const { teamShort, oppShort, myScore, oppScore, tone, state, latestPlayText, recentBodies } = input;
@@ -133,12 +133,9 @@ export function buildBiasedScoreCopy(input: {
 
   const title = pickBySeed(`${seed}:title`, buildScoreTitleCandidates(teamShort, tone, state, gap));
   const ctx: ScoreBodyContext = { teamShort, oppShort, myScore, oppScore, tone, state, gap, inning, phase, scene };
-  const style = input.style ?? "default";
   const body = pickNovelBySeed(
     `${seed}:body`,
-    style === "default"
-      ? buildScoreBodyCandidates(ctx)
-      : buildStyledScoreLines(style, resolveScoreSituation(ctx), gap, teamShort),
+    buildStyledScoreLines(input.style ?? "analyst", resolveScoreSituation(ctx), gap, teamShort),
     recentBodies
   );
   return { title, body };
@@ -269,7 +266,7 @@ function resolveScoreScene(input: {
   return null;
 }
 
-/** 말투별 문장 목록을 고르는 장면 — 아래 default 목록의 분기 순서와 같다 */
+/** 말투별 문장 목록(casterLines)을 고르는 장면 — 위에서부터 먼저 맞는 것 */
 function resolveScoreSituation(ctx: ScoreBodyContext): ScoreSituation {
   if (ctx.tone === "for") {
     if (ctx.state === "comeback") return "for-comeback";
@@ -285,153 +282,6 @@ function resolveScoreSituation(ctx: ScoreBodyContext): ScoreSituation {
   if (ctx.state === "tie") return "against-tie";
   if (ctx.state === "lead") return ctx.gap === 1 ? "against-lead1" : "against-lead";
   return ctx.gap >= 5 ? "against-big" : "against-trail";
-}
-
-function buildScoreBodyCandidates(ctx: ScoreBodyContext): string[] {
-  if (ctx.tone === "for") return buildScoreForBodyCandidates(ctx);
-  return buildScoreAgainstBodyCandidates(ctx);
-}
-
-// 점수만 알 때(선수·장면 없이) 쓰는 본문 — 조각을 이어 붙이면 문장이 어색해져서 통문장으로만 둔다.
-// 말투는 여유 있고 능청스러운 재치(아이언맨 느낌): 득점엔 자신만만, 실점엔 쿨한 자조 + 반격 의지.
-function buildScoreForBodyCandidates(ctx: ScoreBodyContext): string[] {
-  if (ctx.state === "comeback") {
-    return [
-      "역전입니다. 계산대로예요. 물론 계산은 방금 했습니다.",
-      "뒤집었습니다. 저쪽 벤치는 지금 플랜 B 찾느라 바쁘겠네요.",
-      "역전 완료. 이런 전개, 개인적으로 아주 좋아합니다.",
-      "판을 뒤집었습니다. 박수는 경기 끝나고 몰아서 받겠습니다.",
-      "역전입니다. 조금 늦게 왔지만 원래 주인공은 늦게 등장하죠.",
-      "앞서갑니다. 상대한테 리드는 잠깐 빌려준 거였습니다.",
-    ];
-  }
-
-  if (ctx.state === "tie") {
-    return [
-      "동점입니다. 상대가 너무 편해 보여서 좀 거슬렸거든요.",
-      "원점입니다. 이제야 경기가 재밌어지네요.",
-      "따라잡았습니다. 리셋 버튼 누른 셈이죠.",
-      "동점. 여기서부터가 진짜 실력입니다.",
-      "균형 맞췄습니다. 다음 장면은 우리가 쓰겠습니다.",
-    ];
-  }
-
-  if (ctx.state === "trail") {
-    return [
-      `${ctx.gap}점 차. 추격 모드 가동합니다.`,
-      "점수 나왔습니다. 시동은 걸렸으니 이제 밟기만 하면 됩니다.",
-      `아직 ${ctx.gap}점 차로 뒤지지만, 뒤집는 쪽이 더 멋있잖아요.`,
-      "따라갑니다. 상대도 슬슬 뒤를 돌아볼 때가 됐죠.",
-      `간격 줄였습니다. 남은 ${ctx.gap}점 차는 금방 지우겠습니다.`,
-    ];
-  }
-
-  if (ctx.scene === "first-run") {
-    return [
-      "선취점. 먼저 하는 게 원래 우리 스타일입니다.",
-      "선취점입니다. 오늘 시작부터 아주 마음에 드네요.",
-      "먼저 한 점. 워밍업 치고는 괜찮죠?",
-      "첫 점수는 우리 겁니다. 오늘 분위기 좋습니다.",
-    ];
-  }
-
-  if (ctx.gap === 1) {
-    return [
-      "앞서갑니다. 한 점 차는 스릴이라고 부르기로 하죠.",
-      "리드 잡았습니다. 여유는 한 점 더 내고 부리겠습니다.",
-      "한 점 앞섭니다. 아직 축배는 냉장고에 넣어 두세요.",
-      "앞서는 점수입니다. 이제 지키는 것도 멋있게 해 보죠.",
-    ];
-  }
-
-  if (ctx.phase === "late") {
-    return [
-      `${ctx.gap}점 차. 이 정도면 슬슬 퇴근 준비해도 되겠는데요.`,
-      "쐐기 박았습니다. 저쪽 벤치는 오늘 일찍 쉬셔도 됩니다.",
-      `${ctx.gap}점 차입니다. 남은 건 세리머니 연습 정도?`,
-      "후반 추가점. 깔끔하게 마무리하는 게 우리 방식이죠.",
-    ];
-  }
-
-  return [
-    `추가점. ${ctx.gap}점 차, 슬슬 지루할 정도로 잘하네요.`,
-    "또 점수입니다. 오늘 타선 업그레이드 받았나 봅니다.",
-    `${ctx.gap}점 차. 저쪽 투수한테 조금 미안해지네요.`,
-    "달아납니다. 겸손은 경기 끝나고 챙기겠습니다.",
-    `${ctx.gap}점 차로 앞섭니다. 이 흐름, 굳이 바꿀 이유가 없죠.`,
-  ];
-}
-
-function buildScoreAgainstBodyCandidates(ctx: ScoreBodyContext): string[] {
-  if (ctx.scene === "lost-lead") {
-    return [
-      "역전 허용. 네, 이건 계획에 없었습니다.",
-      `뒤집혔습니다. ${ctx.gap}점 차, 다시 뒤집으면 더 멋있게 끝나겠네요.`,
-      "앞서던 경기를 뺏겼습니다. 돌려받을 시간은 충분합니다.",
-      "역전당했습니다. 좋아요, 반전 있는 경기가 원래 재밌죠.",
-    ];
-  }
-
-  if (ctx.scene === "conceded-first") {
-    return [
-      "선취점 허용. 상대한테 먼저 하라고 양보한 걸로 하죠.",
-      "먼저 내줬습니다. 몸 풀기 끝났으면 이제 시작합시다.",
-      "선취점은 저쪽 몫. 마지막 점수만 우리 거면 됩니다.",
-      "먼저 내줬습니다. 첫 점수가 결과는 아니니까요.",
-    ];
-  }
-
-  if (ctx.scene === "went-behind") {
-    return [
-      "앞서가는 건 저쪽입니다. 잠깐 빌려준 걸로 하죠.",
-      `${ctx.gap}점 차로 뒤집니다. 쫓아가는 그림도 나쁘지 않습니다.`,
-      "상대가 앞서갑니다. 좋아요, 이제 진지하게 하겠습니다.",
-      "균형이 깨졌습니다. 다시 맞추는 건 우리 전문입니다.",
-    ];
-  }
-
-  if (ctx.state === "tie") {
-    return [
-      "동점 허용. 쉽게 이기면 재미없다는 거죠, 알겠습니다.",
-      "따라잡혔습니다. 좋아요, 다시 증명하면 됩니다.",
-      "원점입니다. 각본에 없던 장면이지만 수정 가능합니다.",
-      "동점이 됐습니다. 상대도 체면은 세워야 했나 봅니다.",
-    ];
-  }
-
-  if (ctx.state === "lead") {
-    if (ctx.gap === 1) {
-      return [
-        "한 점 차로 쫓깁니다. 스릴은 이 정도면 충분한데요.",
-        "실점. 아직 앞서 있으니 당황은 사치입니다.",
-        "쫓겼습니다. 여기서 끊는 게 진짜 실력이죠.",
-        "한 점 차. 상대가 자꾸 대화에 끼어드네요.",
-      ];
-    }
-    return [
-      `실점했지만 아직 ${ctx.gap}점 차로 앞섭니다. 여유 조금 반납했을 뿐이죠.`,
-      "점수 좀 내줬습니다. 기부 행사는 여기까지만 하죠.",
-      `${ctx.gap}점 차 리드 유지. 저쪽도 점수판에 이름은 올려야죠.`,
-      `간격이 줄었지만 ${ctx.gap}점 차입니다. 아직 우리 판이에요.`,
-    ];
-  }
-
-  if (ctx.gap >= 5) {
-    return [
-      `${ctx.gap}점 차. 오늘은 계산기가 고장 난 날인가 봅니다.`,
-      "또 내줬습니다. 오늘 수비는 공장 초기화가 필요합니다.",
-      `${ctx.gap}점 차입니다. 할 말은 없지만 끝까지 보는 게 팬의 품격이죠.`,
-      "추가 실점. 오늘 경기는 리플레이 안 하는 걸로 하죠.",
-    ];
-  }
-
-  return [
-    `또 실점. ${ctx.gap}점 차, 솔직히 좀 거슬리네요.`,
-    "추가 실점입니다. 이제 진지하게 갈 시간이에요.",
-    `${ctx.gap}점 차. 역전 드라마는 원래 이런 점수에서 시작하죠.`,
-    "또 내줬습니다. 오늘 수비는 재부팅이 필요합니다.",
-    `${ctx.gap}점 차로 뒤집니다. 저쪽이 너무 신났는데, 곧 조용해질 겁니다.`,
-  ];
 }
 
 export function buildBiasedLineupCopy(input: {

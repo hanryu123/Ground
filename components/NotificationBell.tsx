@@ -223,7 +223,7 @@ export default function NotificationBell({
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
-  const [casterStyle, setCasterStyle] = useState<CasterStyle>("default");
+  const [casterStyle, setCasterStyle] = useState<CasterStyle>("analyst");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pushHealth, setPushHealth] = useState<PushHealth>("checking");
   const [pushHealthMsg, setPushHealthMsg] = useState<string>("");

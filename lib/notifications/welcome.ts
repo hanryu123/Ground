@@ -47,11 +47,6 @@ function welcomeCopy(favoriteTeam: string | null, style: CasterStyle): { title: 
         title: `${t} 팬 여러분, 반갑습니다`,
         body: `${t} 경기 있는 날, 선발부터 결과까지 차분하게 정리해 드리겠습니다.`,
       };
-    default:
-      return {
-        title: `${t} 팬이시군요, 반가워요 ⚾`,
-        body: `${t} 경기 있는 날 선발부터 결과까지 제때 알려드릴게요. 점수 나면 여유 있게, 재치 있게 갑니다.`,
-      };
   }
 }
 
