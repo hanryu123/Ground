@@ -15,6 +15,7 @@ import {
   subscribeBrowserPush,
   type PushTopics,
 } from "@/lib/webPushClient";
+import { CASTER_STYLES, CASTER_STYLE_STORAGE_KEY, type CasterStyle } from "@/lib/notifications/casterStyle";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -127,7 +128,8 @@ function resolveCardAccent(primary: string, accent: string): string {
 }
 
 export default function OnboardingFlow({ onComplete }: Props) {
-  const [step, setStep] = useState<1 | 2>(1);
+  // 1 응원팀 → 2 알림 말투 → 3 알림 켜기
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -187,8 +189,25 @@ export default function OnboardingFlow({ onComplete }: Props) {
     setErrorMsg(null);
   }
 
+  function chooseCasterStyle(style: CasterStyle) {
+    try {
+      // 구독 등록 때 topics 에 실려 서버로 간다 (withStoredCasterStyle) — 웰컴 알림도 이 말투로 나간다
+      localStorage.setItem(CASTER_STYLE_STORAGE_KEY, style);
+    } catch {
+      /* ignore */
+    }
+    setStep(3);
+    setErrorMsg(null);
+  }
+
   function goBackToTeamSelect() {
     setStep(1);
+    setIsPledgeChecked(false);
+    setErrorMsg(null);
+  }
+
+  function goBackToStyleSelect() {
+    setStep(2);
     setIsPledgeChecked(false);
     setErrorMsg(null);
   }
@@ -327,6 +346,47 @@ export default function OnboardingFlow({ onComplete }: Props) {
               </ul>
             </div>
           </motion.div>
+        ) : step === 2 ? (
+          <motion.div
+            key="onboarding-step-style"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease }}
+            className="flex h-full flex-col px-5 pb-10 pt-12"
+          >
+            <button
+              type="button"
+              onClick={goBackToTeamSelect}
+              className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/20 text-white/80"
+              aria-label="팀 다시 선택"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <h1 className="text-[28px] font-semibold tracking-tight">누가 알려드릴까요?</h1>
+            <p className="mt-2 text-[13px] text-white/60">
+              {selectedTeam?.short ?? "우리 팀"} 점수가 나면 이 말투로 알림이 와요. 나중에 알림 설정에서 바꿀 수 있어요.
+            </p>
+
+            <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+              <ul className="space-y-2">
+                {CASTER_STYLES.map((style) => (
+                  <li key={style.id}>
+                    <button
+                      type="button"
+                      onClick={() => chooseCasterStyle(style.id)}
+                      className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm transition hover:bg-black/30"
+                    >
+                      <span className="block text-[15px] font-semibold">{style.label}</span>
+                      <span className="mt-1 block break-keep text-[12px] leading-snug text-white/65">
+                        “{style.sample}”
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </motion.div>
         ) : (
           <motion.div
             key="onboarding-step-2"
@@ -338,9 +398,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
             <div className="relative w-full max-w-md rounded-3xl border border-black/5 bg-white/95 p-6 shadow-[0_18px_54px_rgba(0,0,0,0.25)] backdrop-blur-lg">
               <button
                 type="button"
-                onClick={goBackToTeamSelect}
+                onClick={goBackToStyleSelect}
                 className="absolute left-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-700 transition hover:bg-gray-50"
-                aria-label="팀 다시 선택"
+                aria-label="말투 다시 선택"
               >
                 <ArrowLeft size={16} />
               </button>

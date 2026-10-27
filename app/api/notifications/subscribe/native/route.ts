@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureNotifyUser, resolveNotifyUserId } from "@/lib/notifyIdentity";
 import { resolveServerAppEnv } from "@/lib/appEnv";
 import { sendWelcomeIfFirst } from "@/lib/notifications/welcome";
-import { resolveStoredCasterStyle } from "@/lib/notifications/casterStyle";
+import { casterStyleFromTopics, resolveStoredCasterStyle } from "@/lib/notifications/casterStyle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
   if (isNewToken) {
     const favoriteTeam = body.favoriteTeam ?? null;
     after(() =>
-      sendWelcomeIfFirst({ userId, token, platform, favoriteTeam }).catch((err) => {
+      sendWelcomeIfFirst({ userId, token, platform, favoriteTeam, casterStyle: casterStyleFromTopics(topics) }).catch((err) => {
         console.warn("[welcome] send failed:", (err as Error).message);
       })
     );
