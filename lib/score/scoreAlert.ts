@@ -196,6 +196,8 @@ export async function dispatchScoreAlertsForGame(input: {
       state,
       latestPlayText: input.latestPlayText,
       recentBodies: teamRecentBodies,
+      prevMyScore,
+      prevOppScore,
     });
 
     const cacheKey = [

@@ -106,8 +106,12 @@ export function buildBiasedScoreCopy(input: {
   state: PushPulseState;
   latestPlayText?: string;
   recentBodies?: readonly string[];
+  /** 직전 점수 — 있으면 선취점·역전 허용 같은 장면을 구분한다 */
+  prevMyScore?: number;
+  prevOppScore?: number;
 }): { title: string; body: string } {
   const { teamShort, oppShort, myScore, oppScore, tone, state, latestPlayText, recentBodies } = input;
+  const scene = resolveScoreScene(input);
   const gap = Math.abs(myScore - oppScore);
   const inning = extractInning(latestPlayText);
   const phase = inning == null ? "mid" : inning >= 7 ? "late" : inning >= 4 ? "mid" : "early";
@@ -125,7 +129,7 @@ export function buildBiasedScoreCopy(input: {
   const title = pickBySeed(`${seed}:title`, buildScoreTitleCandidates(teamShort, tone, state, gap));
   const body = pickNovelBySeed(
     `${seed}:body`,
-    buildScoreBodyCandidates({ teamShort, oppShort, myScore, oppScore, tone, state, gap, inning, phase }),
+    buildScoreBodyCandidates({ teamShort, oppShort, myScore, oppScore, tone, state, gap, inning, phase, scene }),
     recentBodies
   );
   return { title, body };
@@ -234,30 +238,26 @@ type ScoreBodyContext = {
   gap: number;
   inning: number | null;
   phase: "early" | "mid" | "late";
+  scene: ScoreScene;
 };
 
-function combineCopyParts(
-  openers: readonly string[],
-  middles: readonly string[],
-  closers: readonly string[]
-): string[] {
-  const out: string[] = [];
-  for (const opener of openers) {
-    for (const middle of middles) {
-      for (const closer of closers) {
-        const candidate = `${opener} ${middle} ${closer}`;
-        if (!hasAwkwardRepeat(candidate)) out.push(candidate);
-      }
-    }
-  }
-  return out;
-}
+/** 상태(state)만으로는 구분이 안 되는 장면 */
+type ScoreScene = "first-run" | "conceded-first" | "lost-lead" | "went-behind" | null;
 
-function hasAwkwardRepeat(text: string): boolean {
-  return ["점수판", "상대", "팬들", "알림창", "수비", "압박"].some((word) => {
-    const hits = text.match(new RegExp(word, "g"))?.length ?? 0;
-    return hits >= 2;
-  });
+function resolveScoreScene(input: {
+  myScore: number;
+  oppScore: number;
+  tone: ScoreTone;
+  prevMyScore?: number;
+  prevOppScore?: number;
+}): ScoreScene {
+  const { prevMyScore: pm, prevOppScore: po, myScore: m, oppScore: o } = input;
+  if (pm == null || po == null) return null;
+  if (input.tone === "for") return pm === 0 && po === 0 ? "first-run" : null;
+  if (m >= o) return null;
+  if (pm > po) return "lost-lead";
+  if (pm === po) return pm === 0 ? "conceded-first" : "went-behind";
+  return null;
 }
 
 function buildScoreBodyCandidates(ctx: ScoreBodyContext): string[] {
@@ -265,253 +265,147 @@ function buildScoreBodyCandidates(ctx: ScoreBodyContext): string[] {
   return buildScoreAgainstBodyCandidates(ctx);
 }
 
+// 점수만 알 때(선수·장면 없이) 쓰는 본문 — 조각을 이어 붙이면 문장이 어색해져서 통문장으로만 둔다
 function buildScoreForBodyCandidates(ctx: ScoreBodyContext): string[] {
   if (ctx.state === "comeback") {
-    return combineCopyParts(
-      [
-        "뒤집었습니다.",
-        "이건 알림창 켜질 장면입니다.",
-        "판이 우리 쪽으로 넘어왔습니다.",
-        "방금 득점은 소리부터 다릅니다.",
-        "상대 덕아웃 표정 굳을 타이밍입니다.",
-        "팬들 손에 힘 들어갑니다.",
-        "경기 온도가 확 바뀌었습니다.",
-        "이 맛에 끝까지 봅니다.",
-      ],
-      [
-        "역전까지 가져왔고",
-        "점수판을 완전히 돌려세웠고",
-        "흐름을 앞에서 잡아챘고",
-        "가장 시끄러운 순간에 답을 냈고",
-        "상대가 편하게 못 가게 만들었고",
-        "응원석 목소리를 다시 키웠고",
-      ],
-      [
-        "이제 수비에서 바로 잠그면 됩니다.",
-        "여기서 더 흔들면 경기 냄새가 달라집니다.",
-        "한 번 더 몰아치면 상대 멘탈이 먼저 흔들립니다.",
-        "이 흐름은 절대 식히면 안 됩니다.",
-        "다음 아웃카운트까지 같이 밀어붙입시다.",
-        "오늘 알림창, 이제 재미있어졌습니다.",
-      ]
-    );
+    return [
+      "뒤집었습니다! 이제 우리가 앞서갑니다.",
+      "역전입니다. 이 분위기 그대로 갑시다.",
+      "드디어 앞섰습니다. 이제 지키기만 하면 됩니다.",
+      "판을 뒤집었습니다. 오늘 끝까지 볼 이유가 생겼네요.",
+      "역전 성공! 상대 벤치가 바빠지겠습니다.",
+      "기다리던 역전입니다. 한 점 더 달아나면 좋겠습니다.",
+    ];
   }
 
   if (ctx.state === "tie") {
-    return combineCopyParts(
-      [
-        "동점입니다.",
-        "다시 원점입니다.",
-        "경기가 다시 살아났습니다.",
-        "상대가 제일 싫어할 타이밍에 따라붙었습니다.",
-        "스코어보드가 다시 말을 듣기 시작했습니다.",
-        "팬들 심장 박자 다시 올라갑니다.",
-        "이제 진짜 승부입니다.",
-        "알림 하나로 분위기가 확 바뀝니다.",
-      ],
-      [
-        "방금 한 점이 경기장 소리를 바꿨고",
-        "이제 양쪽 모두 숨 못 쉬는 구간이고",
-        "벤치 계산도 다시 시작됐고",
-        "상대 마운드도 편하게 못 던지고",
-        "우리 타선이 문을 다시 열었고",
-        "흐름이 다시 흔들리기 시작했고",
-      ],
-      [
-        "여기서 바로 뒤집어야 합니다.",
-        "다음 공격까지 온도 유지해야 합니다.",
-        "이 기회를 그냥 보내면 안 됩니다.",
-        "지금부터는 공 하나가 더 크게 보입니다.",
-        "팬들은 이미 다음 점수 기다립니다.",
-        "이제 상대가 먼저 불안해져야 합니다.",
-      ]
-    );
+    return [
+      "동점입니다! 다시 처음부터 시작이에요.",
+      "따라잡았습니다. 이제 진짜 승부입니다.",
+      "균형을 맞췄습니다. 이 기세로 뒤집어 봅시다.",
+      "다시 원점입니다. 다음 한 점이 중요해졌어요.",
+      "동점 만들었습니다. 경기가 다시 재밌어졌네요.",
+      "쫓아갔습니다. 이제 역전만 남았습니다.",
+    ];
   }
 
   if (ctx.state === "trail") {
-    return combineCopyParts(
-      [
-        "따라붙었습니다.",
-        "이제 숨통은 붙었습니다.",
-        "늦기 전에 알림창이 살아났습니다.",
-        "추격의 불씨는 만들었습니다.",
-        "상대가 편하게 못 갑니다.",
-        "아직 뒤지만 경기 공기는 달라졌습니다.",
-        "팬들 손바닥에 다시 땀이 납니다.",
-        "지금 한 점은 작게 볼 점수가 아닙니다.",
-      ],
-      [
-        `아직 ${ctx.gap}점 차지만`,
-        "타선이 드디어 답을 냈고",
-        "상대 마운드에 부담을 걸었고",
-        "흐름을 다시 흔들 틈을 만들었고",
-        "벤치가 다시 계산할 장면을 만들었고",
-        "다음 타석까지 이어갈 이유를 만들었고",
-      ],
-      [
-        "여기서 끊기면 너무 아깝습니다.",
-        "바로 한 번 더 붙어야 합니다.",
-        "다음 공격이 진짜 중요합니다.",
-        "이제 상대가 편하게 숨 쉬면 안 됩니다.",
-        "팬들 입장에서는 이제부터가 본게임입니다.",
-        "한 번 더 알림 울릴 준비합시다.",
-      ]
-    );
+    return [
+      `따라갔습니다. 이제 ${ctx.gap}점 차예요.`,
+      `추격 시작입니다. ${ctx.gap}점, 충분히 뒤집을 수 있습니다.`,
+      "점수를 냈습니다. 여기서 한 번 더 이어가면 됩니다.",
+      `간격을 줄였습니다. 남은 건 ${ctx.gap}점입니다.`,
+      "점수가 나왔습니다. 이 흐름 이어갑시다.",
+      "따라붙었습니다. 아직 경기 많이 남았어요.",
+    ];
   }
 
-  const leadMiddle =
-    ctx.gap === 1
-      ? [
-          "한 점 차라 살얼음판이지만",
-          "편하게 볼 점수는 아니지만",
-          "숨 막히는 간격이라 더 집중해야 하지만",
-          "아직 손에 땀이 나는 점수지만",
-          "불안한 한 점이라도",
-          "한 점 싸움의 압박 속에서도",
-        ]
-      : ctx.phase === "late"
-        ? [
-            `${ctx.gap}점 차로 벌렸고`,
-            "후반에 상대 추격 리듬을 끊었고",
-            "상대 벤치 계산을 복잡하게 만들었고",
-            "이닝 끝으로 갈수록 더 크게 느껴지는 점수를 만들었고",
-            "지금 필요한 간격을 벌렸고",
-            "팬들이 숨 돌릴 틈을 만들었고",
-          ]
-        : [
-            `${ctx.gap}점 차로 앞서가고 있고`,
-            "초중반 흐름을 우리 쪽으로 당겼고",
-            "상대 마운드에 바로 부담을 걸었고",
-            "점수판 간격을 더 벌렸고",
-            "공격이 필요한 순간 답을 냈고",
-            "응원석 목소리를 키울 이유를 만들었고",
-          ];
+  if (ctx.scene === "first-run") {
+    return [
+      "선취점입니다! 기분 좋게 시작합니다.",
+      "먼저 점수를 냈습니다. 이 흐름 그대로 갑시다.",
+      "선취점 가져왔습니다. 오늘 출발 좋네요.",
+      "첫 점수가 우리 쪽에서 나왔습니다.",
+      "먼저 앞서갑니다. 한 점 더 달아나면 좋겠어요.",
+    ];
+  }
 
-  return combineCopyParts(
-    [
-      "좋습니다.",
-      "방금 점수는 큽니다.",
-      "타이밍이 좋습니다.",
-      "점수판이 우리 편으로 움직였습니다.",
-      "상대가 싫어할 득점입니다.",
-      "응원석 소리 올라갑니다.",
-      "이 한 점은 그냥 숫자가 아닙니다.",
-      "알림창에 박아둘 장면입니다.",
-    ],
-    leadMiddle,
-    [
-      "다음 수비까지 차갑게 잠급시다.",
-      "여기서 한 번 더 압박하면 됩니다.",
-      "이 온도 식히면 안 됩니다.",
-      "상대가 따라올 틈을 더 줄여야 합니다.",
-      "팬들 심장도 같이 뛰기 시작했습니다.",
-      "이제 공 하나씩 더 빡빡하게 갑시다.",
-    ]
-  );
+  if (ctx.gap === 1) {
+    return [
+      "앞서갑니다! 한 점 차라 아직 안심은 이릅니다.",
+      "리드 잡았습니다. 이 한 점 꼭 지켜봅시다.",
+      "앞서는 점수입니다. 한 점 더 달아나면 좋겠네요.",
+      "앞서는 점수가 나왔습니다. 이제 지키는 싸움입니다.",
+      "리드입니다. 아직 한 점 차라 끝까지 집중해야 해요.",
+    ];
+  }
+
+  if (ctx.phase === "late") {
+    return [
+      `${ctx.gap}점 차로 벌렸습니다. 이제 굳히기 들어갑니다.`,
+      `달아나는 점수입니다. ${ctx.gap}점 차면 한결 편해졌어요.`,
+      "후반에 꼭 필요한 추가점이 나왔습니다.",
+      `${ctx.gap}점 차입니다. 남은 아웃카운트만 잘 잡으면 됩니다.`,
+      "쐐기를 박는 점수가 나왔습니다.",
+    ];
+  }
+
+  return [
+    `추가점입니다. 이제 ${ctx.gap}점 차예요.`,
+    `달아납니다! ${ctx.gap}점 차로 벌렸습니다.`,
+    "점수가 계속 나옵니다. 오늘 타선 좋네요.",
+    `${ctx.gap}점 차 리드입니다. 이 흐름 그대로 갑시다.`,
+    "또 점수 냈습니다. 상대 투수 흔들리고 있어요.",
+  ];
 }
 
 function buildScoreAgainstBodyCandidates(ctx: ScoreBodyContext): string[] {
+  if (ctx.scene === "lost-lead") {
+    return [
+      `역전을 허용했습니다. 이제 ${ctx.gap}점 차로 뒤집혔어요.`,
+      "리드를 뺏겼습니다. 바로 다시 뒤집어야 합니다.",
+      "역전당했습니다. 아직 시간은 충분해요.",
+      `경기가 뒤집혔습니다. ${ctx.gap}점, 다시 따라가 봅시다.`,
+      "앞서던 경기가 뒤집혔습니다. 다음 공격에서 갚아줍시다.",
+    ];
+  }
+
+  if (ctx.scene === "conceded-first") {
+    return [
+      `선취점을 내줬습니다. 아직 ${ctx.gap}점, 금방 따라갈 수 있어요.`,
+      "먼저 점수를 내줬습니다. 바로 따라가 봅시다.",
+      "상대가 먼저 앞서갑니다. 아직 경기 남았어요.",
+      "선취점은 상대 쪽입니다. 다음 공격에서 갚아줍시다.",
+    ];
+  }
+
+  if (ctx.scene === "went-behind") {
+    return [
+      `점수를 내줬습니다. ${ctx.gap}점 차예요.`,
+      "리드를 내줬습니다. 바로 따라가 봅시다.",
+      `실점했습니다. 이제 ${ctx.gap}점 뒤집니다.`,
+      "균형이 깨졌습니다. 다음 공격에서 다시 맞춥시다.",
+      "상대가 앞서갑니다. 아직 경기 많이 남았어요.",
+    ];
+  }
+
   if (ctx.state === "tie") {
-    return combineCopyParts(
-      [
-        "동점 허용입니다.",
-        "리드가 사라졌습니다.",
-        "경기가 다시 원점으로 갔습니다.",
-        "방금 실점은 정말 찝찝합니다.",
-        "상대가 따라왔습니다.",
-        "팬들 표정이 굳을 타이밍입니다.",
-        "아웃카운트 하나가 더 무거워졌습니다.",
-        "이건 바로 응답해야 하는 실점입니다.",
-      ],
-      [
-        "한 점 싸움이 다시 시작됐고",
-        "상대 덕아웃에 숨이 붙었고",
-        "우리 쪽 긴장감도 확 올라갔고",
-        "불펜과 수비 모두 더 빡빡해졌고",
-        "스코어보드가 마음 편한 모양은 아니고",
-        "이제 작은 실수 하나도 크게 보이고",
-      ],
-      [
-        "다음 공격에서 바로 다시 가져와야 합니다.",
-        "여기서 오래 흔들리면 안 됩니다.",
-        "바로 끊고 다시 몰아붙여야 합니다.",
-        "팬들 심장도 쉬지 못합니다.",
-        "이제부터는 한 공 한 공이 전부입니다.",
-        "상대가 더 신나기 전에 눌러야 합니다.",
-      ]
-    );
+    return [
+      "동점을 허용했습니다. 다시 처음부터예요.",
+      "따라잡혔습니다. 다음 공격에서 바로 다시 가져옵시다.",
+      "리드가 사라졌습니다. 아직 경기는 길어요.",
+      "동점이 됐습니다. 여기서 더 내주면 안 됩니다.",
+      "원점으로 돌아갔습니다. 다시 집중해 봅시다.",
+    ];
   }
 
   if (ctx.state === "lead") {
-    const middle =
-      ctx.gap === 1
-        ? [
-            "아직 앞서지만 한 점 차입니다",
-            "살얼음판 리드라 절대 편하지 않습니다",
-            "숨 막히는 간격만 남았습니다",
-            "앞서 있어도 손에 땀 나는 점수입니다",
-            "불안한 한 점을 지켜야 합니다",
-            "이제 점수판이 너무 가깝습니다",
-          ]
-        : [
-            `아직 ${ctx.gap}점 차로 앞서지만`,
-            "그래도 불씨는 커지기 전에 꺼야 하고",
-            "상대가 숨 붙기 전에 끊어야 하고",
-            "방금 실점은 바로 정리해야 하고",
-            "간격이 줄어든 건 사실이고",
-            "수비 쪽 집중력이 다시 필요하고",
-          ];
-    return combineCopyParts(
-      [
-        "실점은 아픕니다.",
-        "괜히 찝찝한 점수를 줬습니다.",
-        "상대가 숨을 붙였습니다.",
-        "방금 한 점은 그냥 넘기면 안 됩니다.",
-        "흐름이 살짝 흔들렸습니다.",
-        "팬들 손에 힘 들어갑니다.",
-        "여기서 방심하면 바로 피곤해집니다.",
-        "점수판 간격이 줄었습니다.",
-      ],
-      middle,
-      [
-        "다음 수비에서 바로 잠가야 합니다.",
-        "추가 실점만은 막아야 합니다.",
-        "공 하나씩 더 차갑게 가야 합니다.",
-        "상대 응원석 소리 커지기 전에 끊읍시다.",
-        "바로 다음 아웃카운트가 중요합니다.",
-        "우리 공격이 다시 답을 내면 됩니다.",
-      ]
-    );
+    if (ctx.gap === 1) {
+      return [
+        "실점했습니다. 이제 한 점 차라 긴장해야 해요.",
+        "한 점 차로 쫓겼습니다. 여기서 끊어야 합니다.",
+        "아직 앞서지만 한 점 차입니다. 추가 실점은 막아야 해요.",
+        "점수를 내줬습니다. 리드가 한 점밖에 안 남았어요.",
+        "추격을 허용했습니다. 다음 이닝이 중요합니다.",
+      ];
+    }
+    return [
+      `실점했지만 아직 ${ctx.gap}점 앞서 있습니다.`,
+      `점수를 내줬습니다. 그래도 아직 ${ctx.gap}점 리드예요.`,
+      "점수를 내줬지만 여기서 바로 끊으면 됩니다.",
+      `간격이 줄었습니다. 아직 ${ctx.gap}점 차라 괜찮아요.`,
+      "실점은 아쉽지만 리드는 지키고 있습니다.",
+    ];
   }
 
-  return combineCopyParts(
-    [
-      "또 내줬습니다.",
-      "점수판이 더 멀어졌습니다.",
-      "방금 실점은 체감이 큽니다.",
-      "지금은 말보다 아웃카운트가 필요합니다.",
-      "팬들 한숨 나올 장면입니다.",
-      "상대가 너무 편하게 숨 쉬게 두면 안 됩니다.",
-      "이 흐름은 바로 잘라야 합니다.",
-      "벤치가 답을 꺼내야 할 타이밍입니다.",
-    ],
-    [
-      `현재 ${ctx.gap}점 차이고`,
-      "공격에서 다시 불을 붙여야 하고",
-      "수비부터 먼저 흔들림을 멈춰야 하고",
-      "상대 리듬을 더 키우면 안 되고",
-      "다음 이닝까지 끌고 갈 실점은 아니고",
-      "지금 필요한 건 깔끔한 정리이고",
-    ],
-    [
-      "바로 다음 장면에서 끊어야 합니다.",
-      "이제 알림창도 더 예민하게 봐야 합니다.",
-      "아직 경기는 남았습니다.",
-      "한 번만 더 흐름을 뺏어오면 됩니다.",
-      "팬 모드 꺼질 때가 아닙니다.",
-      "다음 공격에서 말이 달라져야 합니다.",
-    ]
-  );
+  return [
+    `또 실점했습니다. 이제 ${ctx.gap}점 차예요.`,
+    `점수를 더 내줬습니다. ${ctx.gap}점 차로 벌어졌어요.`,
+    "추가 실점입니다. 빨리 끊고 공격에서 갚아야 합니다.",
+    `${ctx.gap}점 차가 됐습니다. 아직 경기는 남아 있어요.`,
+    "또 내줬습니다. 다음 공격에서 반격해 봅시다.",
+    "실점이 이어집니다. 이 흐름부터 끊어야 해요.",
+  ];
 }
 
 export function buildBiasedLineupCopy(input: {
