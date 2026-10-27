@@ -6,12 +6,13 @@
  * 값이 없거나 모르는 값이면 "default"(여유 있는 재치 말투).
  */
 
-export type CasterStyle = "default" | "diehard" | "caster" | "elon" | "analyst";
+export type CasterStyle = "default" | "diehard" | "caster" | "tiger" | "elon" | "analyst";
 
 export const CASTER_STYLES: ReadonlyArray<{ id: CasterStyle; label: string; sample: string }> = [
   { id: "default", label: "기본", sample: "역전입니다. 계산대로예요. 물론 계산은 방금 했습니다." },
   { id: "diehard", label: "골수팬", sample: "박해민 사랑해ㅠㅠ 역전이다 오늘부터 내 최애 결혼하자" },
-  { id: "caster", label: "열혈 캐스터", sample: "역전!!! 역전입니다!!! 경기장이 뒤집어집니다!!!" },
+  { id: "caster", label: "열혈 캐스터", sample: "역전 허용… 아 이 (삐-)!!! 죄송합니다 너무 화가 나서요!!!" },
+  { id: "tiger", label: "호랑이 감독", sample: "역전을 당해?! 다 집합! 정신 어디 두고 왔어!" },
   { id: "elon", label: "일론 머스크", sample: "역전. 계산대로야. 다음 정거장은 화성. 🚀" },
   { id: "analyst", label: "담백한 해설위원", sample: "3회말 역전입니다. 집중력이 좋았습니다." },
 ];
