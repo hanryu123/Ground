@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canSpendLlm, ensureLlmTables, recordLlmUsage } from "@/lib/llmBudget";
 import { TEAMS } from "@/lib/teams";
@@ -137,7 +138,7 @@ async function fetchGoogleTeamArticles(teamName: string): Promise<RawArticle[]> 
   const q = encodeURIComponent(`"${teamName}" when:7d`);
   const res = await fetch(`https://news.google.com/rss/search?q=${q}&hl=ko&gl=KR&ceid=KR:ko`, {
     headers: { "User-Agent": UA },
-    next: { revalidate: 1800 },
+    cache: "no-store",
     signal: AbortSignal.timeout(6000),
   });
   if (!res.ok) throw new Error(`google news HTTP ${res.status}`);
@@ -163,14 +164,34 @@ async function fetchGoogleTeamArticles(teamName: string): Promise<RawArticle[]> 
   return out;
 }
 
-let googleMemo: { at: number; value: Promise<RawArticle[]> } | null = null;
+/**
+ * Google 뉴스 호출 시간대 — 1시간에 한 번, 밤 10시~아침 7시(KST)는 부르지 않는다.
+ * 캐시 키를 "KST 시각(시 단위)"로 잡아 한 시간 안에는 같은 결과를 쓰고,
+ * 밤에는 그날 21시 결과를 계속 쓴다 (캐시가 비어 있을 때만 예외로 한 번 부른다).
+ */
+function googleSlot(now = Date.now()): string {
+  const kst = new Date(now + 9 * 3600_000);
+  const hour = kst.getUTCHours();
+  if (hour >= 7 && hour < 22) return kst.toISOString().slice(0, 13);
+  const day = hour >= 22 ? kst : new Date(kst.getTime() - 86_400_000);
+  return `${day.toISOString().slice(0, 10)}T21`;
+}
 
-/** 10개 구단 이름으로 찾은 최근 7일 기사 (같은 제목은 하나로). 같은 인스턴스에서 10분 재사용 */
+function fetchGoogleTeamArticlesCached(teamName: string, slot: string): Promise<RawArticle[]> {
+  return unstable_cache(() => fetchGoogleTeamArticles(teamName), ["google-news-v1", teamName, slot], {
+    revalidate: 2 * 86_400,
+  })();
+}
+
+let googleMemo: { slot: string; value: Promise<RawArticle[]> } | null = null;
+
+/** 10개 구단 이름으로 찾은 최근 7일 기사 (같은 제목은 하나로) */
 function fetchGoogleArticles(): Promise<RawArticle[]> {
-  if (googleMemo && Date.now() - googleMemo.at < 10 * 60_000) return googleMemo.value;
+  const slot = googleSlot();
+  if (googleMemo?.slot === slot) return googleMemo.value;
   const value = (async () => {
     const perTeam = await mapWithConcurrency(TEAMS, 5, (t) =>
-      fetchGoogleTeamArticles(t.name).catch((err) => {
+      fetchGoogleTeamArticlesCached(t.name, slot).catch((err) => {
         console.warn(`[news] google ${t.name} failed:`, (err as Error).message);
         return [] as RawArticle[];
       })
@@ -183,7 +204,7 @@ function fetchGoogleArticles(): Promise<RawArticle[]> {
       return true;
     });
   })();
-  googleMemo = { at: Date.now(), value };
+  googleMemo = { slot, value };
   value.catch(() => {
     googleMemo = null;
   });
