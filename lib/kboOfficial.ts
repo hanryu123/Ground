@@ -100,7 +100,9 @@ function adapt(raw: KboRaw): KboOfficialGame | null {
         ? "STARTED"
         : raw.GAME_STATE_SC === "3"
           ? "RESULT"
-          : "BEFORE";
+          : raw.GAME_STATE_SC !== "1" && (raw.GAME_INN_NO ?? 0) > 0
+            ? "STARTED" // 모르는 상태 값이라도 이닝이 진행 중이면 경기 중으로 본다
+            : "BEFORE";
   const inning = statusCode === "STARTED" || statusCode === "RESULT" || statusCode === "SUSPENDED"
     ? raw.GAME_INN_NO ?? null
     : null;
