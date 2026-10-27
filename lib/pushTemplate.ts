@@ -138,7 +138,7 @@ export function buildBiasedScoreCopy(input: {
     `${seed}:body`,
     style === "default"
       ? buildScoreBodyCandidates(ctx)
-      : buildStyledScoreLines(style, resolveScoreSituation(ctx), gap),
+      : buildStyledScoreLines(style, resolveScoreSituation(ctx), gap, teamShort),
     recentBodies
   );
   return { title, body };
