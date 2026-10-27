@@ -104,7 +104,7 @@ type NaverGameDetail = {
   };
 };
 
-async function fetchGameDetail(gameId: string, past: boolean) {
+async function fetchGameDetail(gameId: string) {
   try {
     const res = await fetch(`${NAVER_BASE}/schedule/games/${gameId}`, {
       headers: {
@@ -112,8 +112,7 @@ async function fetchGameDetail(gameId: string, past: boolean) {
         accept: "application/json",
         referer: "https://m.sports.naver.com/",
       },
-      // 지난 경기는 바뀔 일이 없어 길게 캐시
-      next: { revalidate: past ? 3600 : 60 },
+      cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
@@ -125,7 +124,6 @@ async function fetchGameDetail(gameId: string, past: boolean) {
 
 /** 하루 경기 + 선발·구장·승패 투수 */
 export async function fetchDayGames(date: string): Promise<DayGamesPayload> {
-  const today = todayKstDate();
   let games = await fetchKboTodayGames(date, { includeLineups: false });
   if (games.length === 0) {
     // 하루 단위 라이브 조회가 실패하면 시즌 일정에서라도 꺼낸다
@@ -133,7 +131,7 @@ export async function fetchDayGames(date: string): Promise<DayGamesPayload> {
     games = season.filter((g) => g.date === date);
   }
 
-  const details = await Promise.all(games.map((g) => fetchGameDetail(g.id, date < today)));
+  const details = await Promise.all(games.map((g) => fetchGameDetail(g.id)));
   const enriched = games.map((g, i) => {
     const d = details[i];
     if (!d) return withHighlight(g);

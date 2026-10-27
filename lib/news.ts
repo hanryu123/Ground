@@ -76,7 +76,11 @@ let naverDownUntil = 0;
 async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArticle[]> {
   if (Date.now() >= naverDownUntil) {
     try {
-      return await fetchNaverDayArticles(date, isToday);
+      // 오늘은 30분, 지난 날은 하루 단위로 캐시 (실패는 캐시하지 않는다)
+      const bucket = isToday ? Math.floor(Date.now() / 1_800_000) : "past";
+      return await unstable_cache(() => fetchNaverDayArticles(date), ["naver-news-day-v1", date, String(bucket)], {
+        revalidate: isToday ? 1800 : 86_400,
+      })();
     } catch (err) {
       naverDownUntil = Date.now() + 10 * 60_000;
       console.warn("[news] naver unavailable, using google news:", (err as Error).message);
@@ -85,7 +89,7 @@ async function fetchDayArticles(date: string, isToday: boolean): Promise<RawArti
   return (await fetchGoogleArticles()).filter((a) => a.dateTime.startsWith(date));
 }
 
-async function fetchNaverDayArticles(date: string, isToday: boolean): Promise<RawArticle[]> {
+async function fetchNaverDayArticles(date: string): Promise<RawArticle[]> {
   const ymd = date.replaceAll("-", "");
   const all: RawArticle[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -93,7 +97,8 @@ async function fetchNaverDayArticles(date: string, isToday: boolean): Promise<Ra
       `${NAVER_NEWS}?sort=latest&date=${ymd}&page=${page}&pageSize=${PAGE_SIZE}`,
       {
         headers: { "User-Agent": UA, Referer: "https://m.sports.naver.com/" },
-        next: { revalidate: isToday ? 1800 : 86_400 },
+        // 캐시는 위 unstable_cache 가 맡는다 — fetch 캐시의 뒤편 재검증이 막힌 네이버에 계속 매달려 응답이 1분씩 늦었다
+        cache: "no-store",
         // 막혔을 땐 응답 없이 매달린다 — 짧게 끊고 Google 뉴스로 넘어간다
         signal: AbortSignal.timeout(3000),
       }

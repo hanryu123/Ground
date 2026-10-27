@@ -206,9 +206,9 @@ function naverFetchOptions(cacheMode: KboFetchCacheMode = "cached") {
       accept: "application/json",
       referer: "https://m.sports.naver.com/",
     },
-    ...(cacheMode === "live"
-      ? { cache: "no-store" as const }
-      : { next: { revalidate: 60 } }),
+    // fetch 캐시는 쓰지 않는다 — 네이버가 막히면 만료된 캐시의 뒤편 재검증이 계속 실패하며 응답을 붙잡았다.
+    // (일정·점수는 KBO 공식이 1순위라 네이버 호출은 많지 않다)
+    cache: "no-store" as const,
     // 네이버가 서버 요청을 막으면 응답 없이 매달린다 — 오래 기다리지 않는다
     signal: AbortSignal.timeout(4000),
   };
