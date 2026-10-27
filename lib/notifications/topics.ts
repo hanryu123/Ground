@@ -41,6 +41,8 @@ export type AlertKind =
 export type SubscriptionTopics = Partial<Record<TopicKey, boolean>> & {
   /** 구독을 만든 클라이언트 환경. 알파 서버는 알파 구독에만 푸시한다. */
   appEnv?: AppEnv;
+  /** 득점 알림 말투 — lib/notifications/casterStyle.ts */
+  casterStyle?: string;
   /** 레거시 호환: 옛 클라이언트가 보내던 키 — 더 이상 사용하지 않음. */
   gameEnd?: boolean;
 };

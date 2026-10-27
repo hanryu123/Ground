@@ -7,12 +7,19 @@ import {
   getOrCreateNotifyUserId,
   persistSubscription,
   registerServiceWorker,
+  saveCasterStyle,
   subscribeBrowserPush,
   unsubscribeBrowserPush,
   type PushTopics,
 } from "@/lib/webPushClient";
 import { usePwaInstallGate } from "@/lib/usePwaInstallGate";
 import { ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
+import {
+  CASTER_STYLES,
+  CASTER_STYLE_STORAGE_KEY,
+  parseCasterStyle,
+  type CasterStyle,
+} from "@/lib/notifications/casterStyle";
 
 /**
  * NotificationBell — 우상단 알림 종.
@@ -216,6 +223,7 @@ export default function NotificationBell({
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const [casterStyle, setCasterStyle] = useState<CasterStyle>("default");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pushHealth, setPushHealth] = useState<PushHealth>("checking");
   const [pushHealthMsg, setPushHealthMsg] = useState<string>("");
@@ -233,6 +241,11 @@ export default function NotificationBell({
 
   // ── 초기 로드: prefs + 현재 권한 상태 ──
   useEffect(() => {
+    try {
+      setCasterStyle(parseCasterStyle(localStorage.getItem(CASTER_STYLE_STORAGE_KEY)));
+    } catch {
+      /* ignore */
+    }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -561,6 +574,19 @@ export default function NotificationBell({
     void refreshPushHealth({ allowSilentResubscribe: true });
   }, [vapidPublicKey, isStandalone]);
 
+  async function pickCasterStyle(next: CasterStyle) {
+    if (next === casterStyle) return;
+    const previous = casterStyle;
+    setCasterStyle(next);
+    setErrorMsg(null);
+    try {
+      await saveCasterStyle(next, getOrCreateNotifyUserId());
+    } catch {
+      setCasterStyle(previous);
+      setErrorMsg("말투 저장에 실패했어요.");
+    }
+  }
+
   async function onBellClick() {
     setErrorMsg(null);
     // 네이티브 앱(Capacitor) 또는 PWA standalone 모드 → 패널 바로 열기
@@ -752,6 +778,40 @@ export default function NotificationBell({
                 );
               })}
             </div>
+
+            {/* 득점 알림 말투 */}
+            {prefs.score && (
+              <div className="border-t border-white/[0.06] px-4 pb-3 pt-2.5">
+                <p className="text-[11px] text-white/55" style={{ fontWeight: 600 }}>
+                  득점 알림 말투
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="득점 알림 말투">
+                  {CASTER_STYLES.map((style) => {
+                    const selected = style.id === casterStyle;
+                    return (
+                      <button
+                        key={style.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => pickCasterStyle(style.id)}
+                        className="rounded-full px-2.5 py-1 text-[11.5px] transition-colors"
+                        style={{
+                          fontWeight: 600,
+                          backgroundColor: selected ? toggleOnColor : "rgba(255,255,255,0.06)",
+                          color: selected ? "#fff" : "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        {style.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] leading-snug text-white/45">
+                  예) {CASTER_STYLES.find((style) => style.id === casterStyle)?.sample}
+                </p>
+              </div>
+            )}
 
             {/* 인앱 알림 인박스 */}
             <div

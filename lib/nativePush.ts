@@ -12,6 +12,7 @@
  */
 
 import type { PushNotificationSchema, Token, ActionPerformed } from "@capacitor/push-notifications";
+import { withStoredCasterStyle } from "@/lib/webPushClient";
 
 type NativePushOptions = {
   userId: string;
@@ -69,7 +70,7 @@ async function registerTokenWithServer(
       token,
       platform,
       favoriteTeam: options.favoriteTeam,
-      topics: options.topics ?? {},
+      topics: withStoredCasterStyle(options.topics ?? {}),
     }),
   });
 

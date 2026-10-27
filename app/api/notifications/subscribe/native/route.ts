@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureNotifyUser, resolveNotifyUserId } from "@/lib/notifyIdentity";
 import { resolveServerAppEnv } from "@/lib/appEnv";
 import { sendWelcomeIfFirst } from "@/lib/notifications/welcome";
+import { resolveStoredCasterStyle } from "@/lib/notifications/casterStyle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ type NativeSubscribeBody = {
     livePitcherChange?: boolean;
     liveStrikeout?: boolean;
     liveHomeRun?: boolean;
+    casterStyle?: string;
   };
 };
 
@@ -83,14 +85,18 @@ export async function POST(req: Request) {
 
   await ensureNotifyUser(userId, { favoriteTeam: body.favoriteTeam ?? null });
 
-  const topics = normalizeTopics(body.topics);
   const appEnv = resolveServerAppEnv();
 
   // 앱을 켤 때마다 같은 토큰으로 다시 등록되므로, 처음 들어온 토큰일 때만 웰컴 알림 대상이다.
-  const isNewToken = !(await prisma.nativePushToken.findUnique({
+  const existing = await prisma.nativePushToken.findUnique({
     where: { token },
-    select: { id: true },
-  }));
+    select: { id: true, topics: true },
+  });
+  const isNewToken = !existing;
+  const topics = {
+    ...normalizeTopics(body.topics),
+    ...resolveStoredCasterStyle(body.topics?.casterStyle, existing?.topics),
+  };
 
   const saved = await prisma.nativePushToken.upsert({
     where: { token },

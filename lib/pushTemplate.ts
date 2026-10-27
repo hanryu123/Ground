@@ -1,3 +1,6 @@
+import type { CasterStyle } from "@/lib/notifications/casterStyle";
+import { buildStyledScoreLines, type ScoreSituation } from "@/lib/score/casterLines";
+
 export type PushPulseState = "lead" | "trail" | "tie" | "comeback";
 export type ScoreTone = "for" | "against";
 
@@ -109,6 +112,8 @@ export function buildBiasedScoreCopy(input: {
   /** 직전 점수 — 있으면 선취점·역전 허용 같은 장면을 구분한다 */
   prevMyScore?: number;
   prevOppScore?: number;
+  /** 유저가 고른 말투 — 없으면 default */
+  style?: CasterStyle;
 }): { title: string; body: string } {
   const { teamShort, oppShort, myScore, oppScore, tone, state, latestPlayText, recentBodies } = input;
   const scene = resolveScoreScene(input);
@@ -127,9 +132,13 @@ export function buildBiasedScoreCopy(input: {
   ].join(":");
 
   const title = pickBySeed(`${seed}:title`, buildScoreTitleCandidates(teamShort, tone, state, gap));
+  const ctx: ScoreBodyContext = { teamShort, oppShort, myScore, oppScore, tone, state, gap, inning, phase, scene };
+  const style = input.style ?? "default";
   const body = pickNovelBySeed(
     `${seed}:body`,
-    buildScoreBodyCandidates({ teamShort, oppShort, myScore, oppScore, tone, state, gap, inning, phase, scene }),
+    style === "default"
+      ? buildScoreBodyCandidates(ctx)
+      : buildStyledScoreLines(style, resolveScoreSituation(ctx), gap),
     recentBodies
   );
   return { title, body };
@@ -258,6 +267,24 @@ function resolveScoreScene(input: {
   if (pm > po) return "lost-lead";
   if (pm === po) return pm === 0 ? "conceded-first" : "went-behind";
   return null;
+}
+
+/** 말투별 문장 목록을 고르는 장면 — 아래 default 목록의 분기 순서와 같다 */
+function resolveScoreSituation(ctx: ScoreBodyContext): ScoreSituation {
+  if (ctx.tone === "for") {
+    if (ctx.state === "comeback") return "for-comeback";
+    if (ctx.state === "tie") return "for-tie";
+    if (ctx.state === "trail") return "for-trail";
+    if (ctx.scene === "first-run") return "for-first";
+    if (ctx.gap === 1) return "for-lead1";
+    return ctx.phase === "late" ? "for-late" : "for-lead";
+  }
+  if (ctx.scene === "lost-lead") return "against-lost-lead";
+  if (ctx.scene === "conceded-first") return "against-first";
+  if (ctx.scene === "went-behind") return "against-went-behind";
+  if (ctx.state === "tie") return "against-tie";
+  if (ctx.state === "lead") return ctx.gap === 1 ? "against-lead1" : "against-lead";
+  return ctx.gap >= 5 ? "against-big" : "against-trail";
 }
 
 function buildScoreBodyCandidates(ctx: ScoreBodyContext): string[] {

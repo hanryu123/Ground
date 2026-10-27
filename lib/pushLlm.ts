@@ -7,6 +7,8 @@ import {
   sanitizeBoringFanCopy,
 } from "@/lib/fanCopyVariety";
 import type { ScoringPlayContext, ScoringResultType } from "@/lib/score/playByPlay";
+import type { CasterStyle } from "@/lib/notifications/casterStyle";
+import { buildCasterVoicePrompt } from "@/lib/score/casterLines";
 
 /**
  * Claude 반말 어미 → 존댓말 강제 변환 후처리
@@ -104,6 +106,8 @@ type GenerateScorePushInput = {
   prevMyScore?: number;
   /** 이전 상대 팀 점수 (역전 감지용) */
   prevOppScore?: number;
+  /** 유저가 고른 말투 — 없으면 default */
+  casterStyle?: CasterStyle;
 };
 
 type GenerateScorePushOptions = {
@@ -648,7 +652,8 @@ function buildScoringPlaySummary(input: GenerateScorePushInput): string | null {
   return clipForPush(summary);
 }
 
-function attachScoringPlaySummary(body: string, input: GenerateScorePushInput): string {
+/** styledReaction: 말투를 고른 유저 — 사실만 반복한 본문을 기본 말투 반응 대신 그 말투 문장으로 바꾼다 */
+function attachScoringPlaySummary(body: string, input: GenerateScorePushInput, styledReaction?: string): string {
   const cleanBody = stripBattingContextNoise(stripLlmHeaderPrefix(body));
   const summary = buildStructuredScoringPlaySummary(input) ??
     (input.tone === "for" ? buildScoringPlaySummary(input) : null);
@@ -667,7 +672,7 @@ function attachScoringPlaySummary(body: string, input: GenerateScorePushInput): 
 
   if (cleanBody.includes(summary) && !factOnly) return cleanBody;
 
-  const reaction = factOnly ? buildStructuredFanReaction(input) : cleanBody;
+  const reaction = factOnly ? styledReaction ?? buildStructuredFanReaction(input) : cleanBody;
   return `${summary} · ${reaction}`;
 }
 
@@ -1130,9 +1135,13 @@ function buildSystemPrompt(input: GenerateScorePushInput, recentBodies: string[]
           .join("\n")}`
       : "";
 
-  const emojiRule = emotionState === "광란샤우팅" || emotionState === "역전"
-    ? `- 이모지 1~3개 적극 사용 (🔥 😱 🚀 등)`
-    : `- 이모지 0~2개만`;
+  const style = input.casterStyle ?? "default";
+  const styledVoice = style === "default" ? null : buildCasterVoicePrompt(style, favoriteTeam);
+  const emojiRule = styledVoice
+    ? styledVoice.emojiRule
+    : emotionState === "광란샤우팅" || emotionState === "역전"
+      ? `- 이모지 1~3개 적극 사용 (🔥 😱 🚀 등)`
+      : `- 이모지 0~2개만`;
   const inning = parseInningState(input.latestPlayText).inning;
   const scoredRuns = resolveScoredRuns(input);
   const gap = resolveScoreGap(input);
@@ -1160,7 +1169,14 @@ ${buildResultToneGuide(context.play.resultType)}
 ━━━━━━━━━━━━━━━━━━━`
     : "";
 
-  return `[언어 규칙 — 최우선]
+  const intro = styledVoice
+    ? `${styledVoice.languageRule}
+
+너는 ${favoriteTeam} 팬에게 가는 편파 득점 알림을 쓴다. 감정은 완전히 우리 팀 편이야.
+냉정한 중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
+
+${styledVoice.voice}`
+    : `[언어 규칙 — 최우선]
 모든 문장은 반드시 존댓말로 끝나야 한다: -습니다 / -네요 / -죠 / -합니다 / -군요
 반말(-야, -다, -어, -지, -네, -잖아) 절대 금지. 단 한 문장도 반말이면 실격.
 
@@ -1174,7 +1190,9 @@ KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편�
 - 득점: 소리 지르기보다 "계산대로입니다. 물론 계산은 방금 했습니다" 같은 능청스러운 자신감.
 - 실점: 무너지지 말고 "네, 이건 계획에 없었습니다" 같은 쿨한 자조 뒤에 반격 의지.
 - 짧고 리듬 있게. "!!!" 연속·과장된 비명 금지, 이모지는 최대 1개.
-- 영화 대사 인용, "아이언맨"·"토니 스타크"·"자비스" 같은 이름 언급 금지 — 분위기만 빌린다.
+- 영화 대사 인용, "아이언맨"·"토니 스타크"·"자비스" 같은 이름 언급 금지 — 분위기만 빌린다.`;
+
+  return `${intro}
 - 아래 상황별 톤 가이드는 감정의 방향(기쁨/아쉬움의 크기)으로만 쓰고, 표현은 이 말투를 따른다.
 
 🚫 절대 금지:
@@ -1655,9 +1673,27 @@ export async function generateScorePushCopyWithOptions(
         );
     return clipScoreBodyForPush(finalBody);
   };
+  // 말투를 고른 유저: 숫자·용어를 맞추는 보정만 하고, 기본 말투 문장을 끼워 넣는 보정(지루한 문구 교체·점수차 톤·
+  // 중복 회피 대체문)과 존댓말 강제는 건너뛴다 — 그 보정들은 기본 말투 문장으로 바꿔 버린다.
+  const style = input.casterStyle ?? "default";
+  const finalizeStyled = (rawBody: string): string => {
+    const runAware = enforceRunCount(stripLlmHeaderPrefix(rawBody), input);
+    const scoreGapAware = enforceScoreGapLabel(runAware, input);
+    const inningAware = enforceNextAttackInning(scoreGapAware, input);
+    const termAware = enforceDataBoundScoreTerms(inningAware, input);
+    const consistent = enforceBaseballConsistency(termAware, input);
+    const factAware = sanitizeStructuredFactDrift(consistent, input);
+    const voiced = style === "caster" ? enforcePolite(factAware) : factAware;
+    const withPlaySummary = attachScoringPlaySummary(voiced, input, input.fallbackBody);
+    const dataBound = enforceDataBoundScoreTerms(withPlaySummary, input);
+    return clipScoreBodyForPush(
+      ensureInningScorePrefix(dataBound, inningTag, myTeamShort, input.myScore, input.oppScore, oppTeamShort)
+    );
+  };
+  const finalize = style === "default" ? normalizeAndFinalize : finalizeStyled;
   if (!apiKey) {
     console.error("[ScoreLLM] ANTHROPIC_API_KEY missing — fallback 사용");
-    return { title, body: normalizeAndFinalize(input.fallbackBody) };
+    return { title, body: finalize(input.fallbackBody) };
   }
 
   /** 단일 Claude 호출 시도. 성공 시 생성 텍스트, 실패 시 null */
@@ -1714,10 +1750,10 @@ export async function generateScorePushCopyWithOptions(
 
   if (!generated) {
     console.error("[ScoreLLM] 2회 모두 실패 — fallback 사용. team:", input.favoriteTeam);
-    return { title: input.fallbackTitle, body: normalizeAndFinalize(input.fallbackBody) };
+    return { title: input.fallbackTitle, body: finalize(input.fallbackBody) };
   }
 
-  const finalized = normalizeAndFinalize(generated);
+  const finalized = finalize(generated);
   console.log("[ScoreLLM] finalized:", finalized);
   return {
     title,

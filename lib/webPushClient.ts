@@ -1,5 +1,7 @@
 "use client";
 
+import { CASTER_STYLE_STORAGE_KEY } from "@/lib/notifications/casterStyle";
+
 const USER_ID_KEY = "ground-notify-user-id";
 const FAVORITE_TEAM_KEY = "kbo-my-team";
 
@@ -75,11 +77,36 @@ export async function persistSubscription(
       "content-type": "application/json",
       "x-ground-user-id": userId,
     },
-    body: JSON.stringify({ subscription: subscription.toJSON(), topics, favoriteTeam }),
+    body: JSON.stringify({ subscription: subscription.toJSON(), topics: withStoredCasterStyle(topics), favoriteTeam }),
   });
   if (!res.ok) {
     throw new Error(`subscribe api failed (${res.status})`);
   }
+}
+
+/** 이 기기에서 고른 득점 알림 말투를 구독 topics 에 같이 싣는다 (없으면 서버가 저장돼 있던 값을 지킨다) */
+export function withStoredCasterStyle<T extends object>(topics: T): T & { casterStyle?: string } {
+  try {
+    const casterStyle = localStorage.getItem(CASTER_STYLE_STORAGE_KEY);
+    return casterStyle ? { ...topics, casterStyle } : topics;
+  } catch {
+    return topics;
+  }
+}
+
+/** 득점 알림 말투를 바꾸면 이 유저의 웹·앱 구독 전부에 저장 */
+export async function saveCasterStyle(casterStyle: string, userId: string): Promise<void> {
+  try {
+    localStorage.setItem(CASTER_STYLE_STORAGE_KEY, casterStyle);
+  } catch {
+    // 저장 못 해도 서버에는 보낸다
+  }
+  const res = await fetch("/api/notifications/caster-style", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-ground-user-id": userId },
+    body: JSON.stringify({ casterStyle }),
+  });
+  if (!res.ok) throw new Error(`caster-style api failed (${res.status})`);
 }
 
 export async function unsubscribeBrowserPush(userId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureNotifyUser, resolveNotifyUserId } from "@/lib/notifyIdentity";
 import { getVapidPublicKey } from "@/lib/webPushServer";
 import { resolveServerAppEnv } from "@/lib/appEnv";
+import { resolveStoredCasterStyle } from "@/lib/notifications/casterStyle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ type SubscribeBody = {
     livePitcherChange?: boolean;
     liveStrikeout?: boolean;
     liveHomeRun?: boolean;
+    casterStyle?: string;
   };
   favoriteTeam?: string;
 };
@@ -91,7 +93,11 @@ export async function POST(req: Request) {
       ? new Date(sub.expirationTime)
       : null;
 
-  const topics = normalizeTopics(body.topics);
+  const existing = await prisma.pushSubscription.findUnique({ where: { endpoint }, select: { topics: true } });
+  const topics = {
+    ...normalizeTopics(body.topics),
+    ...resolveStoredCasterStyle(body.topics?.casterStyle, existing?.topics),
+  };
 
   const userAgent = req.headers.get("user-agent") ?? undefined;
   const saved = await prisma.pushSubscription.upsert({

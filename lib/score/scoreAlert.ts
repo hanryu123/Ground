@@ -12,6 +12,7 @@ import {
   isTopicEnabled,
   matchesCurrentPushEnv,
 } from "@/lib/notifications/topics";
+import { casterStyleFromTopics, type CasterStyle } from "@/lib/notifications/casterStyle";
 import type { LiveScoreGame } from "@/lib/score/types";
 import type { ScoringPlayContext } from "@/lib/score/playByPlay";
 
@@ -19,7 +20,8 @@ import type { ScoringPlayContext } from "@/lib/score/playByPlay";
  * 점수 변동 알림 발송.
  * - 활성 구독자 (`score` 토픽 ON + 현재 푸시 환경 매칭) 만 타겟
  * - 한 게임에 양 팀 팬이 섞여 있으므로 favoriteTeam 에 따라 응원/실점 tone 을 분기
- * - LLM 호출은 `(team, score, tone, playText)` 캐시로 1회로 묶어 비용 절감
+ * - 문구는 유저가 고른 말투(topics.casterStyle)별로 따로 만든다
+ * - LLM 호출은 `(team, style, score, tone, playText)` 캐시로 1회로 묶어 비용 절감
  * - alpha 환경에서는 `ALPHA_ALLOW_REAL_PUSH=1` 없이는 실제 발송을 차단
  */
 
@@ -164,7 +166,7 @@ export async function dispatchScoreAlertsForGame(input: {
   const copyCache = new Map<string, Promise<{ title: string; body: string }>>();
   let llmCalls = 0;
 
-  const buildAlertForTeam = async (favoriteTeam: string | null) => {
+  const buildAlertForTeam = async (favoriteTeam: string | null, style: CasterStyle) => {
     if (!favoriteTeam) return null;
 
     let tone: "for" | "against" | null = null;
@@ -198,10 +200,12 @@ export async function dispatchScoreAlertsForGame(input: {
       recentBodies: teamRecentBodies,
       prevMyScore,
       prevOppScore,
+      style,
     });
 
     const cacheKey = [
       favoriteTeam,
+      style,
       myScore,
       oppScore,
       tone,
@@ -212,39 +216,39 @@ export async function dispatchScoreAlertsForGame(input: {
     ].join(":");
     let copyPromise = copyCache.get(cacheKey);
     if (!copyPromise) {
-      const copyInput = {
-        favoriteTeam,
-        opponentTeam: oppTeamId,
-        myScore,
-        oppScore,
-        mySide: isHomeFan ? "home" as const : "away" as const,
-        tone,
-        latestPlayText: input.latestPlayText,
-        scoringPlayContext: input.scoringPlayContext ?? null,
-        fallbackTitle: fallback.title,
-        fallbackBody: fallback.body,
-        recentBodies: teamRecentBodies,
-        prevMyScore,
-        prevOppScore,
-        postseasonContext: await fetchPostseasonContextForGame(
-          input.game.externalId,
+      // await 전에 캐시에 넣어야 동시에 도는 같은 팀·말투 구독자들이 Claude 를 한 번만 부른다
+      if (!input.fastMode) llmCalls += 1;
+      copyPromise = (async () => {
+        const copyInput = {
           favoriteTeam,
-          findTeam(favoriteTeam).short
-        ),
-      };
-      if (input.fastMode) {
-        copyPromise = generateScorePushCopyWithOptions(copyInput, { apiKeyOverride: "" });
-      } else {
-        llmCalls += 1;
-        copyPromise = generateScorePushCopyWithOptions(
-          copyInput,
-          {
-            timeoutMs: input.llmTimeoutMs ?? 2500,
-            retryTimeoutMs: input.llmRetryTimeoutMs ?? null,
-            maxTokens: 80,
-          }
-        );
-      }
+          opponentTeam: oppTeamId,
+          myScore,
+          oppScore,
+          mySide: isHomeFan ? "home" as const : "away" as const,
+          tone,
+          latestPlayText: input.latestPlayText,
+          scoringPlayContext: input.scoringPlayContext ?? null,
+          fallbackTitle: fallback.title,
+          fallbackBody: fallback.body,
+          recentBodies: teamRecentBodies,
+          prevMyScore,
+          prevOppScore,
+          casterStyle: style,
+          postseasonContext: await fetchPostseasonContextForGame(
+            input.game.externalId,
+            favoriteTeam,
+            findTeam(favoriteTeam).short
+          ),
+        };
+        if (input.fastMode) {
+          return generateScorePushCopyWithOptions(copyInput, { apiKeyOverride: "" });
+        }
+        return generateScorePushCopyWithOptions(copyInput, {
+          timeoutMs: input.llmTimeoutMs ?? 2500,
+          retryTimeoutMs: input.llmRetryTimeoutMs ?? null,
+          maxTokens: 80,
+        });
+      })();
       copyCache.set(cacheKey, copyPromise);
     }
     const aiCopy = await copyPromise;
@@ -270,7 +274,7 @@ export async function dispatchScoreAlertsForGame(input: {
   };
 
   const pushResults = await mapWithConcurrency(activeSubs, 12, async (sub) => {
-    const alert = await buildAlertForTeam(sub.user.favoriteTeam);
+    const alert = await buildAlertForTeam(sub.user.favoriteTeam, casterStyleFromTopics(sub.topics));
     if (!alert) return null;
 
     const push = await sendWebPush(
@@ -294,7 +298,7 @@ export async function dispatchScoreAlertsForGame(input: {
   });
 
   const nativeResults = await mapWithConcurrency(activeNativeTokens, 12, async (row) => {
-    const alert = await buildAlertForTeam(row.favoriteTeam);
+    const alert = await buildAlertForTeam(row.favoriteTeam, casterStyleFromTopics(row.topics));
     if (!alert) return null;
 
     try {
