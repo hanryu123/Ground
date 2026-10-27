@@ -19,7 +19,7 @@ export type ScoringResultType =
 export type ScoringHitKind = "1B" | "2B" | "3B" | "HR" | null;
 
 export type ScoringPlayContext = {
-  source: "naver-relay" | "score-delta-fallback";
+  source: "naver-relay" | "kbo-boxscore" | "score-delta-fallback";
   confidence: "high" | "medium" | "low";
   gameId: string;
   inning: {
