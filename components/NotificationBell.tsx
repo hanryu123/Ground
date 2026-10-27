@@ -13,10 +13,11 @@ import {
   type PushTopics,
 } from "@/lib/webPushClient";
 import { usePwaInstallGate } from "@/lib/usePwaInstallGate";
-import { ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
+import { ONBOARDING_DONE_KEY, useMyTeam } from "@/lib/useMyTeam";
 import {
   CASTER_STYLES,
   CASTER_STYLE_STORAGE_KEY,
+  casterStyleSample,
   parseCasterStyle,
   type CasterStyle,
 } from "@/lib/notifications/casterStyle";
@@ -224,6 +225,7 @@ export default function NotificationBell({
   const [loading, setLoading] = useState(false);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [casterStyle, setCasterStyle] = useState<CasterStyle>("analyst");
+  const myTeam = useMyTeam();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pushHealth, setPushHealth] = useState<PushHealth>("checking");
   const [pushHealthMsg, setPushHealthMsg] = useState<string>("");
@@ -808,7 +810,7 @@ export default function NotificationBell({
                   })}
                 </div>
                 <p className="mt-2 text-[11px] leading-snug text-white/45">
-                  예) {CASTER_STYLES.find((style) => style.id === casterStyle)?.sample}
+                  예) {casterStyleSample(casterStyle, myTeam.id)}
                 </p>
               </div>
             )}

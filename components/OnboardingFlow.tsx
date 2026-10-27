@@ -15,7 +15,12 @@ import {
   subscribeBrowserPush,
   type PushTopics,
 } from "@/lib/webPushClient";
-import { CASTER_STYLES, CASTER_STYLE_STORAGE_KEY, type CasterStyle } from "@/lib/notifications/casterStyle";
+import {
+  CASTER_STYLES,
+  CASTER_STYLE_STORAGE_KEY,
+  casterStyleSample,
+  type CasterStyle,
+} from "@/lib/notifications/casterStyle";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -382,7 +387,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                         {style.label}
                       </span>
                       <span className="mt-1 block break-keep text-[12px] leading-snug text-gray-600">
-                        “{style.sample}”
+                        “{casterStyleSample(style.id, selectedTeamId)}”
                       </span>
                     </button>
                   </li>
