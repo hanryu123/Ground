@@ -350,7 +350,8 @@ function buildStructuredScoringPlaySummary(input: GenerateScorePushInput): strin
 
 function buildStructuredFanReaction(input: GenerateScorePushInput): string {
   const context = input.scoringPlayContext;
-  const scoringForUs = isScoringTeamForFavorite(input);
+  // 득점 장면을 모르면(점수만 받은 경우) tone 으로 판단 — null 을 실점으로 보던 버그
+  const scoringForUs = isScoringTeamForFavorite(input) ?? input.tone === "for";
   const result = context?.play.resultType ?? "UNKNOWN";
   const runs = structuredRuns(input) ?? 1;
   const leading = input.myScore > input.oppScore;
@@ -732,9 +733,9 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
       const my = findTeam(input.favoriteTeam).short;
       const opp = findTeam(input.opponentTeam).short;
       const candidates = [
-        `${my} ${input.myScore}:${input.oppScore} ${opp}. 한 점 내줬지만 이 차이면 문제없습니다.`,
-        `${my} ${input.myScore}:${input.oppScore} ${opp}. 그래도 우리가 훨씬 앞서 있습니다.`,
-        `한 점 줬지만 아직 차이 충분합니다. ${my} 여유 있습니다.`,
+        `${my} ${input.myScore}:${input.oppScore} ${opp}. 이 차이면 기념품 하나 준 셈이죠.`,
+        `${my} ${input.myScore}:${input.oppScore} ${opp}. 저쪽도 점수판에 이름은 올려야죠.`,
+        `점수 좀 줬지만 차이는 충분합니다. ${my}, 여유 그대로입니다.`,
       ] as const;
       return candidates[(input.myScore + input.oppScore) % candidates.length];
     }
@@ -751,18 +752,18 @@ function enforceScoreGapTone(text: string, input: GenerateScorePushInput): strin
       if (phase === "late") {
         // 후반 + 6점+ → 완전 이성 붕괴
         const candidates = [
-          `저도 이제 모르겠습니다... ${my} ${input.myScore}:${input.oppScore} ${opp}`,
-          `아 이게 무슨... 그래도 마지막 아웃까지는 봅니다.`,
-          `${my} ${input.myScore}:${input.oppScore} ${opp}. 캐스터도 말문이 막힙니다.`,
-          `말이 안 나옵니다. 그래도 끝까지 같이 갑니다.`,
+          `${my} ${input.myScore}:${input.oppScore} ${opp}. 네, 오늘은 계산이 좀 틀렸습니다.`,
+          `오늘 경기는 리플레이 안 하는 걸로 하죠. 그래도 마지막 아웃까지는 봅니다.`,
+          `${my} ${input.myScore}:${input.oppScore} ${opp}. 할 말은 없지만 끝까지 보는 게 팬의 품격이죠.`,
+          `오늘은 실패한 실험입니다. 데이터는 남겼으니 다음에 써먹겠습니다.`,
         ] as const;
         return candidates[(input.myScore + input.oppScore) % candidates.length];
       }
       // 초/중반 + 6점+ → 체념·냉소
       const candidates = [
-        `${my} ${input.myScore}:${input.oppScore} ${opp}... 할 말이 없네요.`,
-        `${input.myScore}:${input.oppScore}, 도대체 왜 이러는 건지 모르겠습니다.`,
-        `오늘은 좀 힘들 것 같습니다. 솔직히.`,
+        `${my} ${input.myScore}:${input.oppScore} ${opp}. 오늘은 각본가를 좀 바꿔야겠네요.`,
+        `${input.myScore}:${input.oppScore}. 이건 경기가 아니라 시스템 오류입니다.`,
+        `오늘은 좀 힘들겠습니다. 솔직하게 말하는 것도 실력이죠.`,
       ] as const;
       return candidates[(input.myScore + input.oppScore) % candidates.length];
     }
@@ -1078,7 +1079,7 @@ ${phase === "late" ? "⚠️ 후반 박빙 → 감정 더 극대화. 글자 하�
   ? `이미 사실상 이긴 거나 마찬가지. 완전 광란 축제 모드. 소리 지르는 사람 그 자체.
 톤: "완전히 쓸어버립니다!!! 오늘 이 팀 진짜 뭔가요!!! 경기장이 들썩입니다!!!" 감탄사 한계치까지.
 키워드: 쐐기, 폭발, 완전히 끝났다, 자비 없다, 축제, 들썩
-⚠️ 이모지 2-3개 필수. "!!!" 연속 OK. 이성적 분석 완전 금지.`
+⚠️ 이성적 분석 완전 금지.`
   : `이 점수 차면 오늘 진짜 틀렸다. 이성 붕괴. 화·절망·체념 전부 섞인 상태.
 톤: "저도 이제 모르겠습니다... 이거 어떻게 할 거예요 진짜..." 멘탈 터진 팬.
 키워드: 멘탈 붕괴, 자비 없음, 오늘은 틀렸다, 이게 맞냐, 체념
@@ -1090,7 +1091,7 @@ ${phase === "late" ? "⚠️ 후반 박빙 → 감정 더 극대화. 글자 하�
   ? `우리가 역전. 뇌가 없어질 정도의 흥분. 소리를 지르는 팬 그 자체.
 톤: "뒤집었습니다!!!! 이게 말이 됩니까!!! 경기장이 폭발합니다!!!" 최대 텐션.
 키워드: 역전, 뒤집다, 믿기지 않는다, 기적, 소름, 폭발, 경기장이 들썩
-⚠️ 반드시 역전 상황임을 감정적으로 표현. 이모지 2-3개 필수.`
+⚠️ 반드시 역전 상황임을 감정적으로 표현.`
   : `역전당했다. 배신감·충격·망연자실. 팬이 느끼는 진짜 상실감.
 톤: "...역전당했습니다. 이런 일이 일어나다니. 정말 믿기지 않습니다." 멘탈 나간 팬.
 키워드: 역전당하다, 충격, 믿기지 않는다, 배신감, 망연자실
@@ -1168,6 +1169,14 @@ KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편�
 우리 팀 점수 나면 목소리 한 옥타브 올라가는 캐스터. 상대 팀 점수 나면 진심으로 허탈하고 열받는 캐스터.
 냉정한 분석·중립 표현 금지. "양 팀 모두" 류 방관자 어투 완전 금지. 오직 우리 팀 시각.
 
+[말투 — 아이언맨 같은 재치]
+천재 억만장자 히어로처럼 여유 있고 자신만만하게, 한 문장은 꼭 위트 있게 비튼다.
+- 득점: 소리 지르기보다 "계산대로입니다. 물론 계산은 방금 했습니다" 같은 능청스러운 자신감.
+- 실점: 무너지지 말고 "네, 이건 계획에 없었습니다" 같은 쿨한 자조 뒤에 반격 의지.
+- 짧고 리듬 있게. "!!!" 연속·과장된 비명 금지, 이모지는 최대 1개.
+- 영화 대사 인용, "아이언맨"·"토니 스타크"·"자비스" 같은 이름 언급 금지 — 분위기만 빌린다.
+- 아래 상황별 톤 가이드는 감정의 방향(기쁨/아쉬움의 크기)으로만 쓰고, 표현은 이 말투를 따른다.
+
 🚫 절대 금지:
 - "됐네", "가는군", "흐름상" 같은 냉정한 방관자 어투 금지
 - 득점 상황에서 "아쉽다", "힘내자" 금지 / 실점 상황에서 "좋아!", "신난다" 금지
@@ -1177,7 +1186,7 @@ KBS·MBC 중립 캐스터 아님 — 처음부터 끝까지 ${favoriteTeam} 편�
 - "먹히다/먹힌다" 금지 — 실점이면 "내줬습니다/털렸습니다", 득점이면 "터졌습니다/뽑아냈습니다"
 - 우리 타자 삼진 시 상대 투수 칭찬 금지 → 우리 타자 실패·답답함에만 집중
 - 이전 알림과 같은 첫 단어·첫 어구 반복 금지 — 매 알림은 완전히 다른 각도·감정으로 시작
-- 쓸데없이 쿨한 척, 쓸데없이 이성적인 척 금지 — 팬은 원래 이성적이지 않음
+- 감정 없는 중계 문장 금지 — 여유와 재치는 좋지만 우리 팀 편이라는 게 늘 드러나야 함
 - 기계 번역투 금지: "단어의 방향을 바꾸다", "점수를 쌓아 올린", "승부의 핵심이었다" 같은 보고서 문장 금지
 - 커뮤니티 팬 말투의 생생함은 살리되, 데이터에 없는 야구 용어를 꾸며내면 실패
 - 식상한 알림 문구 금지: "큰일입니다", "빨리 따라잡아야", "벌써 N점을 내줬다뇨", "다음 타자가 살려줘야", "멘탈 잡고" 계열은 단어만 바꿔도 실패
