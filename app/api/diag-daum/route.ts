@@ -11,10 +11,10 @@ export async function GET() {
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
     });
-    const json = (await res.json()) as { document?: { game?: { liveData?: { liveText?: unknown[] } } } };
+    const json = (await res.json()) as { document?: { liveData?: { liveText?: unknown[] } } };
     return NextResponse.json({
       status: res.status,
-      lines: json.document?.game?.liveData?.liveText?.length ?? null,
+      lines: json.document?.liveData?.liveText?.length ?? null,
       ms: Date.now() - started,
       region: process.env.VERCEL_REGION ?? null,
     });
