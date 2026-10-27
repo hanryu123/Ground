@@ -8,7 +8,8 @@ import type { ScoringHitKind, ScoringPlayContext, ScoringResultType, ScoringSide
  * KBO 공식 박스스코어는 경기가 끝나야 열려서(2026-10-27 확인) 경기 중 선수 이름은 여기서 받는다.
  * 문자중계 한 줄의 textstyle: 8 타석 시작, 13 타석 결과, 23 득점이 난 타석 결과, 24 주자 진루·홈인.
  *
- *  - 그 팀이 지금까지 낸 득점(홈인)을 세어 점수와 맞을 때만 쓴다 — 중계가 아직 안 따라왔으면 null.
+ *  - 그 팀이 지금까지 낸 득점(홈인)을 세어 점수와 맞을 때만 쓴다.
+ *    다음 중계는 KBO 점수보다 30~70초 늦어서(2026-10-27 측정) 아직 못 따라왔으면 "pending" — 호출하는 쪽이 조금 기다린다.
  *  - 이번에 늘어난 점수만큼 끝에서부터 득점을 보고, 가장 많이 들어온 타석(같으면 나중 것)을 고른다.
  *  - 폭투·포일처럼 타자가 없는 득점이거나 확신이 없으면 null — 호출하는 쪽은 점수만으로 보낸다.
  */
@@ -111,7 +112,7 @@ export async function fetchDaumScoringContext(input: {
   previousHomeScore: number;
   previousAwayScore: number;
   timeoutMs?: number;
-}): Promise<ScoringPlayContext | null> {
+}): Promise<ScoringPlayContext | "pending" | null> {
   const { game } = input;
   const homeDelta = game.homeScore - input.previousHomeScore;
   const awayDelta = game.awayScore - input.previousAwayScore;
@@ -133,8 +134,9 @@ export async function fetchDaumScoringContext(input: {
   if (!lines) return null;
 
   const allRuns = collectRuns(lines, side);
-  // 중계가 점수를 아직 못 따라왔거나 더 앞서 있으면(정정 등) 장면을 믿지 않는다
-  if (allRuns.length !== teamScore) return null;
+  // 중계가 점수를 아직 못 따라왔으면 기다리고, 더 앞서 있으면(정정 등) 장면을 믿지 않는다
+  if (allRuns.length < teamScore) return "pending";
+  if (allRuns.length > teamScore) return null;
 
   const recent = allRuns.slice(-runs);
   const byPlay = new Map<number, { play: NonNullable<Run["play"]>; runs: number }>();

@@ -167,6 +167,9 @@ function formatScoreOnlyPlayText(game: LiveScoreGame, prevHome: number, prevAway
   return `${inning}스코어 변동`;
 }
 
+/** 다음 중계가 점수를 따라오길 기다리는 최대 시간 — 넘으면 이름 없이 점수만 보낸다 */
+const DAUM_RELAY_MAX_WAIT_MS = 150_000;
+
 function hasCompleteScoringFact(context: ScoringPlayContext | null): context is ScoringPlayContext {
   if (!context) return false;
   if (context.source === "score-delta-fallback") return false;
@@ -667,10 +670,26 @@ export async function GET(req: Request) {
           previousHomeScore: alertPreviousHomeScore,
           previousAwayScore: alertPreviousAwayScore,
         };
-        const daumScoringContext =
+        const daumResult =
           fastMode || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
             ? null
             : await fetchDaumScoringContext(scoringInput).catch(() => null);
+        // 기다리기 시작한 시각은 lastScoreAlertAt 에 둔다 (점수가 바뀐 첫 회차에 기록, 이후 회차는 그 시각부터 잰다)
+        const daumWaitStartedAt = scoreChanged ? Date.now() : previous.lastScoreAlertAt?.getTime() ?? 0;
+        if (daumResult === "pending" && Date.now() - daumWaitStartedAt < DAUM_RELAY_MAX_WAIT_MS) {
+          if (scoreChanged) {
+            await prisma.game.updateMany({
+              where: { id: updated.id },
+              data: {
+                lastScoreAlertAt: new Date(daumWaitStartedAt),
+                ...(previous.lastScoreAlertKey ? {} : { lastScoreAlertKey: baselineScoreAlertKey }),
+              },
+            });
+          }
+          deferOnce(summary, `daum-relay:${game.externalId}`);
+          continue;
+        }
+        const daumScoringContext = daumResult === "pending" ? null : daumResult;
         const kboScoringContext =
           daumScoringContext ??
           (fastMode || game.status !== "RESULT" || !hasBudget(deadlineAt, MIN_RELAY_BUDGET_MS)
