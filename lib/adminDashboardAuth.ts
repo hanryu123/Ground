@@ -15,6 +15,11 @@ function dashboardToken(password: string): string {
   return createHash("sha256").update(`${salt}:${password}`).digest("hex");
 }
 
+/** 한글 비밀번호 — 입력기·터미널마다 자모 조합 방식(NFC/NFD)이 달라 맞춰서 비교한다 */
+function normalizePassword(value: string): string {
+  return value.normalize("NFC").trim();
+}
+
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -40,7 +45,7 @@ export async function requireDashboardAuth(): Promise<void> {
 /** 비밀번호가 맞으면 쿠키를 굽고 true */
 export async function signInDashboard(input: string): Promise<boolean> {
   const password = process.env.ADMIN_DASHBOARD_PASSWORD;
-  if (!password || !input || !safeEqual(input, password)) return false;
+  if (!password || !input || !safeEqual(normalizePassword(input), normalizePassword(password))) return false;
   (await cookies()).set({
     name: DASHBOARD_COOKIE_NAME,
     value: dashboardToken(password),

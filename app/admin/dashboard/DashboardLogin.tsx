@@ -15,12 +15,16 @@ export default function DashboardLogin({ adminKey, configured }: { adminKey: str
           <p className="mt-2 text-xs text-amber-300">서버에 ADMIN_DASHBOARD_PASSWORD 가 설정되지 않았어요.</p>
         )}
         <input type="hidden" name="key" value={adminKey} />
+        {/* type="password" 는 맥·아이폰에서 한글 입력이 막혀(영문 자판으로 입력됨) 한글 비밀번호가 늘 틀렸다 → 글자만 가린 text 입력 */}
         <input
-          type="password"
+          type="text"
           name="password"
           autoFocus
-          autoComplete="current-password"
-          className="mt-4 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none focus:border-white/30"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="mt-4 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none [-webkit-text-security:disc] focus:border-white/30"
         />
         {state.error ? <p className="mt-2 text-xs text-red-300">{state.error}</p> : null}
         <button
