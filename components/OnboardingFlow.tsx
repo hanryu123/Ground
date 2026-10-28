@@ -371,7 +371,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
             <h1 className="text-[28px] font-semibold tracking-tight">누가 알려드릴까요?</h1>
             {/* 팀 배경이 흰색(LG·두산)이어도 보이게 — 글자는 테마 글자색, 카드는 불투명 흰 카드 */}
             <p className="mt-2 text-[13px] opacity-70">
-              {selectedTeam?.short ?? "우리 팀"} 점수가 나면 이 말투로 알림이 와요. 나중에 알림 설정에서 바꿀 수 있어요.
+              {selectedTeam?.short ?? "우리 팀"} 점수가 나면 이 말투로 알림이 와요. 나중에 MY 탭에서 바꿀 수 있어요.
             </p>
 
             <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">

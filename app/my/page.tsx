@@ -1,10 +1,19 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
 import { TEAMS } from "@/lib/teams";
 import { setMyTeam, useMyTeam } from "@/lib/useMyTeam";
 import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
+import {
+  CASTER_STYLES,
+  CASTER_STYLE_STORAGE_KEY,
+  casterStyleSample,
+  parseCasterStyle,
+  type CasterStyle,
+} from "@/lib/notifications/casterStyle";
+import { getOrCreateNotifyUserId, saveCasterStyle } from "@/lib/webPushClient";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -83,6 +92,8 @@ export default function MyPage() {
         </div>
       </div>
 
+      <CasterStylePicker teamId={team.id} />
+
       {/* 팀 선택 리스트 */}
       <div className="mt-10 flex-1 px-7">
         <p
@@ -154,6 +165,82 @@ export default function MyPage() {
         </p>
       </div>
     </section>
+  );
+}
+
+/** 득점 알림 말투 — 알림 링크 /my#caster-style 로 바로 들어온다 */
+function CasterStylePicker({ teamId }: { teamId: string }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // 저장된 말투를 읽기 전엔 그리지 않는다 — 기본값으로 먼저 그렸다 바꾸면 라디오 애니메이션이 중간에 멈춘다
+  const [style, setStyle] = useState<CasterStyle | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(CASTER_STYLE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    setStyle(parseCasterStyle(saved));
+    // 알림 링크로 들어오면 이 칸으로 — 위쪽 카드·리스트 애니메이션이 자리 잡은 뒤에 이동
+    if (window.location.hash !== "#caster-style") return;
+    const timer = window.setTimeout(() => ref.current?.scrollIntoView({ block: "start" }), 400);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const choose = async (next: CasterStyle) => {
+    if (!style || next === style) return;
+    const previous = style;
+    setStyle(next);
+    setError(null);
+    try {
+      await saveCasterStyle(next, getOrCreateNotifyUserId());
+    } catch {
+      setStyle(previous);
+      setError("저장하지 못했어요. 잠시 후 다시 눌러 주세요.");
+    }
+  };
+
+  return (
+    <div ref={ref} id="caster-style" className="mt-10 scroll-mt-6 px-7">
+      <p
+        className="mb-1 text-[10px] uppercase tracking-[0.32em] text-white/45"
+        style={{ fontWeight: 600 }}
+      >
+        Alert voice
+      </p>
+      <p className="mb-3 text-[12px] text-white/50">점수가 나면 이 말투로 알림이 와요.</p>
+      <ul className="flex min-h-[380px] flex-col">
+        {style && CASTER_STYLES.map((s, i) => {
+          const active = style === s.id;
+          return (
+            <li key={s.id}>
+              <button
+                onClick={() => void choose(s.id)}
+                className="flex w-full items-center justify-between gap-4 py-4 text-left transition active:opacity-60"
+                aria-pressed={active}
+              >
+                <div className="min-w-0">
+                  <span
+                    className="block text-[16px] tracking-tight text-white"
+                    style={{ fontWeight: active ? 800 : 500 }}
+                  >
+                    {s.label}
+                  </span>
+                  <span className="mt-0.5 block break-keep text-[12px] leading-snug text-white/45">
+                    {casterStyleSample(s.id, teamId)}
+                  </span>
+                </div>
+                <Radio active={active} />
+              </button>
+              {i < CASTER_STYLES.length - 1 && <div className="h-px w-full bg-white/[0.06]" />}
+            </li>
+          );
+        })}
+      </ul>
+      {error ? <p className="mt-2 text-[12px] text-[#ff8f8f]">{error}</p> : null}
+    </div>
   );
 }
 
