@@ -124,11 +124,16 @@ async function fetchGameDetail(gameId: string) {
 
 /** 하루 경기 + 선발·구장·승패 투수 */
 export async function fetchDayGames(date: string): Promise<DayGamesPayload> {
+  const season = await seasonGamesSafe(parseInt(date.slice(0, 4), 10));
+  const seasonDay = season.filter((g) => g.date === date);
+  // 시즌 일정상 경기 없는 날은 라이브 조회를 건너뛴다 — KBO 공식이 0경기면 네이버로 넘어가는데,
+  // 네이버가 서버 요청에 응답을 안 해 4초 타임아웃까지 매달려서 Schedule 탭이 안 눌리는 것처럼 보였다
+  if (season.length > 0 && seasonDay.length === 0) return { date, games: [] };
+
   let games = await fetchKboTodayGames(date, { includeLineups: false });
   if (games.length === 0) {
     // 하루 단위 라이브 조회가 실패하면 시즌 일정에서라도 꺼낸다
-    const season = await seasonGamesSafe(parseInt(date.slice(0, 4), 10));
-    games = season.filter((g) => g.date === date);
+    games = seasonDay;
   }
 
   // KBO 공식 목록에 선발·승패 투수가 다 있으면 네이버 상세는 부르지 않는다 (네이버가 막히면 3초씩 기다렸다)
