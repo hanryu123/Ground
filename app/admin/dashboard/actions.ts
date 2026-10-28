@@ -8,6 +8,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { headers } from "next/headers";
 import { writeAdminAuditLog } from "@/lib/adminAudit";
 import { resolveServerAppEnv } from "@/lib/appEnv";
+import { requireDashboardAuth } from "@/lib/adminDashboardAuth";
 
 async function readActionResponse(res: Response): Promise<{ parsed: unknown; text: string }> {
   const text = await res.text().catch(() => "");
@@ -37,6 +38,7 @@ function summarizeActionError(path: string, status: number, body: { parsed: unkn
 }
 
 export async function testClaude(): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  await requireDashboardAuth();
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) {
     return { ok: false, error: "ANTHROPIC_API_KEY not set in Vercel env" };
@@ -74,6 +76,7 @@ export async function testClaude(): Promise<{ ok: boolean; result?: unknown; err
 }
 
 export async function previewInactiveUsers(): Promise<{ ok: boolean; noSub?: number; stale?: number; error?: string }> {
+  await requireDashboardAuth();
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const [noSub, stale] = await Promise.all([
@@ -110,6 +113,7 @@ export async function previewInactiveUsers(): Promise<{ ok: boolean; noSub?: num
 }
 
 export async function cleanInactiveUsers(includeStale: boolean): Promise<{ ok: boolean; deleted?: number; error?: string }> {
+  await requireDashboardAuth();
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const whereClause = includeStale
@@ -157,6 +161,7 @@ export async function forceCron(
   path: "preview" | "postgame" | "game-start" | "check-score" | "live-events" | "check-highlight",
   teamId?: string,
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  await requireDashboardAuth();
   const cronSecret = process.env.CRON_SECRET;
   const headersList = await headers();
   const host = headersList.get("host") ?? "ground-alpha.vercel.app";
@@ -197,6 +202,7 @@ export async function estimateMarketingPushTargets(input: {
   testOnly: boolean;
   testNativeTokenId?: string | null;
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  await requireDashboardAuth();
   try {
     const appEnv = resolveServerAppEnv();
     if (input.testOnly) {
@@ -250,6 +256,7 @@ export async function sendMarketingPush(input: {
   testOnly: boolean;
   testNativeTokenId?: string | null;
 }): Promise<SendPushResult> {
+  await requireDashboardAuth();
   const secret = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD;
   if (!secret) return { ok: false, error: "서버 설정 오류: ADMIN 키 미설정" };
 

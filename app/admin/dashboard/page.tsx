@@ -5,6 +5,8 @@ import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
 import type { LiveScoreGame } from "@/lib/score/types";
 import { findTeam, TEAMS } from "@/lib/teams";
 import PushSenderForm from "./PushSenderForm";
+import DashboardLogin from "./DashboardLogin";
+import { isDashboardAuthenticated, isDashboardPasswordConfigured } from "@/lib/adminDashboardAuth";
 import MarketingPushStats from "./MarketingPushStats";
 import CronTrigger from "./CronTrigger";
 import UserCleanup from "./UserCleanup";
@@ -271,6 +273,9 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
   const key = firstParam(params.key);
   const expected = process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD;
   if (!expected || !key || key !== expected) notFound();
+  if (!(await isDashboardAuthenticated())) {
+    return <DashboardLogin adminKey={key} configured={isDashboardPasswordConfigured()} />;
+  }
   const db = prisma as any;
 
   const todayDate = todayKstDate();
