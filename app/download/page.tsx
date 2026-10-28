@@ -76,6 +76,15 @@ const MOMENTS = [
   },
 ];
 
+// 같은 장면(7회말 역전 투런)을 말투별로 — 앱의 득점 알림 말투(lib/notifications/casterStyle.ts)와 같은 순서
+const VOICES = [
+  { label: "담백한 해설위원", accent: "#94A3B8", text: "김도영의 역전 투런입니다. 노리던 공을 놓치지 않았습니다." },
+  { label: "골수팬", accent: "#EC4899", text: "김도영 사랑해ㅠㅠ 역전 투런이다 오늘부터 내 최애 결혼하자" },
+  { label: "열혈 캐스터", accent: "#EF4444", text: "김도영!!! 역전 투런!!! 넘어갑니다!!! 이게 야구입니다 여러분!!!" },
+  { label: "호랑이 감독", accent: "#F59E0B", text: "김도영, 그래 그거야. 웃지 마, 아직 7회다." },
+  { label: "일론 머스크", accent: "#8B5CF6", text: "김도영 역전 투런. 궤도 수정 완료. 다음 정거장은 화성. 🚀" },
+];
+
 function AppleIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 384 512" aria-hidden className={className} fill="currentColor">
@@ -193,7 +202,7 @@ export default async function DownloadPage({
             </h1>
             <p className="mt-6 max-w-md text-[17px] leading-relaxed text-white/65">
               우리팀 라인업부터 실시간 중계, 하이라이트, 최근 뉴스까지.
-              <br className="hidden sm:block" /> 경기 없는 날에도 우리 팀 이야기를 모아 드려요.
+              <br className="hidden sm:block" /> 알림 말투도 골라 쓰고, 경기 없는 날에도 우리 팀 이야기를 모아 드려요.
             </p>
 
             {/* 다운로드 — PC: QR / 모바일: 앱스토어 버튼 */}
@@ -277,6 +286,28 @@ export default async function DownloadPage({
           <p className="mt-6 text-sm text-white/45">
             잠금화면 라이브 스코어도 지원해요. 앱을 열지 않아도 점수가 바로 보여요.
           </p>
+        </section>
+
+        {/* 득점 알림 말투 — 같은 장면, 다섯 가지 목소리 */}
+        <section className="border-t border-white/10 py-16 lg:py-24">
+          <span className="text-xs font-bold tracking-[0.18em] text-[#EC4899]">NEW</span>
+          <h2 className="mt-3 text-[28px] font-extrabold tracking-[-0.02em] sm:text-4xl">같은 역전, 다섯 가지 목소리</h2>
+          <p className="mt-3 text-white/55">득점 알림을 누가 외쳐 줄지 골라요. 설치할 때 고르고, 언제든 바꿀 수 있어요.</p>
+          <div className="-mx-5 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 sm:-mx-8 sm:px-8 lg:mx-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:px-0">
+            {VOICES.map((v) => (
+              <article
+                key={v.label}
+                className="flex w-[78%] shrink-0 snap-start flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-5 sm:w-[44%] lg:w-auto lg:p-3"
+              >
+                <span className="text-sm font-bold lg:px-2 lg:pt-2" style={{ color: v.accent }}>
+                  {v.label}
+                </span>
+                <div className="mt-auto pt-5">
+                  <Notification app="GROUND" time="지금" title="[7회말] KIA 역전" text={v.text} accent={v.accent} />
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
 
         {/* 경기 없는 날에도 — 피드·일정·순위 */}
