@@ -858,6 +858,8 @@ export type PostseasonSeriesState = {
   nextStage: string;
   /** 시리즈가 이미 끝났으면 결과 (이 경기 포함) */
   outcome: "ADVANCED" | "ELIMINATED" | null;
+  /** 이 경기 결과까지 센 상태인지 (경기 종료 알림) — 남은 승부가 "이 경기"인지 "다음 경기"인지 가른다 */
+  includesTarget: boolean;
 };
 
 /**
@@ -922,6 +924,7 @@ export function computePostseasonSeriesState(
     lossesToElimination: Math.max(0, needed - opponentScore),
     nextStage: POSTSEASON_NEXT_STAGE[round],
     outcome,
+    includesTarget: includeTarget,
   };
 }
 
@@ -940,11 +943,14 @@ export function describePostseasonSeries(state: PostseasonSeriesState, teamShort
       : `${head} · ${record} · ${teamShort} ${state.nextStage} 진출 확정`;
   }
   if (state.outcome === "ELIMINATED") return `${head} · ${record} · ${teamShort} 가을야구 마감`;
+  // "지면 탈락" 만 쓰면 경기 종료 알림에서 이미 진 걸로 읽혀 LLM 이 "시리즈 탈락"이라고 썼다 (1승 2패인데)
+  const which = state.includesTarget ? "다음 경기" : "이 경기";
   const stakes: string[] = [];
+  if (state.includesTarget) stakes.push("시리즈 아직 안 끝남");
   if (state.winsToAdvance === 1) {
-    stakes.push(state.round === "KS" ? "1승만 더하면 우승" : `1승만 더하면 ${state.nextStage} 진출`);
+    stakes.push(state.round === "KS" ? `${which} 이기면 우승` : `${which} 이기면 ${state.nextStage} 진출`);
   }
-  if (state.lossesToElimination === 1) stakes.push("지면 탈락");
+  if (state.lossesToElimination === 1) stakes.push(`${which} 지면 탈락`);
   return [head, record, ...stakes].join(" · ");
 }
 

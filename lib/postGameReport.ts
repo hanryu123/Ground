@@ -1122,6 +1122,11 @@ export async function fetchPostGameFacts(input: {
   };
 }
 
+/** 시리즈가 끝났다는 표현 — 시리즈 진행 중인데 이렇게 쓰면 버린다 ("다음 경기 지면 탈락"은 허용) */
+const SERIES_ONGOING_MARK = "시리즈 아직 안 끝남";
+const SERIES_OVER_PATTERN =
+  /(시리즈|가을야구|포스트시즌)\s*(탈락|마감|종료)|탈락(했|하고|하며|하게\s*됐|확정)|가을을\s*(내려놓|접|마무리)|시즌을\s*(마무리|접|마감|내려놓)|시즌\s*마감|작별/;
+
 export async function generatePostGameReport(input: {
   teamId: string;
   opponentTeamId: string;
@@ -1219,8 +1224,14 @@ export async function generatePostGameReport(input: {
 - 희생플라이: 타자 아웃 대신 주자 득점, 실제 희생 아님
 ${styleBrief}`;
   const rainLine = facts.wasRainSuspended ? "경기 특이사항: 우천 중단 후 속개된 경기. 빗속에서 끝낸 긴장감을 한 문장에 녹여줘." : "";
+  // describePostseasonSeries 가 경기 종료 기준으로 시리즈가 남았으면 이 표시를 넣는다
+  const seriesOngoing = Boolean(facts.postseasonContext?.includes(SERIES_ONGOING_MARK));
   const postseasonLine = facts.postseasonContext
-    ? `포스트시즌: ${facts.postseasonContext}. 정규시즌 경기가 아니다. 위의 연승/연패·최근 흐름 규칙보다 이 맥락이 우선이다. 시리즈 상황(진출 확정·탈락·남은 승수)을 한줄평과 본문에 반드시 반영하고, 전적 숫자는 이 문구 그대로만 써라. 탈락이면 한 시즌을 마무리하는 톤으로, "다음 경기"를 기약하지 마라.`
+    ? `포스트시즌: ${facts.postseasonContext}. 정규시즌 경기가 아니다. 위의 연승/연패·최근 흐름 규칙보다 이 맥락이 우선이다. 시리즈 상황(진출 확정·탈락·남은 승수)을 한줄평과 본문에 반드시 반영하고, 전적 숫자는 이 문구 그대로만 써라. 연도(20XX년)는 쓰지 마라. ${
+        seriesOngoing
+          ? "시리즈는 아직 끝나지 않았다. 오늘 졌어도 탈락이 아니다 — '시리즈 탈락', '시즌 마감', '가을을 내려놓다', '작별' 같은 끝난 표현 절대 금지. 다음 경기가 남아 있다는 긴장감으로 써라."
+          : '탈락이면 한 시즌을 마무리하는 톤으로, "다음 경기"를 기약하지 마라.'
+      }`
     : "";
   const narrativeLines = [
     facts.winningPitcher ? `우리 승리투수: ${facts.winningPitcher}` : null,
@@ -1299,6 +1310,10 @@ ${facts.recentMomentum?.summary ?? "최근 흐름 데이터 없음"}
       const outputText = `${headline} ${content}`;
       if (isNonNightGame(facts.gameTime) && hasNightExpression(outputText)) return null;
       if (hasOpponentOwnershipViolation(outputText, facts)) return null;
+      if (seriesOngoing && SERIES_OVER_PATTERN.test(outputText)) {
+        console.warn("[postgame-llm] rejected series-over copy while series is ongoing", { headline });
+        return null;
+      }
       if (!isSafePostGameCopy({ headline, content, facts })) {
         console.warn("[postgame-llm] rejected unsafe copy", { headline, content });
         return null;
