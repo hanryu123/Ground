@@ -425,6 +425,8 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 	- 아래에 "리그 재개 맥락"이 있으면 첫 줄 또는 제목에 반드시 그 기다림과 재개전의 긴박함을 담는다. 취소 원인이나 취소 일수는 주어진 문구 밖으로 지어내지 않는다.
 	- 아래에 "포스트시즌 맥락"이 있으면 정규시즌 경기가 아니다. 제목이나 첫 줄에 라운드·차전과 오늘 걸린 것(진출 확정, 탈락 위기 등)을 반드시 담는다. 시리즈 전적은 주어진 숫자 그대로만 쓰고, 정규시즌 순위 경쟁·연승 기록 같은 표현은 쓰지 않는다.
 	- 아래 "매치업 데이터"가 있으면 한 줄 이상은 그 숫자(상대 전적, 선발 평균자책점·상대 팀 상대 성적)를 근거로 오늘의 구도를 짚는다. 숫자는 주어진 그대로만 쓰고, 기억 속 기록·역대 전적·다른 시즌 숫자는 절대 쓰지 않는다 (네가 아는 기록은 옛날 것이다).
+	- 숫자가 우리 쪽에 불리하면 좋은 신호처럼 비틀지 마라 (우리 선발의 높은 평균자책점을 "박수 칠 이유"라고 쓰면 실패). "오늘 그 숫자를 지울 차례"처럼 각오로 돌리거나, 유리한 다른 숫자로 무게를 옮긴다.
+	- 상대 전적은 "올 시즌 정규시즌" 기록이다. "통산", "역대", "늘 그래왔듯"처럼 더 긴 역사로 부풀리지 마라.
 	- 마지막 줄은 그 데이터를 근거로 한 ${team} 편파 승부 예측이다. 확신에 찬 응원 톤으로 쓰되, 예상 스코어·승률 퍼센트 같은 숫자 예측은 쓰지 않는다.
 	- 데이터에 없는 선수 부상, 사생활, 확정 라인업은 지어내지 않는다.
 	- 밈과 드립은 야구팬이 알아듣는 정도로만, 과한 조롱이나 상대 팬 비하는 금지다.
@@ -517,7 +519,8 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
         `${input.date}:${input.game.id}:${input.teamId}:llm`
       );
       if (!title || hasPreviewCliche(title) || !lines) return null;
-      if (hasUnsupportedNumber([title, ...lines].join(" "), user)) {
+      // 구단 DNA(시스템 프롬프트)의 "V12" 같은 숫자도 근거로 인정
+      if (hasUnsupportedNumber([title, ...lines].join(" "), `${system}\n${user}`)) {
         console.warn("[pregame-llm] rejected unsupported number", { title, lines });
         return null;
       }
