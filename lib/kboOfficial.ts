@@ -42,6 +42,9 @@ export type KboOfficialGame = {
   awayScore: number;
   homeStarterName: string | null;
   awayStarterName: string | null;
+  /** KBO 선수 ID — 게임센터 선발 분석 조회용 */
+  homeStarterId: number | null;
+  awayStarterId: number | null;
   winningPitcherName: string | null;
   losingPitcherName: string | null;
   savePitcherName: string | null;
@@ -65,6 +68,8 @@ type KboRaw = {
   B_SCORE_CN?: string | number;
   T_PIT_P_NM?: string | null;
   B_PIT_P_NM?: string | null;
+  T_PIT_P_ID?: number | null;
+  B_PIT_P_ID?: number | null;
   W_PIT_P_NM?: string | null;
   L_PIT_P_NM?: string | null;
   SV_PIT_P_NM?: string | null;
@@ -133,6 +138,8 @@ function adapt(raw: KboRaw): KboOfficialGame | null {
     awayScore: toNumber(raw.T_SCORE_CN),
     homeStarterName: clean(raw.B_PIT_P_NM),
     awayStarterName: clean(raw.T_PIT_P_NM),
+    homeStarterId: typeof raw.B_PIT_P_ID === "number" ? raw.B_PIT_P_ID : null,
+    awayStarterId: typeof raw.T_PIT_P_ID === "number" ? raw.T_PIT_P_ID : null,
     winningPitcherName: clean(raw.W_PIT_P_NM),
     losingPitcherName: clean(raw.L_PIT_P_NM),
     savePitcherName: clean(raw.SV_PIT_P_NM),
@@ -249,6 +256,8 @@ function parseScheduleRows(
       homeScore: finished ? scores[1]! : 0,
       homeStarterName: null,
       awayStarterName: null,
+      homeStarterId: null,
+      awayStarterId: null,
       winningPitcherName: null,
       losingPitcherName: null,
       savePitcherName: null,
@@ -363,5 +372,89 @@ export async function fetchKboOfficialLineups(
   return {
     homeLineup: home.filter((i) => i.order !== "P").length >= 9 ? home : null,
     awayLineup: away.filter((i) => i.order !== "P").length >= 9 ? away : null,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 선발투수 분석 — 게임센터 "선발투수 비교"(GetPitcherRecordAnalysis). 프리뷰에 넣는 실제 숫자.
+//  포스트시즌 경기여도 정규시즌(srId=0) 성적을 본다 — 포스트시즌 표본은 1~2경기라 의미가 없다.
+// ────────────────────────────────────────────────────────────────────
+
+const KBO_PITCHER_ANALYSIS_URL = "https://www.koreabaseball.com/ws/Schedule.asmx/GetPitcherRecordAnalysis";
+
+export type KboStarterStats = {
+  name: string;
+  /** "7승 5패" */
+  seasonRecord: string | null;
+  /** 오늘 상대 팀 상대 승패 "1승 1패" */
+  vsRecord: string | null;
+  seasonEra: string | null;
+  seasonWhip: string | null;
+  seasonGames: string | null;
+  seasonQs: string | null;
+  /** 오늘 상대 팀 상대 평균자책점·등판 수 */
+  vsEra: string | null;
+  vsGames: string | null;
+};
+
+type AnalysisTable = { rows?: Array<{ row?: ScheduleCell[] }> };
+
+async function fetchPitcherAnalysisTable(body: string, groupSc: "SEASON" | "VS"): Promise<string[][]> {
+  const res = await fetch(KBO_PITCHER_ANALYSIS_URL, {
+    method: "POST",
+    headers: { ...KBO_HEADERS, referer: "https://www.koreabaseball.com/Schedule/GameCenter/Main.aspx" },
+    body: `${body}&groupSc=${groupSc}`,
+    cache: "no-store",
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!res.ok) throw new Error(`kbo pitcher analysis HTTP ${res.status}`);
+  const table = (await res.json()) as AnalysisTable;
+  return (table.rows ?? []).map(({ row }) => (row ?? []).map((c) => stripTags(c.Text)));
+}
+
+function cell(value: string | undefined): string | null {
+  const v = value?.trim();
+  return v && v !== "-" ? v : null;
+}
+
+/** 원정·홈 선발투수 시즌 성적 + 오늘 상대 팀 상대 성적. 선발 발표 전이거나 실패하면 null */
+export async function fetchKboStarterMatchup(
+  naverGameId: string
+): Promise<{ home: KboStarterStats | null; away: KboStarterStats | null } | null> {
+  const ids = naverToKboGameId(naverGameId);
+  if (!ids) return null;
+  const date = `${ids.season}-${ids.kboGameId.slice(4, 6)}-${ids.kboGameId.slice(6, 8)}`;
+  const game = (await fetchKboOfficialDay(date)).find((g) => g.gameId === naverGameId);
+  if (!game?.homeStarterId || !game.awayStarterId) return null;
+  const awayCode = ids.kboGameId.slice(8, 10);
+  const homeCode = ids.kboGameId.slice(10, 12);
+  const body =
+    `leId=1&srId=0&seasonId=${ids.season}&gameId=${ids.kboGameId}` +
+    `&awayTeamId=${awayCode}&homeTeamId=${homeCode}&awayPitId=${game.awayStarterId}&homePitId=${game.homeStarterId}`;
+  const [season, vs] = await Promise.all([
+    fetchPitcherAnalysisTable(body, "SEASON"),
+    fetchPitcherAnalysisTable(body, "VS").catch(() => [] as string[][]),
+  ]);
+  // 행 순서: 원정, 홈. 첫 칸 "최원태 우투우타 시즌 7승 5패 VS KIA 1승 1패"
+  const toStats = (seasonRow: string[] | undefined, vsRow: string[] | undefined, fallbackName: string | null) => {
+    if (!seasonRow) return null;
+    const head = seasonRow[0] ?? "";
+    const name = head.split(" ")[0] || fallbackName;
+    if (!name) return null;
+    return {
+      name,
+      seasonRecord: head.match(/시즌\s*(\d+승\s*\d+패)/)?.[1] ?? null,
+      vsRecord: head.match(/VS\s*\S+\s*(\d+승\s*\d+패)/)?.[1] ?? null,
+      seasonEra: cell(seasonRow[1]),
+      seasonWhip: cell(seasonRow[6]),
+      seasonGames: cell(seasonRow[3]),
+      seasonQs: cell(seasonRow[5]),
+      vsEra: cell(vsRow?.[1]),
+      vsGames: cell(vsRow?.[2]),
+    } satisfies KboStarterStats;
+  };
+  return {
+    away: toStats(season[0], vs[0], game.awayStarterName),
+    home: toStats(season[1], vs[1], game.homeStarterName),
   };
 }

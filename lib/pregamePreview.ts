@@ -1,6 +1,7 @@
 import { claudeFetch } from "@/lib/llmBudget";
 import { findTeam } from "@/lib/teams";
-import type { LiveGame } from "@/lib/kbo";
+import { fetchKboSeasonGames, isRegularSeasonGameId, type LiveGame } from "@/lib/kbo";
+import { fetchKboStarterMatchup, type KboStarterStats } from "@/lib/kboOfficial";
 import {
   buildTeamMomentumFromLiveGames,
   fetchTeamMomentum,
@@ -313,6 +314,72 @@ function normalizePreviewLines(lines: string[], seed: string): string[] | null {
   return out.length >= 3 ? out.slice(0, 4) : null;
 }
 
+/** 올 시즌 정규시즌 상대 전적 (오늘 경기 전까지) — 전체 + 오늘 구장 */
+function headToHeadLine(input: PregamePreviewInput, seasonGames: LiveGame[], team: string): string | null {
+  const id = input.teamId.toLowerCase();
+  const opp = input.opponentTeamId.toLowerCase();
+  const games = seasonGames.filter(
+    (g) =>
+      isRegularSeasonGameId(g.id) &&
+      g.date < input.date &&
+      g.result &&
+      ((g.homeId === id && g.awayId === opp) || (g.homeId === opp && g.awayId === id))
+  );
+  if (games.length === 0) return null;
+  const tally = (list: LiveGame[]) => {
+    let w = 0, l = 0, d = 0;
+    for (const g of list) {
+      if (g.result?.winnerId === id) w += 1;
+      else if (g.result?.winnerId === opp) l += 1;
+      else d += 1;
+    }
+    return `${w}승 ${l}패${d ? ` ${d}무` : ""}`;
+  };
+  const here = games.filter((g) => g.homeId === input.game.homeId);
+  const venue = input.game.homeId === id ? "우리 홈" : "상대 홈";
+  return `올 시즌 정규시즌 상대 전적 ${team} ${tally(games)} (${venue}에서 ${tally(here)})`;
+}
+
+function starterLine(label: string, s: KboStarterStats | null): string | null {
+  if (!s) return null;
+  const parts = [
+    s.seasonRecord ? `시즌 ${s.seasonRecord}` : null,
+    s.seasonEra ? `평균자책점 ${s.seasonEra}` : null,
+    s.seasonWhip ? `WHIP ${s.seasonWhip}` : null,
+    s.seasonQs && s.seasonGames ? `${s.seasonGames}경기 QS ${s.seasonQs}번` : null,
+    s.vsRecord || s.vsEra
+      ? `오늘 상대 팀 상대 ${[s.vsRecord, s.vsGames ? `${s.vsGames}경기` : null, s.vsEra ? `평균자책점 ${s.vsEra}` : null]
+          .filter(Boolean)
+          .join(" ")}`
+      : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `${label} ${s.name}: ${parts.join(", ")}` : null;
+}
+
+/**
+ * 프리뷰에 넣을 실제 매치업 숫자 — 상대 전적은 시즌 일정에서 계산, 선발 성적은 KBO 게임센터.
+ * LLM 기억 속 기록은 옛날 것이거나 지어낸 것이라 쓰지 않는다. 실패한 항목은 그냥 빠진다.
+ */
+async function buildMatchupFacts(input: PregamePreviewInput, team: string, opp: string): Promise<string[]> {
+  const year = Number.parseInt(input.date.slice(0, 4), 10);
+  const [season, starters] = await Promise.all([
+    fetchKboSeasonGames(year).catch(() => [] as LiveGame[]),
+    fetchKboStarterMatchup(input.game.id).catch(() => null),
+  ]);
+  const ourSide = input.game.homeId === input.teamId.toLowerCase() ? "home" : "away";
+  return [
+    headToHeadLine(input, season, team),
+    starterLine(`우리 선발`, starters ? starters[ourSide] : null),
+    starterLine(`${opp} 선발`, starters ? starters[ourSide === "home" ? "away" : "home"] : null),
+  ].filter((line): line is string => Boolean(line));
+}
+
+/** 데이터에 없는 숫자를 쓴 프리뷰는 버린다 — 10 이하 정수(회·연승 등)만 예외 */
+function hasUnsupportedNumber(text: string, sourceText: string): boolean {
+  const allowed = new Set(sourceText.match(/\d+(?:\.\d+)?/g) ?? []);
+  return (text.match(/\d+(?:\.\d+)?/g) ?? []).some((n) => !allowed.has(n) && !(/^\d+$/.test(n) && Number(n) <= 10));
+}
+
 export async function generatePregamePreview(input: PregamePreviewInput): Promise<PregamePreviewOutput> {
   const localMomentum = buildTeamMomentumFromLiveGames({
     teamId: input.teamId,
@@ -331,6 +398,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 
   const team = findTeam(input.teamId).short;
   const opp = findTeam(input.opponentTeamId).short;
+  const matchupFacts = await buildMatchupFacts(input, team, opp);
   const newsBlock = input.newsContext.slice(0, 5).join(" | ") || "없음";
   const starter = input.game.homeId === input.teamId ? input.game.homePitcher : input.game.awayPitcher;
   const previewFlavor = buildPreviewFlavor(input.teamId, input.opponentTeamId);
@@ -356,7 +424,9 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 	- 최근 흐름은 데이터 그대로 해석한다. 연승이면 더 밀어붙이는 서사, 연패면 끊어내는 서사다. 연승에 "반전"이라는 단어를 붙이면 실패다.
 	- 아래에 "리그 재개 맥락"이 있으면 첫 줄 또는 제목에 반드시 그 기다림과 재개전의 긴박함을 담는다. 취소 원인이나 취소 일수는 주어진 문구 밖으로 지어내지 않는다.
 	- 아래에 "포스트시즌 맥락"이 있으면 정규시즌 경기가 아니다. 제목이나 첫 줄에 라운드·차전과 오늘 걸린 것(진출 확정, 탈락 위기 등)을 반드시 담는다. 시리즈 전적은 주어진 숫자 그대로만 쓰고, 정규시즌 순위 경쟁·연승 기록 같은 표현은 쓰지 않는다.
-	- 데이터에 없는 선수 부상, 사생활, 확정 라인업, 결과 예측은 지어내지 않는다.
+	- 아래 "매치업 데이터"가 있으면 한 줄 이상은 그 숫자(상대 전적, 선발 평균자책점·상대 팀 상대 성적)를 근거로 오늘의 구도를 짚는다. 숫자는 주어진 그대로만 쓰고, 기억 속 기록·역대 전적·다른 시즌 숫자는 절대 쓰지 않는다 (네가 아는 기록은 옛날 것이다).
+	- 마지막 줄은 그 데이터를 근거로 한 ${team} 편파 승부 예측이다. 확신에 찬 응원 톤으로 쓰되, 예상 스코어·승률 퍼센트 같은 숫자 예측은 쓰지 않는다.
+	- 데이터에 없는 선수 부상, 사생활, 확정 라인업은 지어내지 않는다.
 	- 밈과 드립은 야구팬이 알아듣는 정도로만, 과한 조롱이나 상대 팬 비하는 금지다.
 
 	부정 프롬프트 — 아래 뼈대는 한 글자라도 비슷하면 실패:
@@ -383,7 +453,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 	- 반드시 존댓말 문체 (-습니다/-네요/-죠/-합니다)
 	- "먹히다/먹힌다" 절대 금지
 	- 비관적 조건문 금지: "~하지 못하면", "~못 할 경우", "~힘들어집니다", "~걱정됩니다", "~불안합니다"
-	- 스코어·경기 결과 추론 금지 (경기 전이므로)
+	- 예상 스코어·승률 숫자 금지 (승부 예측은 마지막 줄의 편파 응원 톤으로만)
 	- 최근 5경기 전승/전패를 현재 5연승/5연패로 환산 금지
 	- 3연승/3연패 이상이면 반드시 현재 연속 흐름으로 정확히 언급하되, 문장 뼈대는 매번 다르게 쓴다
 	- 각 line의 첫 단어와 마지막 어미 구조가 겹치면 실패
@@ -406,6 +476,7 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
 최근 스코어:${momentum.recentScores.join(" | ") || "없음"}
 리그 재개 맥락:${input.leagueResumeContext ?? "없음"}
 포스트시즌 맥락:${input.postseasonContext ?? "없음"}
+매치업 데이터(이 숫자만 사용):${matchupFacts.length > 0 ? `\n- ${matchupFacts.join("\n- ")}` : "없음"}
 프리뷰/뉴스 컨텍스트:${newsBlock}`;
 
   const callLlm = async (timeoutMs: number) => {
@@ -446,6 +517,10 @@ export async function generatePregamePreview(input: PregamePreviewInput): Promis
         `${input.date}:${input.game.id}:${input.teamId}:llm`
       );
       if (!title || hasPreviewCliche(title) || !lines) return null;
+      if (hasUnsupportedNumber([title, ...lines].join(" "), user)) {
+        console.warn("[pregame-llm] rejected unsupported number", { title, lines });
+        return null;
+      }
       return { title, lines };
     } catch (error) {
       console.error("[pregame-llm] request_failed", (error as Error).message);
