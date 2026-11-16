@@ -770,27 +770,10 @@ export async function fetchKboSchedule(today?: string): Promise<ScheduleBundle> 
       fallback: false,
     };
   } catch (err) {
-    console.warn(
-      `[kbo] schedule fetch failed (${(err as Error).message}); falling back to static`
-    );
-    const { PAST_GAMES, TODAY_GAMES, TOMORROW_GAMES } = await import(
-      "@/lib/games"
-    );
-    const stamp = (g: import("@/lib/games").Game): LiveGame => ({
-      ...g,
-      status: g.result ? "RESULT" : "BEFORE",
-      cancelReason: null,
-      homeLineup: null,
-      awayLineup: null,
-    });
-    return {
-      date: base,
-      past: PAST_GAMES.map(stamp),
-      today: TODAY_GAMES.map(stamp),
-      tomorrow: TOMORROW_GAMES.map(stamp),
-      upcoming: [],
-      fallback: true,
-    };
+    // 예전엔 여기서 lib/games 의 더미 경기(LG vs 삼성 등)를 돌려줬다. 시즌이 끝나 14일치 일정이 비자
+    // 그 더미로 경기 전 프리뷰가 실제 유저에게 나갔다 (2026-11-16). 실패하면 빈 일정 — 크론은 아무것도 안 보낸다.
+    console.warn(`[kbo] schedule fetch failed (${(err as Error).message}); returning empty schedule`);
+    return { date: base, past: [], today: [], tomorrow: [], upcoming: [], fallback: true };
   }
 }
 
