@@ -8,21 +8,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: {
-          950: "#000000",
-          900: "#0a0a0a",
-          800: "#141414",
-          700: "#1c1c1c",
-          600: "#2a2a2a",
-          500: "#3a3a3a",
-          400: "#5a5a5a",
-          300: "#8a8a8a",
-          200: "#b5b5b5",
-          100: "#e5e5e5",
+        label: "rgb(var(--label-rgb) / <alpha-value>)",
+        sys: {
+          bg: "var(--sys-bg)",
+          card: "var(--sys-card)",
+          card2: "var(--sys-card-2)",
+          sep: "var(--sep)",
+          fill: "var(--fill)",
+          label2: "var(--label-2)",
+          label3: "var(--label-3)",
+        },
+        club: {
+          field: "var(--club-field)",
+          stub: "var(--club-stub)",
+          on: "var(--club-on-field)",
+          tint: "var(--club-tint)",
         },
       },
       fontFamily: {
         sans: [
+          "Pretendard Variable",
           "Pretendard",
           "-apple-system",
           "BlinkMacSystemFont",
@@ -31,6 +36,7 @@ const config: Config = {
           "Roboto",
           "sans-serif",
         ],
+        num: ["var(--font-num)", "Pretendard Variable", "sans-serif"],
       },
       letterSpacing: {
         tightest: "-0.04em",

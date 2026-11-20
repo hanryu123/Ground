@@ -87,7 +87,7 @@ export type LiveGame = Game & {
   homeLineup: LineupItem[] | null;
   awayLineup: LineupItem[] | null;
   /** 경기 중 실시간 스코어 (LIVE 상태일 때만 존재) */
-  liveScore?: { homeScore: number; awayScore: number };
+  liveScore?: { homeScore: number; awayScore: number; /** "7회말" — 이닝을 알 때만 */ inningLabel?: string };
 };
 
 export type TodayFeedStatus =
@@ -273,7 +273,11 @@ function adaptNaverGame(raw: NaverScheduleGame, fallbackDate: string): LiveGame 
     status === "LIVE" &&
     typeof raw.homeTeamScore === "number" &&
     typeof raw.awayTeamScore === "number"
-      ? { homeScore: raw.homeTeamScore, awayScore: raw.awayTeamScore }
+      ? {
+          homeScore: raw.homeTeamScore,
+          awayScore: raw.awayTeamScore,
+          ...(/^\d{1,2}회(초|말)?$/.test((raw.statusInfo ?? "").trim()) ? { inningLabel: (raw.statusInfo ?? "").trim() } : {}),
+        }
       : undefined;
 
   return {

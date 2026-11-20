@@ -1,21 +1,28 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
+import { Barlow_Condensed } from "next/font/google";
 import AppChrome from "@/components/AppChrome";
-import { KBO_TEAMS } from "@/config/teams";
+import { clubCssVars } from "@/lib/clubTheme";
+import { TEAMS } from "@/lib/teams";
 
 const PRETENDARD_CSS =
   "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css";
 
+/** 숫자(점수·시간·번호·기록) 전용 — 전광판 압축체. 본문은 Pretendard */
+const numFont = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-num",
+  display: "swap",
+});
+
 /**
- * 첫 페인트 전에 응원팀 배경색을 입힌다.
- * HeroCard 의 useEffect 가 돌기 전까지 검정 → 팀색으로 바뀌는 깜빡임을 없애기 위함.
- * 온보딩 전이거나 /today 가 아닌 탭으로 진입하면 기존처럼 검정을 유지한다.
+ * 첫 페인트 전에 응원팀 색(--club-*)을 입힌다 — 티켓·탭 강조가 기본색으로 한 번 그려졌다 바뀌는 깜빡임 방지.
+ * AppChrome 도 같은 값을 다시 넣는다 (팀을 바꿨을 때).
  */
-const TEAM_THEME_BOOT = Object.fromEntries(
-  Object.entries(KBO_TEAMS).map(([id, t]) => [id, [t.primary, t.text, t.secondary]])
-);
-const themeBootScript = `(function(){try{var p=location.pathname;if(p!=="/"&&p.indexOf("/today")!==0)return;if(localStorage.getItem("ground-onboarding-complete")!=="1")return;var id=(localStorage.getItem("kbo-my-team")||"").toUpperCase();var t=${JSON.stringify(TEAM_THEME_BOOT)}[id];if(!t)return;var s=document.documentElement.style;s.setProperty("--app-bg",t[0]);s.setProperty("--app-text",t[1]);s.setProperty("--app-accent",t[2]);}catch(e){}})();`;
+const CLUB_BOOT = Object.fromEntries(TEAMS.map((t) => [t.id, clubCssVars(t.id)]));
+const themeBootScript = `(function(){try{var id=localStorage.getItem("kbo-my-team")||"";var v=${JSON.stringify(CLUB_BOOT)}[id];if(!v)return;var s=document.documentElement.style;for(var k in v)s.setProperty(k,v[k]);}catch(e){}})();`;
 
 export const metadata: Metadata = {
   title: "내 팀을 위한 극단적 편파 알림 GROUND",
@@ -63,7 +70,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   interactiveWidget: "resizes-content",
-  themeColor: "#000000",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f2f2f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 };
 
 export default function RootLayout({
@@ -72,20 +82,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko">
+    <html lang="ko" className={numFont.variable}>
       <head>
         {/* 글꼴 CSS 를 globals.css @import 대신 여기서 바로 요청 — 메인 CSS 를 받은 뒤에야 발견되던 직렬 대기 제거 */}
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
         <link rel="stylesheet" href={PRETENDARD_CSS} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
-      <body
-        className="bg-black text-white"
-        style={{
-          backgroundColor: "var(--app-bg, #000000)",
-          color: "var(--app-text, #ffffff)",
-        }}
-      >
+      <body>
         {/*
           AppChrome 이 일반 앱 라우트와 어드민 라우트의 쉘을 분리한다.
           일반 앱에서는 OnboardingGate 가 응원팀 미선택 사용자를 가로챈다.

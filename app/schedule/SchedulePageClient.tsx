@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence, type PanInfo } from "framer-motion";
-import { ChevronDown, ChevronLeft, ChevronRight, Play, Star } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { findTeam } from "@/lib/teams";
+import { getClubTheme } from "@/lib/clubTheme";
+import { Perforation, Stamp, Stub } from "@/components/today/GamePass";
 import { useMyTeam } from "@/lib/useMyTeam";
-import { getKboTeamThemeByTeamId } from "@/config/teams";
 import { starterLabel, type LiveGame } from "@/lib/kbo";
 import { venueDisplayLines } from "@/lib/venue";
 import {
@@ -23,31 +24,6 @@ import {
 import type { DayGamesPayload, MonthGamesPayload } from "@/lib/schedule";
 import type { ScoringEvent } from "@/app/api/kbo/scoring/[gameId]/route";
 import LogoImage from "@/components/LogoImage";
-
-// ─── 팀 컬러 (어두운 배경에서 보이는 쪽) ───────────────────────────────────────
-
-function luminance(hex: string): number {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return 0;
-  const v = parseInt(m[1], 16);
-  const [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-// 테마 색이 전부 어두운 팀은 어두운 배경에서 안 보여서 따로 지정
-const DOT_COLOR_OVERRIDE: Record<string, string> = {
-  kt: "#EB1C24",
-};
-
-function teamDotColor(teamId: string): string {
-  if (DOT_COLOR_OVERRIDE[teamId]) return DOT_COLOR_OVERRIDE[teamId];
-  const theme = getKboTeamThemeByTeamId(teamId);
-  const candidates = [theme?.secondary, theme?.primary, findTeam(teamId).accent];
-  return candidates.find((c): c is string => !!c && luminance(c) > 0.06) ?? "#FFFFFF";
-}
 
 function isMyGame(g: LiveGame, teamId: string) {
   return g.homeId === teamId || g.awayId === teamId;
@@ -113,7 +89,9 @@ export default function SchedulePageClient({
   initialDay: DayGamesPayload;
 }) {
   const myTeam = useMyTeam();
-  const dotColor = useMemo(() => teamDotColor(myTeam.id), [myTeam.id]);
+  const dotColor = "var(--club-tint)";
+  // 우리 팀 경기 카드(구단 색) 위 글자색 — "R G B" 형식으로 --label-rgb 에 넣는다
+  const onFieldRgb = getClubTheme(myTeam.id).onField === "#FFFFFF" ? "255 255 255" : "28 28 30";
   const { months, days, failed, load, ensureMonth, ensureDay } = useGamesData(
     initialMonth,
     initialDay
@@ -187,20 +165,17 @@ export default function SchedulePageClient({
     <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
       <section className="pb-nav">
         {/* ── 헤더: "10월 2026 ▾" + TODAY ── */}
-        <header className="flex items-center justify-between px-6 pt-7">
+        <header className="safe-pt flex items-end justify-between px-5 pb-1">
           <button
             type="button"
             onClick={() => setSheetOpen(true)}
-            className="flex items-center gap-1.5 text-white active:opacity-70"
+            className="flex items-center gap-1.5 text-label active:opacity-70"
             aria-label="월 달력 열기"
           >
-            <span
-              className="text-[24px] leading-none tracking-tight"
-              style={{ fontWeight: 900, textShadow: "0 2px 12px rgba(0,0,0,0.5)" }}
-            >
+            <span className="text-[34px] font-bold leading-[1.15] tracking-[-0.02em]">
               {monthTitle(selectedMonth)}
             </span>
-            <ChevronDown size={18} strokeWidth={2.6} className="text-white/60" />
+            <ChevronDown size={22} strokeWidth={2.6} className="text-club-tint" />
           </button>
           <AnimatePresence>
             {selected !== today && (
@@ -212,10 +187,9 @@ export default function SchedulePageClient({
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => goTo(today)}
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.24em] text-white active:bg-white/20"
-                style={{ fontWeight: 800 }}
+                className="mb-1.5 min-h-[34px] rounded-full bg-sys-fill px-3.5 text-[15px] font-semibold text-club-tint active:opacity-60"
               >
-                Today
+                오늘
               </motion.button>
             )}
           </AnimatePresence>
@@ -236,14 +210,11 @@ export default function SchedulePageClient({
         {/* ── 고른 날 ── */}
         <div className="px-5 pt-6">
           <div className="mb-3 flex items-baseline justify-between px-1">
-            <h2
-              className="text-[15px] tracking-tight text-white"
-              style={{ fontWeight: 800, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
-            >
+            <h2 className="text-[20px] font-bold tracking-[-0.02em] text-label">
               {longDateLabel(selected)}
             </h2>
             {dayGames && dayGames.length > 0 && (
-              <span className="text-[11px] text-white/45" style={{ fontWeight: 600 }}>
+              <span className="text-[13px] text-sys-label2">
                 {dayGames.length}경기
               </span>
             )}
@@ -279,7 +250,8 @@ export default function SchedulePageClient({
                   key={g.id}
                   game={g}
                   mine={isMyGame(g, myTeam.id)}
-                  mineColor={dotColor}
+                  myTeamId={myTeam.id}
+                  mineColor={onFieldRgb}
                   muted={selected < today}
                   detailReady={detailReady}
                 />
@@ -390,7 +362,7 @@ function WeekStrip({
                 aria-pressed={isSel}
               >
                 <span
-                  className={`text-[10px] ${isSel ? "text-white" : "text-white/45"}`}
+                  className={`text-[10px] ${isSel ? "text-label" : "text-label/45"}`}
                   style={{ fontWeight: 700 }}
                 >
                   {KO_DOW[dow]}
@@ -399,12 +371,12 @@ function WeekStrip({
                   className={[
                     "flex h-9 w-9 items-center justify-center rounded-full text-[15px] tabular-nums transition-colors",
                     isSel
-                      ? "bg-white text-black"
+                      ? "bg-label text-sys-bg"
                       : isToday
-                        ? "border border-white/50 text-white"
+                        ? "border border-label/50 text-label"
                         : hasGames || games === null
-                          ? "text-white/85"
-                          : "text-white/30",
+                          ? "text-label/85"
+                          : "text-label/30",
                   ].join(" ")}
                   style={{ fontWeight: isSel || isToday ? 900 : 700 }}
                 >
@@ -414,7 +386,6 @@ function WeekStrip({
                   className="h-1.5 w-1.5 rounded-full"
                   style={{
                     backgroundColor: mine ? dotColor : "transparent",
-                    boxShadow: mine ? `0 0 6px ${dotColor}aa` : undefined,
                   }}
                 />
               </button>
@@ -479,7 +450,7 @@ function MonthSheet({
         <>
           <motion.div
             key="sheet-backdrop"
-            className="fixed inset-0 z-[60] bg-black/60"
+            className="fixed inset-0 z-[60] bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -489,7 +460,7 @@ function MonthSheet({
             key="sheet"
             role="dialog"
             aria-label="월 달력"
-            className="fixed inset-x-0 bottom-0 z-[61] rounded-t-3xl border-t border-white/10 bg-[#111] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-3"
+            className="fixed inset-x-0 bottom-0 z-[61] rounded-t-3xl border-t border-label/10 bg-sys-card px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-3"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -501,23 +472,23 @@ function MonthSheet({
               if (info.offset.y > 80 || info.velocity.y > 500) onClose();
             }}
           >
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-label/20" />
             <div className="mb-4 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setMonth((m) => shiftMonth(m, -1))}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 active:bg-white/10"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-label/70 active:bg-label/10"
                 aria-label="지난달"
               >
                 <ChevronLeft size={20} />
               </button>
-              <span className="text-[17px] text-white" style={{ fontWeight: 900 }}>
+              <span className="text-[17px] text-label" style={{ fontWeight: 900 }}>
                 {monthTitle(month)}
               </span>
               <button
                 type="button"
                 onClick={() => setMonth((m) => shiftMonth(m, 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 active:bg-white/10"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-label/70 active:bg-label/10"
                 aria-label="다음 달"
               >
                 <ChevronRight size={20} />
@@ -528,7 +499,7 @@ function MonthSheet({
               {KO_DOW.map((d) => (
                 <span
                   key={d}
-                  className="text-center text-[10px] text-white/40"
+                  className="text-center text-[10px] text-label/40"
                   style={{ fontWeight: 700 }}
                 >
                   {d}
@@ -553,14 +524,14 @@ function MonthSheet({
                       className={[
                         "flex h-9 w-9 items-center justify-center rounded-full text-[14px] tabular-nums",
                         isSel
-                          ? "bg-white text-black"
+                          ? "bg-label text-sys-bg"
                           : isToday
-                            ? "border border-white/50 text-white"
+                            ? "border border-label/50 text-label"
                             : !inMonth
-                              ? "text-white/15"
+                              ? "text-label/15"
                               : info?.any || !data
-                                ? "text-white/85"
-                                : "text-white/30",
+                                ? "text-label/85"
+                                : "text-label/30",
                       ].join(" ")}
                       style={{ fontWeight: isSel || isToday ? 900 : 700 }}
                     >
@@ -683,18 +654,18 @@ function EmptyCard({
   action?: { label: string; onClick: () => void };
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/40 px-6 py-10 text-center">
-      <p className="text-[17px] text-white" style={{ fontWeight: 900 }}>
+    <div className="rounded-[14px] bg-sys-card px-6 py-10 text-center">
+      <p className="text-[17px] text-label" style={{ fontWeight: 900 }}>
         {title}
       </p>
-      <p className="mt-2 text-[12px] leading-relaxed text-white/55" style={{ fontWeight: 500 }}>
+      <p className="mt-2 text-[15px] leading-relaxed text-sys-label2">
         {body}
       </p>
       {action && (
         <button
           type="button"
           onClick={action.onClick}
-          className="mt-5 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white active:bg-white/20"
+          className="mt-5 min-h-[44px] rounded-full bg-sys-fill px-5 text-[15px] font-semibold text-club-tint active:opacity-60"
           style={{ fontWeight: 700 }}
         >
           {action.label}
@@ -710,7 +681,7 @@ function LoadingCards() {
       {[0, 1, 2].map((i) => (
         <li
           key={i}
-          className="h-[112px] animate-pulse rounded-2xl border border-white/10 bg-black/40"
+          className="h-[112px] animate-pulse rounded-[14px] bg-sys-card"
         />
       ))}
     </ul>
@@ -722,12 +693,14 @@ function LoadingCards() {
 function GameRow({
   game,
   mine,
+  myTeamId,
   mineColor,
   muted,
   detailReady,
 }: {
   game: LiveGame;
   mine: boolean;
+  myTeamId: string;
   mineColor: string;
   muted?: boolean;
   /** 선발·구장·승패 투수 상세가 도착했는지 (아직이면 그 줄을 비워 둔다) */
@@ -771,27 +744,30 @@ function GameRow({
     }
   }, [isResult, expanded, scoring, loadingScoring, game.id, game.homeId, game.awayId]);
 
-  const text = muted ? "text-white/70" : "text-white";
+  const text = muted ? "text-label/70" : "text-label";
   const awayWon = result?.winnerId === away.id;
   const homeWon = result?.winnerId === home.id;
   const draw = !!result && result.winnerId === null;
 
-  const teamColor = (won: boolean) => (result ? (won ? "text-white" : "text-white/40") : text);
+  // 편파 원칙 — 우리 팀은 져도 흐리게 하지 않는다 (결과는 도장이 말한다)
+  const teamColor = (won: boolean, teamId?: string) =>
+    mine && teamId === myTeamId ? "text-label" : result ? (won ? "text-label" : "text-label/40") : text;
+  const myOutcome = mine && result ? (result.winnerId == null ? "무" : result.winnerId === myTeamId ? "승" : "패") : null;
 
   const venue = venueDisplayLines(game.stadium);
 
   const liveColor = (mineScore: number, other: number) =>
-    mineScore > other ? "text-white" : mineScore < other ? "text-white/50" : "text-white/75";
+    mineScore > other ? "text-label" : mineScore < other ? "text-label/50" : "text-label/75";
 
   const pitcherLine = !detailReady ? null : result ? (
     draw ? (
       <>무승부</>
     ) : (
       <>
-        <span className="text-white/40" style={{ fontWeight: 600 }}>승 </span>
+        <span className="text-label/50" style={{ fontWeight: 600 }}>승 </span>
         {result.winningPitcher ?? "—"}
-        <span className="mx-1.5 text-white/20">·</span>
-        <span className="text-white/40" style={{ fontWeight: 600 }}>패 </span>
+        <span className="mx-1.5 text-label/20">·</span>
+        <span className="text-label/50" style={{ fontWeight: 600 }}>패 </span>
         {result.losingPitcher ?? "—"}
       </>
     )
@@ -799,9 +775,9 @@ function GameRow({
     <>{game.cancelReason === "RAIN" ? "비 때문에 취소됐어요" : "취소된 경기예요"}</>
   ) : (
     <>
-      <span className="text-white/40" style={{ fontWeight: 600 }}>선발 </span>
+      <span className="text-label/50" style={{ fontWeight: 600 }}>선발 </span>
       {starterLabel(game.awayPitcher)}
-      <span className="mx-1.5 text-white/20">vs</span>
+      <span className="mx-1.5 text-label/20">vs</span>
       {starterLabel(game.homePitcher)}
     </>
   );
@@ -809,50 +785,49 @@ function GameRow({
   return (
     <li
       className={[
-        "rounded-2xl border bg-black/40 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
-        mine ? "" : "border-white/10",
-        isResult ? "cursor-pointer select-none active:scale-[0.992] transition-transform duration-100" : "",
+        mine ? "mb-2 text-club-on" : "rounded-[14px] bg-sys-card",
+        isResult ? "cursor-pointer select-none active:scale-[0.99] transition-transform duration-100" : "",
       ].join(" ")}
-      style={mine ? { borderColor: `${mineColor}66`, backgroundColor: `${mineColor}14` } : undefined}
+      // 우리 팀 경기는 구단 색 티켓 — 안의 text-label 이 구단 색 위 글자색이 되게 바꿔 끼운다
+      style={mine ? ({ "--label-rgb": mineColor, "--label-2": `rgb(${mineColor} / 0.75)` } as React.CSSProperties) : undefined}
       onClick={isResult ? handleExpand : undefined}
     >
+      {/* 우리 팀 경기는 TODAY 티켓과 같은 몸체 — 위(구단 색) · 절취선 · 점수를 담은 반쪽 */}
+      <div className={mine ? "rounded-t-[18px] bg-club-field" : ""}>
       <div className="p-4">
         {/* ── 메타 행: 시간·상태 · 구장 | 별 ── */}
         <div className="flex items-center gap-2">
           {isLive ? (
             <span
-              className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[8.5px] uppercase"
-              style={{ fontWeight: 800, letterSpacing: "0.2em", color: "#ff4d4d", background: "rgba(255,77,77,0.12)" }}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-bold"
+              style={{ color: mine ? "rgb(var(--label-rgb))" : "var(--loss)", background: "rgb(var(--label-rgb) / 0.08)" }}
             >
-              <span className="inline-block h-1 w-1 animate-pulse rounded-full" style={{ backgroundColor: "#ff4d4d" }} />
-              LIVE
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+              경기 중
             </span>
           ) : result ? (
             <ResultBadge winnerSide={awayWon ? "away" : homeWon ? "home" : "draw"} />
           ) : isCancel ? (
             <span
-              className="rounded-full px-2 py-[2px] text-[8.5px] uppercase"
-              style={{ fontWeight: 800, letterSpacing: "0.2em", color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.06)" }}
+              className="rounded-full px-2 py-0.5 text-[12px] font-bold"
+              style={{ color: "var(--label-2)", background: "rgb(var(--label-rgb) / 0.08)" }}
             >
-              CXL
+              취소
             </span>
           ) : (
-            <span className={`tabular-nums text-[13px] leading-none ${text}`} style={{ fontWeight: 800 }}>
+            <span className={`font-num text-[19px] font-semibold leading-none ${text}`}>
               {game.time}
             </span>
           )}
           {venue.primary && (
-            <span className="min-w-0 truncate text-[11px] tracking-[0.04em] text-white/45" style={{ fontWeight: 600 }}>
+            <span className="min-w-0 truncate text-[13px] text-sys-label2">
               {venue.primary}
             </span>
           )}
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {mine && (
-              <Star size={14} strokeWidth={0} fill={mineColor} aria-label="우리 팀 경기" />
-            )}
             {isResult && (
               <span
-                style={{ color: "rgba(255,255,255,0.3)", transition: "transform 0.2s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
+                style={{ color: "rgb(var(--label-rgb) / 0.3)", transition: "transform 0.2s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
               >
                 <ChevronDown size={13} strokeWidth={2} />
               </span>
@@ -865,35 +840,35 @@ function GameRow({
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <LogoImage teamId={away.id} alt={away.name} size={32} className="shrink-0 object-contain" />
             <span
-              className={`min-w-0 truncate text-[18px] leading-none tracking-tight ${teamColor(awayWon)}`}
-              style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
+              className={`min-w-0 truncate text-[18px] leading-none tracking-tight ${teamColor(awayWon, away.id)}`}
+              style={{ fontWeight: 900 }}
             >
               {away.short}
             </span>
           </div>
 
-          {result ? (
-            <span className="shrink-0 min-w-[64px] text-center tabular-nums text-[22px] leading-none tracking-tight" style={{ fontWeight: 800 }}>
-              <span className={awayWon ? "text-white" : "text-white/50"}>{result.awayScore}</span>
-              <span className="mx-1.5 text-[15px] text-white/40">{draw ? "D" : ":"}</span>
-              <span className={homeWon ? "text-white" : "text-white/50"}>{result.homeScore}</span>
+          {result && !mine ? (
+            <span className="shrink-0 min-w-[64px] text-center font-num text-[28px] font-bold leading-none">
+              <span className={awayWon || (mine && away.id === myTeamId) ? "text-label" : "text-label/50"}>{result.awayScore}</span>
+              <span className="mx-1.5 text-[18px] text-label/40">{draw ? "무" : ":"}</span>
+              <span className={homeWon || (mine && home.id === myTeamId) ? "text-label" : "text-label/50"}>{result.homeScore}</span>
             </span>
-          ) : isLive && liveScore ? (
-            <span className="shrink-0 min-w-[64px] text-center tabular-nums text-[22px] leading-none tracking-tight" style={{ fontWeight: 800 }}>
+          ) : isLive && liveScore && !mine ? (
+            <span className="shrink-0 min-w-[64px] text-center font-num text-[28px] font-bold leading-none">
               <span className={liveColor(liveScore.awayScore, liveScore.homeScore)}>{liveScore.awayScore}</span>
-              <span className="mx-1.5 text-[15px]" style={{ color: "rgba(255,77,77,0.6)" }}>:</span>
+              <span className="mx-1.5 text-[18px] text-label/40">:</span>
               <span className={liveColor(liveScore.homeScore, liveScore.awayScore)}>{liveScore.homeScore}</span>
             </span>
           ) : (
-            <span className="shrink-0 min-w-[40px] text-center text-[11px] italic text-white/45" style={{ fontWeight: 400 }}>
+            <span className="shrink-0 min-w-[40px] text-center text-[13px] text-sys-label2">
               vs
             </span>
           )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5">
             <span
-              className={`min-w-0 truncate text-right text-[18px] leading-none tracking-tight ${teamColor(homeWon)}`}
-              style={{ fontWeight: 900, textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}
+              className={`min-w-0 truncate text-right text-[18px] leading-none tracking-tight ${teamColor(homeWon, home.id)}`}
+              style={{ fontWeight: 900 }}
             >
               {home.short}
             </span>
@@ -903,7 +878,7 @@ function GameRow({
 
         {/* ── 선발 / 승패 투수 + HIGHLIGHT ── */}
         <div className="mt-3 flex min-h-[14px] items-center justify-between gap-2">
-          <p className="min-w-0 truncate text-[11px] leading-tight tracking-wide text-white/60" style={{ fontWeight: 400 }}>
+          <p className="min-w-0 truncate text-[13px] leading-tight text-label/70">
             {pitcherLine}
           </p>
           <HighlightLink url={game.highlightUrl} muted={muted} />
@@ -932,6 +907,32 @@ function GameRow({
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
+      {mine ? (
+        <>
+          <Perforation />
+          <Stub torn={isResult || isCancel}>
+            {result ? (
+              <span className="font-num text-[34px] font-bold leading-none">
+                {result.awayScore}
+                <span className="mx-1.5 text-[22px] opacity-60">:</span>
+                {result.homeScore}
+              </span>
+            ) : isLive && liveScore ? (
+              <span className="font-num text-[34px] font-bold leading-none">
+                {liveScore.awayScore}
+                <span className="mx-1.5 text-[22px] opacity-60">:</span>
+                {liveScore.homeScore}
+              </span>
+            ) : isCancel ? (
+              <span className="text-[17px] font-bold">{game.cancelReason === "RAIN" ? "우천 취소" : "경기 취소"}</span>
+            ) : (
+              <span className="font-num text-[34px] font-bold leading-none">{game.time}</span>
+            )}
+            {myOutcome ? <Stamp label={myOutcome} /> : isLive ? <span className="text-[15px] font-bold">{liveScore?.inningLabel ?? "경기 중"}</span> : null}
+          </Stub>
+        </>
+      ) : null}
     </li>
   );
 }
@@ -956,12 +957,12 @@ function ScoringPanel({
   return (
     <div
       className="mx-4 mb-4 rounded-xl overflow-hidden"
-      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+      style={{ background: "rgb(var(--label-rgb) / 0.04)", border: "1px solid rgb(var(--label-rgb) / 0.08)" }}
     >
       {/* 헤더 */}
       <div
-        className="px-3 py-2 text-[9px] uppercase tracking-[0.28em] text-white/35"
-        style={{ fontWeight: 700, borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        className="px-3 py-2 text-[13px] font-semibold text-sys-label2"
+        style={{ fontWeight: 700, borderBottom: "1px solid rgb(var(--label-rgb) / 0.06)" }}
       >
         득점 정보
       </div>
@@ -969,11 +970,11 @@ function ScoringPanel({
       {/* 내용 */}
       {loading ? (
         <div className="px-3 py-5 text-center">
-          <span className="text-[10px] text-white/30 tracking-[0.2em] uppercase">Loading...</span>
+          <span className="text-[13px] text-sys-label2">불러오는 중</span>
         </div>
       ) : !events || events.length === 0 ? (
         <div className="px-3 py-5 text-center">
-          <span className="text-[10px] text-white/25 tracking-[0.18em] uppercase">상세 기록 없음</span>
+          <span className="text-[13px] text-sys-label2">상세 기록 없음</span>
         </div>
       ) : (
         <ul className="py-1">
@@ -989,13 +990,13 @@ function ScoringPanel({
                 key={i}
                 className="px-3 py-[8px]"
                 style={{
-                  borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                  borderTop: i > 0 ? "1px solid rgb(var(--label-rgb) / 0.04)" : undefined,
                 }}
               >
                 <div className="flex items-start gap-2">
                   {/* 이닝 */}
                   <span
-                    className="w-[38px] shrink-0 pt-[1px] text-[10px] tabular-nums text-white/35"
+                    className="w-[38px] shrink-0 pt-[1px] text-[10px] tabular-nums text-label/35"
                     style={{ fontWeight: 600 }}
                   >
                     {inningLabel}
@@ -1003,7 +1004,7 @@ function ScoringPanel({
 
                   {/* 팀 */}
                   <span
-                    className="w-[28px] shrink-0 pt-[1px] text-[11px] text-white/60"
+                    className="w-[28px] shrink-0 pt-[1px] text-[11px] text-label/60"
                     style={{ fontWeight: 700 }}
                   >
                     {teamName}
@@ -1011,11 +1012,11 @@ function ScoringPanel({
 
                   {/* 선수 + 설명 */}
                   <div className="min-w-0 flex-1">
-                    <p className="min-w-0 text-[11px] leading-snug text-white/82" style={{ fontWeight: 600 }}>
+                    <p className="min-w-0 text-[11px] leading-snug text-label/80" style={{ fontWeight: 600 }}>
                       {ev.player ? (
                         <>
-                          <span className="text-white/95" style={{ fontWeight: 800 }}>{ev.player}</span>
-                          <span className="mx-1 text-white/40">·</span>
+                          <span className="text-label/95" style={{ fontWeight: 800 }}>{ev.player}</span>
+                          <span className="mx-1 text-label/40">·</span>
                           {ev.description}
                         </>
                       ) : (
@@ -1027,21 +1028,21 @@ function ScoringPanel({
                         {details.slice(0, 4).map((detail, detailIndex) => (
                           <li
                             key={`${detail.player ?? "run"}-${detail.description}-${detailIndex}`}
-                            className="min-w-0 truncate text-[10px] leading-snug text-white/42"
+                            className="min-w-0 truncate text-[10px] leading-snug text-label/40"
                             style={{ fontWeight: 500 }}
                           >
-                            <span className="mr-1 text-white/22">·</span>
+                            <span className="mr-1 text-label/20">·</span>
                             {detail.player && (
-                              <span className="text-white/60" style={{ fontWeight: 700 }}>{detail.player} </span>
+                              <span className="text-label/60" style={{ fontWeight: 700 }}>{detail.player} </span>
                             )}
                             {detail.description}
                             {detail.runs && detail.runs > 1 ? (
-                              <span className="text-white/28"> ({detail.runs}점)</span>
+                              <span className="text-label/30"> ({detail.runs}점)</span>
                             ) : null}
                           </li>
                         ))}
                         {details.length > 4 && (
-                          <li className="text-[10px] leading-snug text-white/25">
+                          <li className="text-[10px] leading-snug text-label/25">
                             +{details.length - 4}개 장면
                           </li>
                         )}
@@ -1051,21 +1052,21 @@ function ScoringPanel({
 
                   {/* 누적 스코어 */}
                   <span
-                    className="shrink-0 pt-[1px] tabular-nums text-[11px] text-white/40"
+                    className="shrink-0 pt-[1px] tabular-nums text-[11px] text-label/40"
                     style={{ fontWeight: 700 }}
                     aria-label={`누적 스코어 ${scoreLabel}`}
                   >
                     {isAway ? (
                       <>
-                        <span className="text-white/65">{ev.awayScore}</span>
-                        <span className="mx-0.5 text-white/25">:</span>
+                        <span className="text-label/65">{ev.awayScore}</span>
+                        <span className="mx-0.5 text-label/25">:</span>
                         {ev.homeScore}
                       </>
                     ) : (
                       <>
                         {ev.awayScore}
-                        <span className="mx-0.5 text-white/25">:</span>
-                        <span className="text-white/65">{ev.homeScore}</span>
+                        <span className="mx-0.5 text-label/25">:</span>
+                        <span className="text-label/65">{ev.homeScore}</span>
                       </>
                     )}
                   </span>
@@ -1086,16 +1087,11 @@ function ResultBadge({
 }: {
   winnerSide: "away" | "home" | "draw";
 }) {
-  const label = winnerSide === "draw" ? "DRAW" : "FT";
+  const label = winnerSide === "draw" ? "무승부" : "종료";
   return (
     <span
-      className="rounded-full px-2 py-[2px] text-[8.5px] uppercase"
-      style={{
-        fontWeight: 700,
-        letterSpacing: "0.24em",
-        color: "rgba(255,255,255,0.55)",
-        background: "rgba(255,255,255,0.06)",
-      }}
+      className="rounded-full px-2 py-0.5 text-[12px] font-bold"
+      style={{ color: "var(--label-2)", background: "rgb(var(--label-rgb) / 0.08)" }}
     >
       {label}
     </span>
@@ -1118,23 +1114,19 @@ function HighlightLink({
       onClick={(e) => e.stopPropagation()}
       className={[
         "inline-flex items-center gap-1.5 bg-transparent",
-        "text-[8px] font-medium uppercase tracking-[0.28em]",
+        "min-h-[32px] text-[13px] font-semibold",
         "transition-colors duration-200 ease-out",
-        "focus-visible:rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-white/25",
-        muted ? "text-white/40 hover:text-white" : "text-white/50 hover:text-white",
+        "focus-visible:rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-label/25",
+        muted ? "text-label/40 hover:text-label" : "text-label/50 hover:text-label",
       ].join(" ")}
-      style={{
-        fontFamily:
-          'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      }}
     >
       <Play
-        size={11}
-        strokeWidth={1.15}
+        size={13}
+        strokeWidth={2}
         className="shrink-0 opacity-90"
         aria-hidden
       />
-      <span>HIGHLIGHT</span>
+      <span>하이라이트</span>
     </a>
   );
 }

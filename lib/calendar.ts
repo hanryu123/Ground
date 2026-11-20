@@ -53,7 +53,7 @@ export function monthGrid(month: string): string[] {
 /** "10월 2026" */
 export function monthTitle(month: string): string {
   const [y, m] = month.split("-").map(Number);
-  return `${m}월 ${y}`;
+  return `${y}년 ${m}월`;
 }
 
 /** "10월 21일 화요일" */

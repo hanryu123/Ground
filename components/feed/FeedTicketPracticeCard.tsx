@@ -11,35 +11,33 @@ const PRACTICE_URL =
  */
 export default function FeedTicketPracticeCard({ theme }: { theme: FeedTheme }) {
   return (
-    <section className="px-5 pt-6">
+    <section className="px-4 pt-4">
       <a
         href={PRACTICE_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-3.5 rounded-2xl p-4 transition active:scale-[0.98]"
-        style={{ background: theme.text(0.07) }}
+        className="flex min-h-[60px] items-center gap-3 rounded-[12px] bg-sys-card px-4 py-2.5 active:bg-sys-fill"
       >
         <span
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-          style={{ background: theme.accent, color: theme.accentText }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-club-field text-club-on"
         >
-          <Ticket size={20} strokeWidth={2} />
+          <Ticket size={16} strokeWidth={2} />
         </span>
         <span className="min-w-0 flex-1">
           <span
-            className="block text-[16px] font-bold leading-snug tracking-[-0.01em]"
-            style={{ color: theme.text(0.95), wordBreak: "keep-all" }}
+            className="block text-[17px] leading-tight"
+            style={{ wordBreak: "keep-all" }}
           >
             가을야구 예매 연습하기
           </span>
           <span
-            className="mt-0.5 block text-[13px] leading-snug"
-            style={{ color: theme.text(0.55), wordBreak: "keep-all" }}
+            className="mt-0.5 block text-[13px] text-sys-label2"
+            style={{ wordBreak: "keep-all" }}
           >
             실전 예매 전에 미리 손 풀어요
           </span>
         </span>
-        <ArrowUpRight size={18} className="shrink-0" style={{ color: theme.text(0.45) }} />
+        <ArrowUpRight size={18} className="shrink-0 text-sys-label3" />
       </a>
     </section>
   );

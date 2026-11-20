@@ -1,0 +1,626 @@
+{
+ "schemaVersion": 2,
+ "generatedAt": "2026-11-20T09:17:25.336917+00:00",
+ "title": "Design System: Ground",
+ "extensions": {
+  "colorMeta": {
+   "club-field": {
+    "role": "primary",
+    "displayName": "Club Field (KIA fallback)",
+    "tonalRamp": [
+     "#260000",
+     "#540000",
+     "#880004",
+     "#BE0012",
+     "#E83039",
+     "#FF716C",
+     "#FFA69E",
+     "#FFD7D0"
+    ],
+    "note": "Per-club at runtime via --club-field; all ten clubs live in lib/clubTheme.ts."
+   },
+   "club-stub": {
+    "role": "primary",
+    "displayName": "Club Stub",
+    "tonalRamp": [
+     "#220000",
+     "#4E0006",
+     "#7E0916",
+     "#B11D28",
+     "#DA4849",
+     "#F37D77",
+     "#FFACA6",
+     "#FFDCD6"
+    ]
+   },
+   "club-on-field": {
+    "role": "primary",
+    "displayName": "On-Field Text",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ]
+   },
+   "club-tint": {
+    "role": "primary",
+    "displayName": "Club Tint (light)",
+    "tonalRamp": [
+     "#250000",
+     "#520001",
+     "#84000C",
+     "#BA001C",
+     "#E33B40",
+     "#FB7670",
+     "#FFA8A1",
+     "#FFD9D3"
+    ]
+   },
+   "club-tint-dark": {
+    "role": "primary",
+    "displayName": "Club Tint (dark)",
+    "tonalRamp": [
+     "#240001",
+     "#50000D",
+     "#810020",
+     "#B50834",
+     "#DE4054",
+     "#F7787F",
+     "#FFA9AC",
+     "#FFD9DA"
+    ]
+   },
+   "sys-bg": {
+    "role": "neutral",
+    "displayName": "Grouped Background",
+    "tonalRamp": [
+     "#0B0B0C",
+     "#252527",
+     "#424244",
+     "#616165",
+     "#828286",
+     "#A5A5A8",
+     "#C9C9CB",
+     "#EEEEF0"
+    ]
+   },
+   "sys-bg-dark": {
+    "role": "neutral",
+    "displayName": "Grouped Background (dark)",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ]
+   },
+   "sys-card": {
+    "role": "neutral",
+    "displayName": "Card",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ]
+   },
+   "sys-card-dark": {
+    "role": "neutral",
+    "displayName": "Card (dark)",
+    "tonalRamp": [
+     "#0B0B0C",
+     "#252526",
+     "#424243",
+     "#616163",
+     "#828284",
+     "#A5A5A7",
+     "#C9C9CA",
+     "#EEEEEF"
+    ]
+   },
+   "label": {
+    "role": "neutral",
+    "displayName": "Label",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ]
+   },
+   "label-dark": {
+    "role": "neutral",
+    "displayName": "Label (dark)",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ]
+   },
+   "label-2": {
+    "role": "neutral",
+    "displayName": "Secondary Label",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252528",
+     "#414147",
+     "#606067",
+     "#818189",
+     "#A4A4AA",
+     "#C8C8CD",
+     "#EEEEF1"
+    ],
+    "canonical": "rgba(60, 60, 67, 0.6)"
+   },
+   "label-2-dark": {
+    "role": "neutral",
+    "displayName": "Secondary Label (dark)",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252529",
+     "#414147",
+     "#606068",
+     "#81818A",
+     "#A4A4AB",
+     "#C8C8CE",
+     "#EEEEF2"
+    ],
+    "canonical": "rgba(235, 235, 245, 0.6)"
+   },
+   "label-3": {
+    "role": "neutral",
+    "displayName": "Tertiary Label",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252528",
+     "#414147",
+     "#606067",
+     "#818189",
+     "#A4A4AA",
+     "#C8C8CD",
+     "#EEEEF1"
+    ],
+    "canonical": "rgba(60, 60, 67, 0.3)"
+   },
+   "label-3-dark": {
+    "role": "neutral",
+    "displayName": "Tertiary Label (dark)",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252529",
+     "#414147",
+     "#606068",
+     "#81818A",
+     "#A4A4AB",
+     "#C8C8CE",
+     "#EEEEF2"
+    ],
+    "canonical": "rgba(235, 235, 245, 0.3)"
+   },
+   "sep": {
+    "role": "neutral",
+    "displayName": "Separator",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252528",
+     "#414147",
+     "#606067",
+     "#818189",
+     "#A4A4AA",
+     "#C8C8CD",
+     "#EEEEF1"
+    ],
+    "canonical": "rgba(60, 60, 67, 0.29)"
+   },
+   "sep-dark": {
+    "role": "neutral",
+    "displayName": "Separator (dark)",
+    "tonalRamp": [
+     "#0B0B0C",
+     "#252527",
+     "#424244",
+     "#616164",
+     "#828286",
+     "#A5A5A8",
+     "#C9C9CB",
+     "#EEEEF0"
+    ],
+    "canonical": "rgba(84, 84, 88, 0.6)"
+   },
+   "fill": {
+    "role": "neutral",
+    "displayName": "Pressed Fill",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252528",
+     "#414147",
+     "#606067",
+     "#818189",
+     "#A4A4AA",
+     "#C8C8CD",
+     "#EEEEF1"
+    ],
+    "canonical": "rgba(120, 120, 128, 0.12)"
+   },
+   "fill-dark": {
+    "role": "neutral",
+    "displayName": "Pressed Fill (dark)",
+    "tonalRamp": [
+     "#0B0B0D",
+     "#252528",
+     "#414147",
+     "#606067",
+     "#818189",
+     "#A4A4AA",
+     "#C8C8CD",
+     "#EEEEF1"
+    ],
+    "canonical": "rgba(120, 120, 128, 0.24)"
+   },
+   "bar": {
+    "role": "neutral",
+    "displayName": "Tab Bar",
+    "tonalRamp": [
+     "#0B0B0B",
+     "#252525",
+     "#424242",
+     "#616161",
+     "#828282",
+     "#A5A5A5",
+     "#C9C9C9",
+     "#EEEEEE"
+    ],
+    "canonical": "rgba(249, 249, 249, 0.94)"
+   },
+   "bar-dark": {
+    "role": "neutral",
+    "displayName": "Tab Bar (dark)",
+    "tonalRamp": [
+     "#0B0B0C",
+     "#252526",
+     "#424243",
+     "#616163",
+     "#828284",
+     "#A5A5A7",
+     "#C9C9CA",
+     "#EEEEEF"
+    ],
+    "canonical": "rgba(22, 22, 24, 0.94)"
+   },
+   "win": {
+    "role": "tertiary",
+    "displayName": "Win Green",
+    "tonalRamp": [
+     "#001100",
+     "#002F0A",
+     "#06501C",
+     "#187530",
+     "#419751",
+     "#75B87E",
+     "#A6D8AB",
+     "#D7F9DA"
+    ]
+   },
+   "win-dark": {
+    "role": "tertiary",
+    "displayName": "Win Green (dark)",
+    "tonalRamp": [
+     "#001200",
+     "#003200",
+     "#005500",
+     "#007B00",
+     "#009E32",
+     "#5ABE6A",
+     "#95DE9D",
+     "#CCFED0"
+    ]
+   },
+   "loss": {
+    "role": "tertiary",
+    "displayName": "Loss Red",
+    "tonalRamp": [
+     "#250000",
+     "#520000",
+     "#840000",
+     "#BA000C",
+     "#E33B36",
+     "#FC766A",
+     "#FFA99C",
+     "#FFD9D0"
+    ]
+   },
+   "loss-dark": {
+    "role": "tertiary",
+    "displayName": "Loss Red (dark)",
+    "tonalRamp": [
+     "#250000",
+     "#520000",
+     "#840000",
+     "#B90006",
+     "#E23D33",
+     "#FB7768",
+     "#FFA99B",
+     "#FFDACF"
+    ]
+   }
+  },
+  "typographyMeta": {
+   "large-title": {
+    "displayName": "Large Title",
+    "purpose": "One per tab screen and each onboarding question."
+   },
+   "section-title": {
+    "displayName": "Section Title",
+    "purpose": "Feed sections on 오늘."
+   },
+   "pass-team-name": {
+    "displayName": "Pass Team Name",
+    "purpose": "Team names on the ticket; 26px for full club names on season/off-day passes and MY card."
+   },
+   "row-team-name": {
+    "displayName": "Row Team Name",
+    "purpose": "Team names in schedule cards."
+   },
+   "headline": {
+    "displayName": "Headline",
+    "purpose": "Preview/report headlines, selected rows."
+   },
+   "body": {
+    "displayName": "Body",
+    "purpose": "Grouped list rows."
+   },
+   "prose": {
+    "displayName": "Prose",
+    "purpose": "Preview and report text."
+   },
+   "footnote": {
+    "displayName": "Footnote",
+    "purpose": "Secondary lines, grouped section headers and footers."
+   },
+   "slot-label": {
+    "displayName": "Slot Label",
+    "purpose": "Field labels inside the ticket only."
+   },
+   "tab-label": {
+    "displayName": "Tab Label",
+    "purpose": "Tab bar captions."
+   },
+   "stamp": {
+    "displayName": "Stamp",
+    "purpose": "승/패/무/취소/rank/우승 stamp on a torn stub."
+   },
+   "figure-score": {
+    "displayName": "Score (ticket)",
+    "purpose": "Score on the TODAY stub; start time at 42px."
+   },
+   "figure-row": {
+    "displayName": "Score (row pass)",
+    "purpose": "Row-scale stubs and season record."
+   },
+   "figure-inline": {
+    "displayName": "Score (card)",
+    "purpose": "Inline scores on neutral game cards."
+   },
+   "figure-table": {
+    "displayName": "Table Figure",
+    "purpose": "Standings cells; 700 on the user row and 승률."
+   },
+   "figure-serial": {
+    "displayName": "Serial",
+    "purpose": "Season serial No.N on pass headers."
+   }
+  },
+  "shadows": [
+   {
+    "name": "ticket-lift",
+    "value": "0 14px 30px -18px rgba(0,0,0,0.55)",
+    "purpose": "Under the TODAY ticket body only."
+   },
+   {
+    "name": "sheet",
+    "value": "0 16px 48px rgba(0,0,0,0.5)",
+    "purpose": "Alert-settings sheet over a dimmed screen."
+   },
+   {
+    "name": "notification-preview",
+    "value": "0 8px 24px -12px rgba(0,0,0,0.45)",
+    "purpose": "Mock iOS notifications in onboarding step 3."
+   }
+  ],
+  "motion": [
+   {
+    "name": "stamp-spring",
+    "value": "spring(stiffness 420, damping 18), from scale 1.6 / -14deg to 1 / -8deg, delay 0.25s",
+    "purpose": "Stamp landing on a finished pass."
+   },
+   {
+    "name": "stub-tear",
+    "value": "spring(stiffness 260, damping 22), translateY 9px, rotate -1.2deg, origin top-right",
+    "purpose": "Stub dropping when a game ends."
+   },
+   {
+    "name": "press-scale",
+    "value": "scale(0.985) ticket / 0.99 cards / 0.98 CTA",
+    "purpose": "Pressed state of tappable passes, cards and CTAs."
+   },
+   {
+    "name": "press-dim",
+    "value": "opacity 0.6",
+    "purpose": "Pressed state of tabs, icon buttons, sheet buttons."
+   },
+   {
+    "name": "expand",
+    "value": "0.22s cubic-bezier(0.22, 1, 0.36, 1)",
+    "purpose": "Schedule scoring panel open/close."
+   },
+   {
+    "name": "step-fade",
+    "value": "0.3s opacity cross-fade",
+    "purpose": "Onboarding steps."
+   },
+   {
+    "name": "reduced-motion",
+    "value": "animation/transition duration 0.01ms",
+    "purpose": "Global prefers-reduced-motion override."
+   }
+  ],
+  "breakpoints": [
+   {
+    "name": "column-max",
+    "value": "448px"
+   }
+  ]
+ },
+ "components": [
+  {
+   "name": "Game Ticket (live)",
+   "kind": "custom",
+   "refersTo": "ticket-field",
+   "description": "The signature TODAY pass: club field body, notched perforation, stub carrying the live score and inning.",
+   "html": "<div class=\"ds-ticket-wrap\"><button class=\"ds-ticket\"><div class=\"ds-ticket-body\"><div class=\"ds-ticket-head\"><span>플레이오프 6차전</span><span class=\"ds-num ds-serial\">No.153</span></div><div class=\"ds-ticket-match\"><div class=\"ds-side\"><span class=\"ds-logo\">KIA</span><b>KIA</b><small>홈 · 정규 3위</small></div><span class=\"ds-vs\">vs</span><div class=\"ds-side ds-dim\"><span class=\"ds-logo\">SS</span><b>삼성</b><small>원정 · 정규 1위</small></div></div><div class=\"ds-chip-row\"><span class=\"ds-series\">시리즈 2승 3패</span></div><div class=\"ds-slots\"><div><span class=\"ds-slot-label\">우리 선발</span><span class=\"ds-slot-val\">시라카와</span></div><div><span class=\"ds-slot-label\">상대 선발</span><span class=\"ds-slot-val\">최원태</span></div></div></div><div class=\"ds-perf\"><i class=\"ds-notch ds-l\"></i><i class=\"ds-notch ds-r\"></i><i class=\"ds-rule\"></i></div><div class=\"ds-stub\"><div class=\"ds-num ds-score\"><span>4</span><em>:</em><span class=\"ds-opp\">3</span></div><div class=\"ds-stub-meta\"><span class=\"ds-live\"><i></i>7회말</span><span>1점 앞서요</span></div></div></button></div>",
+   "css": ".ds-ticket-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--bg);padding:16px 16px 24px;font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif} .ds-ticket{display:block;width:100%;border:0;padding:0;background:none;color:var(--co);text-align:left;font:inherit;cursor:pointer;transition:transform .15s} .ds-ticket:active{transform:scale(.985)} .ds-ticket:focus-visible{outline:2px solid var(--ct);outline-offset:2px;border-radius:18px} .ds-ticket-body{background:var(--cf);border-radius:18px 18px 0 0;box-shadow:0 14px 30px -18px rgba(0,0,0,.55)} .ds-ticket-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 0;font-size:12px;font-weight:600;letter-spacing:.04em;opacity:.9} .ds-num{font-family:\"Barlow Condensed\", \"Pretendard Variable\", sans-serif} .ds-serial{font-size:15px;letter-spacing:.02em} .ds-ticket-match{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:16px 18px 8px} .ds-side{display:flex;flex-direction:column;align-items:center} .ds-dim{opacity:.8} .ds-logo{width:52px;height:52px;border-radius:50%;background:#fff;color:#1c1c1e;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;margin-bottom:8px} .ds-side b{font-size:24px;font-weight:900;line-height:1;letter-spacing:-.03em} .ds-side small{margin-top:6px;font-size:12px;font-weight:500;opacity:.8} .ds-vs{padding:0 8px;font-size:14px;font-weight:500;opacity:.7} .ds-chip-row{display:flex;justify-content:center;padding:6px 0 14px} .ds-series{background:rgba(0,0,0,.2);border-radius:10px;padding:4px 10px;font-size:13px;font-weight:600} .ds-slots{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid rgba(255,255,255,.2)} .ds-slots>div{padding:10px 18px 14px} .ds-slots>div+div{border-left:1px solid rgba(255,255,255,.2)} .ds-slot-label{display:block;font-size:10px;font-weight:600;letter-spacing:.12em;opacity:.75} .ds-slot-val{display:block;margin-top:2px;font-size:16px;font-weight:800} .ds-perf{position:relative;height:0} .ds-notch{position:absolute;top:-11px;width:22px;height:22px;border-radius:50%;background:var(--bg)} .ds-l{left:-11px} .ds-r{right:-11px} .ds-rule{position:absolute;left:16px;right:16px;top:0;border-top:2px dashed rgba(255,255,255,.5)} .ds-stub{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:78px;box-sizing:border-box;padding:12px 18px 16px;background:var(--cs);border-radius:0 0 18px 18px} .ds-score{display:flex;align-items:baseline;gap:8px;font-weight:700;line-height:1;font-size:44px} .ds-score em{font-style:normal;font-size:26px;opacity:.6} .ds-opp{opacity:.75} .ds-stub-meta{display:flex;flex-direction:column;align-items:flex-end;font-size:13px;font-weight:700;line-height:1.35} .ds-live{display:flex;align-items:center;gap:6px;font-size:15px} .ds-live i{width:8px;height:8px;border-radius:50%;background:currentColor;animation:ds-pulse 2s infinite} @keyframes ds-pulse{50%{opacity:.4}} @media (prefers-reduced-motion:reduce){.ds-live i{animation:none}}"
+  },
+  {
+   "name": "Torn Stub with Stamp (final)",
+   "kind": "custom",
+   "refersTo": "stamp",
+   "description": "A finished game: the stub tears along a serrated edge, drops and takes a 승/패 stamp.",
+   "html": "<div class=\"ds-torn-wrap\"><div class=\"ds-tb\"></div><div class=\"ds-tperf\"><i class=\"ds-tn ds-tl\"></i><i class=\"ds-tn ds-tr\"></i><i class=\"ds-trule\"></i></div><div class=\"ds-tstub\"><span class=\"ds-tscore\">3<em>:</em>6</span><span class=\"ds-stamp\" aria-label=\"도장 패\">패</span></div></div>",
+   "css": ".ds-torn-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--bg);padding:0 16px 32px;color:var(--co);font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif} .ds-tb{height:56px;background:var(--cf);border-radius:18px 18px 0 0} .ds-tperf{position:relative;height:0} .ds-tn{position:absolute;top:-11px;width:22px;height:22px;border-radius:50%;background:var(--bg)} .ds-tl{left:-11px} .ds-tr{right:-11px} .ds-trule{position:absolute;left:16px;right:16px;top:0;border-top:2px dashed rgba(255,255,255,.5)} .ds-tstub{display:flex;align-items:center;justify-content:space-between;min-height:78px;box-sizing:border-box;padding:16px 18px;background:var(--cs);border-radius:0 0 18px 18px;transform:translateY(9px) rotate(-1.2deg);transform-origin:100% 0;-webkit-mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) top/12px 7px repeat-x,linear-gradient(#000 0 0) 0 6px/100% 100% no-repeat;mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) top/12px 7px repeat-x,linear-gradient(#000 0 0) 0 6px/100% 100% no-repeat} .ds-tscore{font-family:\"Barlow Condensed\", \"Pretendard Variable\", sans-serif;font-size:34px;font-weight:700;line-height:1} .ds-tscore em{font-style:normal;font-size:22px;opacity:.6;margin:0 6px} .ds-stamp{display:inline-flex;align-items:center;justify-content:center;width:54px;height:54px;border:2.5px solid currentColor;border-radius:10px;font-size:24px;font-weight:900;line-height:1;transform:rotate(-8deg);animation:ds-stamp .5s cubic-bezier(.34,1.56,.64,1) .25s both} @keyframes ds-stamp{from{transform:scale(1.6) rotate(-14deg);opacity:0}} @media (prefers-reduced-motion:reduce){.ds-stamp{animation:none}}"
+  },
+  {
+   "name": "Grouped List",
+   "kind": "card",
+   "refersTo": "grouped-list",
+   "description": "iOS inset grouped list with a club icon tile row, a disclosure row and a selected row.",
+   "html": "<div class=\"ds-gl-wrap\"><p class=\"ds-gl-h\">응원팀</p><div class=\"ds-gl\"><a class=\"ds-gl-row\" href=\"#\"><span class=\"ds-tile\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 3l14 9-14 9V3z\"/></svg></span><span class=\"ds-gl-t\"><span>하이라이트 보기</span><small>유튜브에서 열려요</small></span><span class=\"ds-chev\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"/></svg></span></a><button class=\"ds-gl-row\"><span class=\"ds-gl-t\"><b>KIA 타이거즈</b></span><span class=\"ds-check\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg></span></button><a class=\"ds-gl-row\" href=\"#\"><span class=\"ds-gl-t\"><span>의견 보내기</span></span><span class=\"ds-chev\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"/></svg></span></a></div></div>",
+   "css": ".ds-gl-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--bg);padding:16px 0;font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif;color:rgb(var(--label-rgb,0 0 0))} .ds-gl-h{margin:0 36px 6px;font-size:13px;color:var(--l2)} .ds-gl{margin:0 16px;background:var(--card);border-radius:12px;overflow:hidden} .ds-gl-row{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;box-sizing:border-box;padding:10px 16px;border:0;background:none;font:inherit;color:inherit;text-align:left;text-decoration:none;font-size:17px;cursor:pointer;position:relative} .ds-gl-row+.ds-gl-row::before{content:\"\";position:absolute;top:0;left:16px;right:0;border-top:.5px solid var(--sep)} .ds-gl-row:hover,.ds-gl-row:active{background:var(--fill)} .ds-gl-row:focus-visible{outline:2px solid var(--ct);outline-offset:-2px} .ds-tile{width:32px;height:32px;flex-shrink:0;border-radius:8px;background:var(--cf);color:var(--co);display:flex;align-items:center;justify-content:center} .ds-gl-t{flex:1;min-width:0;display:flex;flex-direction:column} .ds-gl-t small{margin-top:2px;font-size:13px;color:var(--l2)} .ds-gl-t b{font-weight:700} .ds-chev{color:var(--l3);display:flex} .ds-check{color:var(--ct);display:flex}"
+  },
+  {
+   "name": "Tab Bar",
+   "kind": "nav",
+   "refersTo": "tab-bar",
+   "description": "Four-tab iOS bar; only the selected tab takes the club tint.",
+   "html": "<nav class=\"ds-tabs\"><a class=\"ds-tab ds-on\" href=\"#\" aria-current=\"page\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z\"/><path d=\"M13 5v2M13 17v2M13 11v2\"/></svg><span>오늘</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M16 2v4M8 2v4M3 10h18\"/></svg><span>일정</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 12h11M10 18h11M10 6h11M4 10h2M4 6h1v4M6 18H4c0-1 2-2 2-3s-1-1.5-2-1\"/></svg><span>순위</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/></svg><span>MY</span></a></nav>",
+   "css": ".ds-tabs{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));display:flex;background:var(--bar,rgba(249,249,249,.94));border-top:.5px solid var(--sep);font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif} .ds-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:49px;padding:7px 0 4px;color:var(--l2);text-decoration:none;font-size:10px;font-weight:600;line-height:1;transition:color .15s} .ds-tab:active{opacity:.6} .ds-tab:hover{color:rgb(var(--label-rgb,0 0 0))} .ds-tab:focus-visible{outline:2px solid var(--ct);outline-offset:-2px} .ds-tab.ds-on{color:var(--ct)}"
+  },
+  {
+   "name": "Neutral Game Card",
+   "kind": "card",
+   "refersTo": "game-card",
+   "description": "Any game that is not the user's, on 일정: card colour, heavy names, condensed score with the loser dimmed.",
+   "html": "<div class=\"ds-gc-wrap\"><div class=\"ds-gc\"><div class=\"ds-gc-meta\"><span class=\"ds-badge\">종료</span><span>대구</span></div><div class=\"ds-gc-row\"><b>롯데</b><span class=\"ds-gc-score\"><span class=\"ds-lose\">3</span><em>:</em>7</span><b>삼성</b></div><p class=\"ds-gc-p\">승 사토시 · 패 박정민</p></div></div>",
+   "css": ".ds-gc-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--bg);padding:16px;font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif;color:rgb(var(--label-rgb,0 0 0))} .ds-gc{background:var(--card);border-radius:14px;padding:16px;transition:transform .1s;cursor:pointer} .ds-gc:active{transform:scale(.99)} .ds-gc-meta{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--l2)} .ds-badge{border-radius:9999px;padding:2px 8px;font-size:12px;font-weight:700;background:rgb(var(--label-rgb,0 0 0)/.08);color:var(--l2)} .ds-gc-row{display:flex;align-items:center;justify-content:space-between;margin-top:12px} .ds-gc-row b{font-size:18px;font-weight:900;letter-spacing:-.025em;line-height:1} .ds-gc-score{font-family:\"Barlow Condensed\", \"Pretendard Variable\", sans-serif;font-size:28px;font-weight:700;line-height:1} .ds-gc-score em{font-style:normal;font-size:18px;opacity:.4;margin:0 6px} .ds-lose{opacity:.5} .ds-gc-p{margin:12px 0 0;font-size:13px;opacity:.7}"
+  },
+  {
+   "name": "On-Field Button",
+   "kind": "button",
+   "refersTo": "button-on-field",
+   "description": "Full-width CTA on a club-field screen; colours swap so dark-text clubs keep contrast.",
+   "html": "<div class=\"ds-of-wrap\"><button class=\"ds-btn-of\">편파 알림 켜기</button></div>",
+   "css": ".ds-of-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--cf);padding:24px 16px;font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif} .ds-btn-of{width:100%;min-height:52px;border:0;border-radius:14px;padding:0 16px;background:var(--co);color:var(--cf);font:inherit;font-size:17px;font-weight:700;cursor:pointer;transition:transform .15s,opacity .15s} .ds-btn-of:hover{opacity:.92} .ds-btn-of:active{transform:scale(.98)} .ds-btn-of:focus-visible{outline:2px solid var(--co);outline-offset:3px} .ds-btn-of:disabled{opacity:.6}"
+  },
+  {
+   "name": "Sheet Button",
+   "kind": "button",
+   "refersTo": "button-sheet",
+   "description": "Secondary action inside sheets: system fill with club-tint text.",
+   "html": "<div class=\"ds-sb-wrap\"><button class=\"ds-btn-sheet\">확인</button></div>",
+   "css": ".ds-sb-wrap{--cf: var(--club-field, #EA0029); --cs: var(--club-stub, #B80020); --co: var(--club-on-field, #FFFFFF); --ct: var(--club-tint, #D70026); --bg: var(--sys-bg, #F2F2F7); --card: var(--sys-card, #FFFFFF); --sep: var(--sep, rgba(60,60,67,0.29)); --fill: var(--fill, rgba(120,120,128,0.12)); --l2: var(--label-2, rgba(60,60,67,0.6)); --l3: var(--label-3, rgba(60,60,67,0.3));background:var(--card);padding:20px;font-family:\"Pretendard Variable\", Pretendard, -apple-system, system-ui, sans-serif} .ds-btn-sheet{width:100%;min-height:48px;border:0;border-radius:12px;padding:0 16px;background:var(--fill);color:var(--ct);font:inherit;font-size:17px;font-weight:600;cursor:pointer} .ds-btn-sheet:hover{filter:brightness(.97)} .ds-btn-sheet:active{opacity:.6} .ds-btn-sheet:focus-visible{outline:2px solid var(--ct);outline-offset:2px}"
+  }
+ ],
+ "narrative": {
+  "northStar": "직관 티켓 (The Game-Day Ticket)",
+  "overview": "Every game is a ticket printed in your club's colour. Ground sits inside a plain iOS grouped-list shell, the same system grey (light) or pure black (dark) the phone already uses, and hands the fan one solid pass in club colour: who is playing, the start time or score, the inning, the stakes, the starters. Everything around that pass stays system: large titles, inset grouped rows, a native-style tab bar, sheets. The contrast between the quiet shell and the one loud, club-coloured object is the whole idea.\n\nThe pass behaves like paper. A dashed perforation with half-circle notches cut to the ground colour splits it into a body and a stub. Before the game the stub holds the start time; live, it holds the scoreline with the inning; final, it tears away a few points along a serrated edge and takes a 승/패 stamp. The same pass appears at row scale on 일정 for the fan's own team, and the fan's row on 순위 is painted in the same club field. Components feel 단단하고 또렷하게: solid fills, hard edges, heavy names, condensed figures, no glow.\n\nLight and dark follow the device. The club is the only brand colour, and each club's values are hand-verified per use (field, stub, on-field text, tint for each mode) rather than derived at runtime.",
+  "keyCharacteristics": [
+   "One club-colour field per screen: the ticket (or its row-scale pass, or MY's club card). Everything else is system colour.",
+   "iOS-native chrome: 34px large titles, inset grouped lists at 12px radius, a four-tab bar 오늘 · 일정 · 순위 · MY.",
+   "Pretendard at heavy weights for every word and name; Barlow Condensed for every figure.",
+   "The perforation is the signature: notches, dashed rule, a stub that changes with game state and tears when the game is over.",
+   "Flat ground; the only resting shadow sits under the TODAY ticket."
+  ],
+  "rules": [
+   {
+    "name": "The One Field Rule",
+    "body": "Club field paints at most one object per screen region: the ticket, the user's own pass in a schedule list, the user's standings row, or MY's club card. Headers, section titles, backgrounds and buttons on system ground never take club field.",
+    "section": "colors"
+   },
+   {
+    "name": "The Tint-Not-Field Rule",
+    "body": "On system ground the club speaks only through `--club-tint`, in small marks: a selected tab, a checkmark, a toggle, a number, a focus ring. If a mark is larger than a 32px icon tile, it is the wrong place for club colour.",
+    "section": "colors"
+   },
+   {
+    "name": "The One Source Rule",
+    "body": "Every club value comes from `lib/clubTheme.ts` through the `--club-*` variables (painted before first paint by the boot script in `app/layout.tsx`). No component carries a club hex of its own.",
+    "section": "colors"
+   },
+   {
+    "name": "The Device Decides Rule",
+    "body": "Light and dark follow `prefers-color-scheme`. There is no in-app theme switch, and every system token has a verified value for both.",
+    "section": "colors"
+   },
+   {
+    "name": "The Figure Rule",
+    "body": "Every number a fan reads as a stat (score, time, serial, rank, win-loss, standings cells, lineup order) is Barlow Condensed. Korean words beside it (승, 패, 회말) stay Pretendard, even inside the same line.",
+    "section": "typography"
+   },
+   {
+    "name": "The Heavy Name Rule",
+    "body": "Team names are Pretendard 900 with negative tracking (-0.02em to -0.03em). Weight, not size, makes a name loud.",
+    "section": "typography"
+   },
+   {
+    "name": "The Flat Ground Rule",
+    "body": "Grouped lists, cards, tables and the tab bar have no shadow and no blur. The tab bar is a near-opaque `--bar` fill with a 0.5px separator, because backdrop blur re-renders every frame during iOS scroll.",
+    "section": "elevation"
+   },
+   {
+    "name": "The Perforation Rule",
+    "body": "Anything that is a pass gets the notched perforation and a stub; nothing that is not a pass does. A perforation on a neutral card or a section divider breaks the metaphor.",
+    "section": "shapes"
+   }
+  ],
+  "dos": [
+   "Do paint exactly one club-colour object per screen region and keep everything else on system colours (The One Field Rule).",
+   "Do read every club value from `lib/clubTheme.ts` via `--club-field`, `--club-stub`, `--club-on-field`, `--club-tint`; add a new use as a new verified field there, not a computed shade.",
+   "Do set every stat figure in Barlow Condensed and every word and name in Pretendard, names at 800–900 with negative tracking.",
+   "Do give any new pass the full anatomy: 18px body, notched perforation, stub that carries the state, torn edge and stamp when the game is over.",
+   "Do build secondary content as inset grouped lists (12px radius, 52px rows, 0.5px inset separators, 32px club icon tiles).",
+   "Do verify every new surface in both light and dark, and keep touch targets at 44px or more.",
+   "Do honour reduced motion: the global rule collapses animations and transitions, so state must read without the stamp spring or the tear."
+  ],
+  "donts": [
+   "Don't use the category's dark poster with a gradient glow, or a neutral scoreboard list, as the hero of a screen; the hero is the pass.",
+   "Don't put club field on large titles, section headers, the tab bar, page backgrounds (onboarding steps 2–3 excepted) or ordinary buttons.",
+   "Don't hard-code a club hex in a component, or reuse one club's tint on another club's field.",
+   "Don't use Black Han Sans, a monospace face, or Pretendard for scores and times; don't set Korean words in Barlow Condensed.",
+   "Don't put a tracked small-caps label above a section title or a large title; tracked 10px labels exist only as field labels inside the ticket.",
+   "Don't add blur, glass, or resting shadows to bars, lists or cards; the ticket lift is the only resting shadow.",
+   "Don't draw a perforation, stub or stamp on anything that is not a game or season pass.",
+   "Don't add another horizontal carousel; the 쇼츠 rail is the single recorded exception."
+  ]
+ }
+}

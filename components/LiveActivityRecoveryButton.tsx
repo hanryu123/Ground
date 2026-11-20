@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Activity, ChevronRight, Loader2, Settings } from "lucide-react";
 import {
   getLiveActivityAvailability,
   openLiveActivitySettings,
 } from "@/lib/liveActivity";
 import { recoverLiveActivityForTeam } from "@/lib/liveActivityRecovery";
-import { getKboTeamThemeByTeamId } from "@/config/teams";
 
 type Props = {
   teamId: string;
@@ -24,10 +23,10 @@ type Status = {
 };
 
 function statusClass(tone: StatusTone): string {
-  if (tone === "ok") return "text-emerald-200";
-  if (tone === "warn") return "text-amber-200";
-  if (tone === "error") return "text-red-200";
-  return "text-white/55";
+  if (tone === "ok") return "text-[#248A3D] dark:text-[#30D158]";
+  if (tone === "warn") return "text-[#B25000] dark:text-[#FF9F0A]";
+  if (tone === "error") return "text-[#D70015] dark:text-[#FF453A]";
+  return "text-sys-label2";
 }
 
 function recoveryMessage(action: string, reason?: string): Status {
@@ -60,15 +59,9 @@ export default function LiveActivityRecoveryButton({
     tone: "idle",
     text: "꺼졌을 때 다시 연결합니다.",
   });
-  const theme = getKboTeamThemeByTeamId(teamId);
-  const resolvedAccent = theme?.secondary ?? accent;
-
-  const containerClass = useMemo(() => {
-    if (variant === "settings") {
-      return "rounded-[24px] border border-white/[0.10] bg-[#070a12]/90 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl";
-    }
-    return "rounded-[22px] border border-white/[0.16] bg-[#070a12]/95 p-3 shadow-[0_18px_52px_rgba(0,0,0,0.38)] backdrop-blur-xl";
-  }, [variant]);
+  // 두 변형 모두 iOS 그룹 목록의 한 줄 — 아이콘 칸만 구단 색
+  void accent;
+  void variant;
 
   async function handleRecover() {
     if (busy) return;
@@ -102,40 +95,28 @@ export default function LiveActivityRecoveryButton({
   }
 
   return (
-    <div className={containerClass}>
+    <div className="overflow-hidden rounded-[12px] bg-sys-card">
       <button
         type="button"
         onClick={handleRecover}
         disabled={busy}
-        className="group flex w-full items-center gap-3 text-left transition active:scale-[0.99] disabled:opacity-70"
+        className="flex min-h-[60px] w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sys-fill disabled:opacity-70"
         aria-label="잠금 화면에서도 스코어 보기"
       >
-        <span
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-          style={{
-            backgroundColor: `${resolvedAccent}26`,
-            boxShadow: `0 0 22px ${resolvedAccent}44`,
-            color: "#ffffff",
-          }}
-        >
-          {busy ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-club-field text-club-on">
+          {busy ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />}
         </span>
-
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-black tracking-tight text-white">
-            잠금 화면에서도 스코어 보기
-          </span>
-          <span className={`mt-1 block text-[11px] font-semibold ${statusClass(status.tone)}`}>
+          <span className="block text-[17px] leading-tight">잠금 화면에서도 스코어 보기</span>
+          <span className={`mt-0.5 block text-[13px] ${statusClass(status.tone)}`}>
             {teamShort} · {status.text}
           </span>
         </span>
-
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/80 transition group-active:bg-white/[0.14]"
-          aria-hidden
-        >
-          {status.tone === "warn" ? <Settings size={15} /> : <ChevronRight size={16} />}
-        </span>
+        {status.tone === "warn" ? (
+          <Settings size={17} className="shrink-0 text-sys-label3" aria-hidden />
+        ) : (
+          <ChevronRight size={18} className="shrink-0 text-sys-label3" aria-hidden />
+        )}
       </button>
     </div>
   );

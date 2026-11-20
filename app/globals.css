@@ -3,18 +3,49 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * iOS 시스템 색 — 라이트/다크는 기기 설정을 따른다 (DESIGN.md "Ticket" 세계).
+   * --label-rgb 는 Tailwind 의 text-label/50 같은 투명도 클래스를 위해 숫자로 둔다.
+   * 구단 색은 lib/clubTheme.ts → AppChrome 이 --club-* 로 내려 준다.
+   */
   :root {
     --visual-viewport-height: 100dvh;
-    --app-bg: #000000;
-    --app-text: #ffffff;
-    --app-accent: #c30452;
+    --sys-bg: #f2f2f7;
+    --sys-card: #ffffff;
+    --sys-card-2: #e5e5ea;
+    --label-rgb: 0 0 0;
+    --label-2: rgba(60, 60, 67, 0.6);
+    --label-3: rgba(60, 60, 67, 0.3);
+    --sep: rgba(60, 60, 67, 0.29);
+    --fill: rgba(120, 120, 128, 0.12);
+    --bar: rgba(249, 249, 249, 0.94);
+    --club-tint: var(--club-tint-light, #d70026);
+    --win: #248a3d;
+    --loss: #d70015;
+    color-scheme: light dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --sys-bg: #000000;
+      --sys-card: #1c1c1e;
+      --sys-card-2: #2c2c2e;
+      --label-rgb: 255 255 255;
+      --label-2: rgba(235, 235, 245, 0.6);
+      --label-3: rgba(235, 235, 245, 0.3);
+      --sep: rgba(84, 84, 88, 0.6);
+      --fill: rgba(120, 120, 128, 0.24);
+      --bar: rgba(22, 22, 24, 0.94);
+      --club-tint: var(--club-tint-dark, #ff4d63);
+      --win: #30d158;
+      --loss: #ff453a;
+    }
   }
 
   html,
   body {
-    /* CSS variable로 연결 — 팀 테마 변경 시 safe-area 포함 배경색도 함께 따라감 */
-    background-color: var(--app-bg, #000000);
-    color: var(--app-text, #ffffff);
+    background-color: var(--sys-bg);
+    color: rgb(var(--label-rgb));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     position: fixed;
@@ -31,6 +62,28 @@
       BlinkMacSystemFont, system-ui, "Helvetica Neue", "Segoe UI", Roboto,
       sans-serif;
     font-feature-settings: "ss01", "ss02", "tnum";
+    /* 한글은 낱말 중간에서 줄이 끊기지 않게 — 아주 긴 영문·주소만 필요할 때 끊는다 */
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--club-tint) 28%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--club-tint);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
   * {
@@ -88,49 +141,12 @@
   }
   /* 탭 화면 스크롤 영역 맨 아래 여백 — 본문이 BottomNav 밑까지 이어지므로 탭바 높이만큼 비워 둔다 */
   .pb-nav {
-    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
   }
   .safe-pt {
-    padding-top: calc(env(safe-area-inset-top, 0px));
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   }
 
-  /* 팀 이름 뒤로 은은하게 깔리는 블랙 글로우 (가독성 향상) */
-  .text-shadow-glow {
-    text-shadow:
-      0 0 24px rgba(0, 0, 0, 0.55),
-      0 0 60px rgba(0, 0, 0, 0.45),
-      0 4px 12px rgba(0, 0, 0, 0.5);
-  }
-
-  .text-shadow-soft {
-    text-shadow:
-      0 0 12px rgba(0, 0, 0, 0.55),
-      0 1px 4px rgba(0, 0, 0, 0.6);
-  }
-
-  /* 흑백 영화 같은 극적인 명암 */
-  .filter-cinema {
-    filter: grayscale(0.15) contrast(1.32) brightness(0.85) saturate(0.85);
-  }
-
-  /* 매우 미세한 텍스트 그라디언트 (premium 헤드라인용) */
-  .text-gradient-pearl {
-    background: linear-gradient(180deg, #ffffff 0%, #b8b8b8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-  }
-
-  /* 디바이더용 가는 그라디언트 라인 */
-  .divider-fade {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.12) 50%,
-      transparent 100%
-    );
-  }
 }
 
 /* StandingsSection 스켈레톤 — 좌→우 쉬머 */

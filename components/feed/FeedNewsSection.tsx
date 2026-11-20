@@ -84,22 +84,14 @@ export default function FeedNewsSection({ team, theme }: { team: Team; theme: Fe
   }, [team.id, foregroundTick]);
 
   return (
-    <section className="px-5 pb-10 pt-7" aria-labelledby="feed-news-title">
-      <div className="mb-4 flex items-baseline justify-between">
-        <h2
-          id="feed-news-title"
-          className="text-[20px] font-bold tracking-[-0.02em]"
-          style={{ color: theme.text(0.95) }}
-        >
-          {team.short} 소식
-        </h2>
-        <span
-          className="text-[11px] font-medium uppercase tracking-[0.24em]"
-          style={{ color: theme.text(0.4) }}
-        >
-          Highlights
-        </span>
-      </div>
+    <section className="px-5 pb-10 pt-8" aria-labelledby="feed-news-title">
+      <h2
+        id="feed-news-title"
+        className="mb-3 text-[22px] font-bold tracking-[-0.02em]"
+        style={{ color: theme.text(0.95) }}
+      >
+        {team.short} 소식
+      </h2>
       <TeamNewsList
         teamId={team.id}
         filterable

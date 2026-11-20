@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import OnboardingFlow from "./OnboardingFlow";
-import OnboardingTutorial, { TUTORIAL_SEEN_KEY } from "./OnboardingTutorial";
 import { MY_TEAM_EVENT, MY_TEAM_KEY, ONBOARDING_DONE_KEY } from "@/lib/useMyTeam";
 import { registerNativePush } from "@/lib/nativePush";
 import { getOrCreateNotifyUserId } from "@/lib/webPushClient";
@@ -21,7 +20,7 @@ const ease = [0.22, 1, 0.36, 1] as const;
  *  → /today, /schedule, /my 어느 경로로 진입해도 동일하게 가로챈다.
  *
  *  hydration:
- *   - SSR/첫 클라 렌더에서는 isReady=false 라 검은 가림막만 그린다 (서버/클라 동일).
+ *   - SSR/첫 클라 렌더에서는 isReady=false 라 배경색 가림막만 그린다 (서버/클라 동일).
  *   - 클라이언트 useEffect 후 isReady=true 가 되면 hasChosen 분기로 전환.
  *   - 잘못된 분기 플래시 없음.
  */
@@ -35,22 +34,18 @@ export default function OnboardingGate({
   const [isReady, setIsReady] = useState(false);
   const [teamId, setTeamId] = useState<string | null>(null);
   const [isOnboardingDone, setIsOnboardingDone] = useState(false);
-  const [hasSeenTutorial, setHasSeenTutorial] = useState(true); // true by default to avoid flash
 
   useEffect(() => {
     const sync = () => {
       try {
         const selected = localStorage.getItem(MY_TEAM_KEY);
         const done = localStorage.getItem(ONBOARDING_DONE_KEY) === "1";
-        const seenTutorial = localStorage.getItem(TUTORIAL_SEEN_KEY) === "1";
         setTeamId(selected);
         setIsOnboardingDone(done);
-        setHasSeenTutorial(seenTutorial);
         setIsReady(true);
       } catch {
         setTeamId(null);
         setIsOnboardingDone(false);
-        setHasSeenTutorial(true);
         setIsReady(true);
       }
     };
@@ -84,7 +79,7 @@ export default function OnboardingGate({
   }
 
   if (!isReady) {
-    return <div className="h-dvh bg-black" aria-hidden />;
+    return <div className="h-dvh bg-sys-bg" aria-hidden />;
   }
 
   const unlocked = Boolean(teamId) && isOnboardingDone;
@@ -100,7 +95,6 @@ export default function OnboardingGate({
             onComplete={() => {
               try {
                 setTeamId(localStorage.getItem(MY_TEAM_KEY));
-                setHasSeenTutorial(localStorage.getItem(TUTORIAL_SEEN_KEY) === "1");
               } catch {
                 setTeamId(null);
               }
@@ -119,11 +113,6 @@ export default function OnboardingGate({
           className="relative"
         >
           {children}
-          <AnimatePresence>
-            {!hasSeenTutorial && (
-              <OnboardingTutorial onDone={() => setHasSeenTutorial(true)} />
-            )}
-          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

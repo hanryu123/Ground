@@ -161,21 +161,11 @@ const ITEMS_ALPHA: ToggleItem[] = [
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-/** 알림 패널은 항상 다크 배경 — accent가 검정/회색이면 보이지 않으므로 고정 빨강 사용 */
-const TOGGLE_ON_COLOR = "#E0283E";
-
-function hexYiq(hex: string): number {
-  const n = hex.trim().replace("#", "");
-  if (!/^[0-9a-fA-F]{6}$/.test(n)) return 0;
-  const v = Number.parseInt(n, 16);
-  return ((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114;
+function resolveToggleOnColor(_accent: string): string {
+  // 토글 켜짐은 구단 색(라이트/다크에서 보이는 값, globals.css 의 --club-tint)
+  return "var(--club-tint)";
 }
 
-/** accent 색이 다크 패널에서 잘 안 보이는 경우(어둡거나 무채색) 빨강으로 대체 */
-function resolveToggleOnColor(accent: string): string {
-  const yiq = hexYiq(accent);
-  return yiq < 80 || yiq > 195 ? TOGGLE_ON_COLOR : accent;
-}
 
 type Props = {
   /** 활성 dot / 토글 ON 색상 (응원 팀 accent) */
@@ -206,7 +196,7 @@ function isExplicitOptOut(): boolean {
 
 export default function NotificationBell({
   accent,
-  iconColor = "rgba(255,255,255,0.85)",
+  iconColor = "rgb(var(--label-rgb) / 0.85)",
 }: Props) {
   const toggleOnColor = resolveToggleOnColor(accent);
   const isAlphaEnv = process.env.NEXT_PUBLIC_APP_ENV === "alpha";
@@ -613,7 +603,6 @@ export default function NotificationBell({
           className="text-current"
           style={{
             color: iconColor,
-            filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.55))",
           }}
         />
         {(anyOn || subscribed) && (
@@ -626,8 +615,8 @@ export default function NotificationBell({
               width: 7,
               height: 7,
               borderRadius: 9999,
-              backgroundColor: accent,
-              boxShadow: `0 0 8px ${accent}aa, 0 0 0 1.5px rgba(0,0,0,0.55)`,
+              backgroundColor: "var(--club-tint)",
+              boxShadow: "0 0 0 1.5px var(--sys-bg)",
             }}
           />
         )}
@@ -643,11 +632,9 @@ export default function NotificationBell({
             transition={{ duration: 0.22, ease }}
             className="absolute right-0 top-12 z-[130] w-[284px] overflow-hidden rounded-2xl"
             style={{
-              backgroundColor: "rgba(15,15,18,0.78)",
-              backdropFilter: "blur(24px) saturate(160%)",
-              WebkitBackdropFilter: "blur(24px) saturate(160%)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              boxShadow: "0 12px 36px rgba(0,0,0,0.55)",
+              backgroundColor: "var(--sys-card)",
+              border: "0.5px solid var(--sep)",
+              boxShadow: "0 10px 40px rgba(0,0,0,0.22)",
             }}
             role="dialog"
             aria-label="알림 구독 설정"
@@ -655,18 +642,13 @@ export default function NotificationBell({
             {/* 헤더 */}
             <div className="flex items-start justify-between px-4 pb-1.5 pt-3.5">
               <div>
-                <p
-                  className="text-[9.5px] uppercase tracking-[0.32em] text-white/40"
-                  style={{ fontWeight: 600 }}
-                >
-                  Notifications
-                </p>
-                <p className="mt-1 text-[12px] leading-snug text-white/60">
+                <p className="text-[17px] font-bold text-label">알림</p>
+                <p className="mt-0.5 text-[13px] leading-snug text-sys-label2">
                   받아볼 알림을 골라주세요.
                 </p>
                 {/* 웹 푸시 상태 — 네이티브 앱에서는 숨김 */}
                 {!isNativeApp && (
-                  <div className="mt-2 flex items-center gap-2 text-[10px] text-white/70">
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-label/70">
                     <span
                       className={`h-2 w-2 rounded-full ${
                         pushHealth === "subscribed"
@@ -675,7 +657,7 @@ export default function NotificationBell({
                             ? "bg-amber-300"
                             : pushHealth === "error"
                               ? "bg-rose-400"
-                              : "bg-white/40"
+                              : "bg-label/40"
                       }`}
                     />
                     <span className="tracking-wide">
@@ -685,20 +667,20 @@ export default function NotificationBell({
                 )}
                 {/* 웹 PWA 전용 설치 안내 — 네이티브 앱에서는 숨김 */}
                 {!isNativeApp && permission !== "granted" && (
-                  <div className="mt-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-2 text-[10.5px] leading-relaxed text-white/58">
+                  <div className="mt-2 rounded-lg border border-label/[0.08] bg-label/[0.02] px-2.5 py-2 text-[10.5px] leading-relaxed text-label/60">
                     <p>1) 홈 화면 앱에서 벨 버튼 열기</p>
                     <p>2) 권한 팝업에서 허용 선택</p>
                     <p>3) 원하는 알림 토글 ON</p>
                   </div>
                 )}
                 {errorMsg ? (
-                  <p className="mt-1 text-[11px] text-[#ff8f8f]">{errorMsg}</p>
+                  <p className="mt-1 text-[11px] text-[#D70015] dark:text-[#FF453A]">{errorMsg}</p>
                 ) : null}
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="-mr-1 -mt-1 flex h-7 w-7 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/80"
+                className="-mr-1 -mt-1 flex h-7 w-7 items-center justify-center rounded-full text-label/40 transition-colors hover:bg-label/[0.06] hover:text-label/80"
                 aria-label="닫기"
               >
                 <X size={14} strokeWidth={1.8} />
@@ -715,7 +697,7 @@ export default function NotificationBell({
                     type="button"
                     onClick={() => toggleKeys(topicKeys)}
                     disabled={loading}
-                    className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.04]"
+                    className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-label/[0.04]"
                     aria-pressed={on}
                   >
                     <span
@@ -723,20 +705,20 @@ export default function NotificationBell({
                       style={{
                         backgroundColor: on
                           ? `${toggleOnColor}28`
-                          : "rgba(255,255,255,0.05)",
-                        color: on ? toggleOnColor : "rgba(255,255,255,0.55)",
+                          : "rgb(var(--label-rgb) / 0.05)",
+                        color: on ? toggleOnColor : "rgb(var(--label-rgb) / 0.55)",
                       }}
                     >
                       <Icon size={14} strokeWidth={1.8} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span
-                        className="block text-[13px] leading-tight text-white/92"
+                        className="block text-[13px] leading-tight text-label/90"
                         style={{ fontWeight: 600 }}
                       >
                         {label}
                       </span>
-                      <span className="mt-0.5 block text-[11px] leading-snug text-white/45">
+                      <span className="mt-0.5 block text-[11px] leading-snug text-label/45">
                         {hint}
                       </span>
                     </span>
@@ -746,7 +728,7 @@ export default function NotificationBell({
                       style={{
                         backgroundColor: on
                           ? toggleOnColor
-                          : "rgba(255,255,255,0.16)",
+                          : "rgb(var(--label-rgb) / 0.16)",
                       }}
                     >
                       <motion.span
@@ -756,7 +738,7 @@ export default function NotificationBell({
                           stiffness: 480,
                           damping: 32,
                         }}
-                        className="block h-[16px] w-[16px] rounded-full bg-white"
+                        className="block h-[16px] w-[16px] rounded-full bg-label"
                         style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.35)" }}
                       />
                     </span>
@@ -770,33 +752,33 @@ export default function NotificationBell({
               <a
                 href="/my#caster-style"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-between border-t border-white/[0.06] px-4 py-2.5 text-[12px] text-white/60 hover:bg-white/[0.04]"
+                className="flex items-center justify-between border-t border-label/[0.06] px-4 py-2.5 text-[12px] text-label/60 hover:bg-label/[0.04]"
               >
                 <span>
                   득점 알림 말투 ·{" "}
-                  <span className="text-white/85" style={{ fontWeight: 600 }}>
+                  <span className="text-label/85" style={{ fontWeight: 600 }}>
                     {CASTER_STYLES.find((style) => style.id === casterStyle)?.label}
                   </span>
                 </span>
-                <span className="text-white/45">바꾸기 →</span>
+                <span className="text-label/45">바꾸기 →</span>
               </a>
             )}
 
             {/* 인앱 알림 인박스 */}
             <div
-              className="max-h-[160px] overflow-y-auto border-t border-white/[0.06] px-3 pb-2 pt-2"
+              className="max-h-[160px] overflow-y-auto border-t border-label/[0.06] px-3 pb-2 pt-2"
               aria-label="최근 알림"
             >
               {inbox.length === 0 ? (
-                <p className="px-1 py-1 text-[11px] text-white/35">아직 알림이 없어요.</p>
+                <p className="px-1 py-1 text-[11px] text-label/35">아직 알림이 없어요.</p>
               ) : (
                 inbox.map((n) => (
                   <div
                     key={n.id}
-                    className={`rounded-lg px-2 py-1.5 ${n.isRead ? "bg-white/[0.03]" : "bg-white/[0.07]"}`}
+                    className={`rounded-lg px-2 py-1.5 ${n.isRead ? "bg-label/[0.03]" : "bg-label/[0.07]"}`}
                   >
-                    <p className="text-[11.5px] font-semibold text-white/90">{n.title}</p>
-                    <p className="mt-0.5 text-[10.5px] leading-snug text-white/55">{n.body}</p>
+                    <p className="text-[11.5px] font-semibold text-label/90">{n.title}</p>
+                    <p className="mt-0.5 text-[10.5px] leading-snug text-label/55">{n.body}</p>
                   </div>
                 ))
               )}
@@ -807,8 +789,8 @@ export default function NotificationBell({
               className="border-t px-4 py-2.5 text-[10px] uppercase tracking-[0.22em]"
               style={{
                 fontWeight: 500,
-                borderColor: "rgba(255,255,255,0.06)",
-                color: anyOn ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)",
+                borderColor: "rgb(var(--label-rgb) / 0.06)",
+                color: anyOn ? "rgb(var(--label-rgb) / 0.6)" : "rgb(var(--label-rgb) / 0.3)",
               }}
             >
               {anyOn || subscribed ? (
@@ -830,7 +812,7 @@ export default function NotificationBell({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[180] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[180] bg-black/40"
           >
             <button
               type="button"
@@ -843,7 +825,7 @@ export default function NotificationBell({
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 28, opacity: 0.96 }}
               transition={{ duration: 0.22, ease }}
-              className="absolute inset-x-4 bottom-6 mx-auto max-w-md rounded-2xl border border-white/10 bg-[#111218]/90 p-5 text-white shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+              className="absolute inset-x-4 bottom-6 mx-auto max-w-md rounded-2xl border border-label/10 bg-sys-card p-5 text-label shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-label="PWA 설치 안내"
@@ -853,7 +835,7 @@ export default function NotificationBell({
               </p>
 
               {installGuide === "ios" ? (
-                <div className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-white/85">
+                <div className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-label/85">
                   <p className="flex items-center gap-2">
                     <Share2 size={15} />
                     사파리 하단의 <span className="font-semibold">[공유하기]</span>를 눌러주세요.
@@ -864,7 +846,7 @@ export default function NotificationBell({
                   </p>
                 </div>
               ) : (
-                <div className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-white/85">
+                <div className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-label/85">
                   <p>
                     {canPromptInstall
                       ? "설치 팝업이 보이지 않으면 우측 상단 메뉴에서 다시 설치를 진행해 주세요."
@@ -880,7 +862,7 @@ export default function NotificationBell({
               <button
                 type="button"
                 onClick={() => setInstallGuide("none")}
-                className="mt-5 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-[13px] font-medium text-white/88 transition hover:bg-white/10"
+                className="mt-5 w-full rounded-xl border border-label/15 bg-label/5 px-4 py-2.5 text-[13px] font-medium text-label/90 transition hover:bg-label/10"
               >
                 다음에 할게요
               </button>

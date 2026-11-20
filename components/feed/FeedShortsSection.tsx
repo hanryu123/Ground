@@ -355,16 +355,16 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   // 받는 중엔 자리만 잡아 둔다 — 늦게 도착하면 블록이 갑자기 끼어들며 아래 소식이 밀렸다
   if (items === null) {
     return (
-      <section className="pb-2 pt-7" aria-busy aria-label={`${team.short} Moments 불러오는 중`}>
+      <section className="pb-2 pt-8" aria-busy aria-label={`${team.short} 쇼츠 불러오는 중`}>
         <div className="mb-4 px-5">
-          <h2 className="text-[20px] font-bold tracking-[-0.02em]" style={{ color: theme.text(0.95) }}>
-            {team.short} Moments
+          <h2 className="text-[22px] font-bold tracking-[-0.02em]" style={{ color: theme.text(0.95) }}>
+            {team.short} 쇼츠
           </h2>
         </div>
         <div className="flex gap-3 overflow-hidden px-5 pb-2">
           {[0, 1].map((i) => (
-            <div key={i} className="w-[70%] max-w-[300px] shrink-0">
-              <div className="aspect-[9/16] w-full animate-pulse rounded-2xl" style={{ background: theme.text(0.08) }} />
+            <div key={i} className="w-[44%] max-w-[190px] shrink-0">
+              <div className="aspect-[9/16] w-full animate-pulse rounded-[14px]" style={{ background: theme.text(0.08) }} />
               <div className="mt-2.5 h-4 w-3/4 animate-pulse rounded" style={{ background: theme.text(0.08) }} />
               <div className="mt-2 h-3 w-1/3 animate-pulse rounded" style={{ background: theme.text(0.06) }} />
             </div>
@@ -379,21 +379,15 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
   const pageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   return (
-    <section className="pb-2 pt-7" aria-labelledby="feed-shorts-title">
-      <div className="mb-4 flex items-baseline justify-between px-5">
+    <section className="pb-2 pt-8" aria-labelledby="feed-shorts-title">
+      <div className="mb-3 px-5">
         <h2
           id="feed-shorts-title"
-          className="text-[20px] font-bold tracking-[-0.02em]"
+          className="text-[22px] font-bold tracking-[-0.02em]"
           style={{ color: theme.text(0.95) }}
         >
-          {team.short} Moments
+          {team.short} 쇼츠
         </h2>
-        <span
-          className="text-[11px] font-medium uppercase tracking-[0.24em]"
-          style={{ color: theme.text(0.4) }}
-        >
-          Shorts
-        </span>
       </div>
 
       <div
@@ -407,14 +401,14 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
             <div
               key={item.videoId}
               data-slot={index}
-              className="w-[70%] max-w-[300px] shrink-0 snap-start"
+              className="w-[44%] max-w-[190px] shrink-0 snap-start"
               style={{ scrollSnapStop: "always" }}
             >
               <div
                 ref={(el) => {
                   cardRefs.current[index] = el;
                 }}
-                className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl bg-black"
+                className="relative aspect-[9/16] w-full overflow-hidden rounded-[14px] bg-black"
               >
                 <button
                   type="button"
@@ -485,7 +479,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
             target="_blank"
             rel="noopener noreferrer"
             data-slot={items.length}
-            className="flex aspect-[9/16] w-[40%] max-w-[180px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl text-center"
+            className="flex aspect-[9/16] w-[40%] max-w-[180px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-[14px] text-center"
             style={{ background: theme.text(0.07), color: theme.text(0.8), scrollSnapStop: "always" }}
           >
             <ArrowUpRight size={22} />
@@ -496,7 +490,7 @@ export default function FeedShortsSection({ team, theme }: { team: Team; theme: 
         {/* 플레이어 하나 — 스크롤 영역 안 절대 위치라 넘길 때 카드와 같이 밀려 나가고, 멈추면 새 카드로 옮긴다 */}
         {playerSrcId && playerBox ? (
           <div
-            className="pointer-events-none absolute z-10 overflow-hidden rounded-2xl transition-opacity duration-300"
+            className="pointer-events-none absolute z-10 overflow-hidden rounded-[14px] transition-opacity duration-300"
             style={{
               left: playerBox.left,
               top: playerBox.top,

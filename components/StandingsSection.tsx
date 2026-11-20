@@ -13,34 +13,18 @@ import type { RecentRecord, StandingsTableRow } from "@/lib/standings";
  *   sticky 칸은 아래로 지나가는 숫자를 가려야 하므로 배경을 불투명하게 칠한다.
  *
  *  ── 강조 ──
- *   - 우리 팀 행: 팀 컬러 배경 (accent 가 검정인 팀은 ROW_COLOR 로 대체)
+ *   - 우리 팀 행: 구단 색 면(--club-field, lib/clubTheme.ts)
  *   - 5위 아래: 가을야구 컷라인 점선
  */
 
-/** 표 배경이 검정이라 accent 가 검정인 팀은 실제 구단 색으로 칠한다 */
-const ROW_COLOR: Record<string, string> = {
-  lg: "#C30452",
-  kt: "#D60C1A",
-};
-
-const BG = "#000000";
-const LINE = "rgba(255,255,255,0.08)";
-const CUT_LINE = "1px dashed rgba(255,255,255,0.4)";
+/** 표는 iOS 카드 위 — 우리 팀 행만 구단 색 면(티켓과 같은 --club-field)으로 칠한다 */
+const BG = "var(--sys-card)";
+const LINE = "var(--sep)";
+const CUT_LINE = "1px dashed rgb(var(--label-rgb) / 0.35)";
 const POSTSEASON_SLOTS = 5;
 
-const RANK_W = 30;
-const TEAM_W = 82;
-
-/** hex 색을 검정 위에 ratio 만큼 얹은 불투명 색 — sticky 칸 배경용 */
-function overBlack(hex: string, ratio: number): string {
-  const n = parseInt(hex.replace("#", ""), 16);
-  const ch = (shift: number) => Math.round(((n >> shift) & 0xff) * ratio);
-  return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
-}
-
-function myRowColor(teamId: string): string {
-  return overBlack(ROW_COLOR[teamId] ?? findTeam(teamId).accent, 0.85);
-}
+const RANK_W = 24;
+const TEAM_W = 70;
 
 type Props = {
   /** 응원팀 id — 행 하이라이트 */
@@ -58,13 +42,13 @@ type Column = {
 };
 
 const COLUMNS: Column[] = [
+  { key: "wins", label: "승", width: 32, render: (r) => r.wins },
+  { key: "losses", label: "패", width: 32, render: (r) => r.losses },
+  { key: "winRate", label: "승률", width: 44, render: (r) => formatWinRate(r.winRate) },
+  { key: "gb", label: "게임차", width: 42, render: (r) => formatGamesBehind(r.gamesBehind) },
+  { key: "streak", label: "연속", width: 38, render: (r, isMe) => <StreakCell label={r.streakLabel} plain={isMe} /> },
+  { key: "draws", label: "무", width: 30, render: (r) => r.draws },
   { key: "games", label: "경기", width: 40, render: (r) => r.games },
-  { key: "wins", label: "승", width: 36, render: (r) => r.wins },
-  { key: "losses", label: "패", width: 36, render: (r) => r.losses },
-  { key: "draws", label: "무", width: 32, render: (r) => r.draws },
-  { key: "winRate", label: "승률", width: 50, render: (r) => formatWinRate(r.winRate) },
-  { key: "gb", label: "게임차", width: 50, render: (r) => formatGamesBehind(r.gamesBehind) },
-  { key: "streak", label: "연속", width: 50, render: (r, isMe) => <StreakCell label={r.streakLabel} plain={isMe} /> },
   { key: "last10", label: "최근 10경기", width: 104, render: (r) => formatRecent(r.last10) },
 ];
 
@@ -80,10 +64,13 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
   const showSkeleton = loading || data.length === 0;
 
   return (
-    <section aria-label="KBO 순위표" style={{ backgroundColor: BG }}>
+    <section aria-label="KBO 순위표" className="mx-4 overflow-hidden rounded-[12px]" style={{ backgroundColor: BG }}>
+      <div className="relative">
+      {/* 오른쪽에 경기·최근 10경기 칸이 더 있다는 표시 */}
+      <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-30 w-6" style={{ background: `linear-gradient(90deg, transparent, ${BG})` }} />
       <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <table
-          className="w-full border-separate border-spacing-0 text-white"
+          className="w-full border-separate border-spacing-0 text-label"
           style={{ minWidth: RANK_W + TEAM_W + COLUMNS.reduce((s, c) => s + c.width, 0) + 16 }}
         >
           <thead>
@@ -128,9 +115,10 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
           </tbody>
         </table>
       </div>
+      </div>
 
       {!showSkeleton && (
-        <div className="flex items-center gap-2 px-4 pt-3 text-[10.5px] text-white/40">
+        <div className="flex items-center gap-2 px-4 py-3 text-[12px] text-sys-label2">
           <span aria-hidden className="inline-block w-5" style={{ borderTop: CUT_LINE }} />
           <span>점선 위 {POSTSEASON_SLOTS}팀이 가을야구에 나가요</span>
         </div>
@@ -143,10 +131,9 @@ export default function StandingsSection({ myTeamId, rows, loading }: Props) {
 
 const headStyle: React.CSSProperties = {
   height: 32,
-  fontSize: 10.5,
+  fontSize: 12,
   fontWeight: 600,
-  color: "rgba(255,255,255,0.45)",
-  letterSpacing: "0.02em",
+  color: "var(--label-2)",
   whiteSpace: "nowrap",
   borderBottom: `1px solid ${LINE}`,
 };
@@ -164,7 +151,7 @@ function Row({
   isCut: boolean;
 }) {
   const t = findTeam(row.teamId);
-  const bg = isMe ? myRowColor(row.teamId) : BG;
+  const bg = isMe ? "var(--club-field)" : BG;
   const cell: React.CSSProperties = {
     height: 44,
     borderBottom: isCut ? CUT_LINE : `1px solid ${LINE}`,
@@ -172,18 +159,18 @@ function Row({
     whiteSpace: "nowrap",
     fontVariantNumeric: "tabular-nums",
   };
-  const num = isMe ? "#ffffff" : "rgba(255,255,255,0.82)";
+  const num = isMe ? "var(--club-on-field)" : "rgb(var(--label-rgb) / 0.85)";
 
   return (
     <tr aria-current={isMe ? "true" : undefined}>
       <td
-        className="sticky left-0 z-10 pl-4 text-left tabular-nums"
+        className="sticky left-0 z-10 pl-4 text-left font-num"
         style={{
           ...cell,
           backgroundColor: bg,
-          fontSize: 13,
-          fontWeight: 700,
-          color: isMe ? "#ffffff" : "rgba(255,255,255,0.6)",
+          fontSize: 16,
+          fontWeight: 600,
+          color: isMe ? "var(--club-on-field)" : "var(--label-2)",
         }}
       >
         {row.rank}
@@ -197,7 +184,7 @@ function Row({
           <TeamLogoChip teamId={row.teamId} />
           <span
             className="truncate"
-            style={{ fontSize: 14, fontWeight: isMe ? 800 : 700, letterSpacing: "-0.02em", color: "#ffffff" }}
+            style={{ fontSize: 15, fontWeight: isMe ? 900 : 700, letterSpacing: "-0.02em", color: isMe ? "var(--club-on-field)" : "rgb(var(--label-rgb))" }}
           >
             {t.short}
           </span>
@@ -206,12 +193,12 @@ function Row({
       {COLUMNS.map((c, i) => (
         <td
           key={c.key}
-          className={i === COLUMNS.length - 1 ? "pr-4 text-right tabular-nums" : "text-right tabular-nums"}
+          className={i === COLUMNS.length - 1 ? "pr-4 text-right font-num" : "text-right font-num"}
           style={{
             ...cell,
-            fontSize: 13,
+            fontSize: 16,
             fontWeight: isMe || c.key === "winRate" ? 700 : 500,
-            color: c.key === "draws" && row.draws === 0 && !isMe ? "rgba(255,255,255,0.4)" : num,
+            color: c.key === "draws" && row.draws === 0 && !isMe ? "rgb(var(--label-rgb) / 0.4)" : num,
           }}
         >
           {c.render(row, isMe)}
@@ -223,15 +210,15 @@ function Row({
 
 /** plain: 팀 컬러 배경 위라 초록·빨강 대신 흰색 */
 function StreakCell({ label, plain }: { label: string | null; plain?: boolean }) {
-  if (!label) return <span className="text-white/40">—</span>;
+  if (!label) return <span className="text-label/40">—</span>;
   const kind = label[0];
   const color = plain
-    ? "#ffffff"
+    ? "var(--club-on-field)"
     : kind === "W"
-      ? "#34D27B"
+      ? "var(--win)"
       : kind === "L"
-        ? "#FF5A5F"
-        : "rgba(255,255,255,0.6)";
+        ? "var(--loss)"
+        : "rgb(var(--label-rgb) / 0.6)";
   return <span style={{ color, fontWeight: 700 }}>{label}</span>;
 }
 
@@ -264,7 +251,7 @@ function ShimmerBar({ w, h, className = "" }: { w: number; h: number; className?
         width: w,
         height: h,
         background:
-          "linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 100%)",
+          "linear-gradient(90deg, rgb(var(--label-rgb) / 0.04) 0%, rgb(var(--label-rgb) / 0.10) 50%, rgb(var(--label-rgb) / 0.04) 100%)",
         backgroundSize: "200% 100%",
         animation: "ground-shimmer 1.6s linear infinite",
       }}

@@ -51,19 +51,19 @@ export default function PostseasonBracket({ bracket }: { bracket: Bracket }) {
   const [open, setOpen] = useState(!bracket.championId);
 
   return (
-    <section aria-label="포스트시즌 대진표" className="mx-4 rounded-2xl border border-white/10 bg-white/[0.03]">
+    <section aria-label="포스트시즌 대진표" className="mx-4 rounded-[12px] bg-sys-card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left active:opacity-70"
+        className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 py-2.5 text-left active:bg-sys-fill"
       >
         <span className="min-w-0">
-          <span className="block text-[13px] text-white" style={{ fontWeight: 700 }}>
+          <span className="block text-[17px] font-semibold text-label">
             포스트시즌 대진표
           </span>
           {!open && (
-            <span className="mt-0.5 block truncate text-[11.5px] text-white/50">{summary(bracket)}</span>
+            <span className="mt-0.5 block truncate text-[13px] text-sys-label2">{summary(bracket)}</span>
           )}
         </span>
         <svg
@@ -71,7 +71,7 @@ export default function PostseasonBracket({ bracket }: { bracket: Bracket }) {
           width="14"
           height="14"
           viewBox="0 0 14 14"
-          className="shrink-0 text-white/50 transition-transform"
+          className="shrink-0 text-sys-label3 transition-transform"
           style={{ transform: open ? "rotate(180deg)" : undefined }}
         >
           <path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -102,14 +102,14 @@ function SeriesItem({ series, last }: { series: BracketSeries; last: boolean }) 
   const active = series.status === "LIVE" || series.status === "ONGOING" || series.status === "UPCOMING";
   const showScore = series.status !== "WAITING" && series.status !== "UPCOMING";
   return (
-    <li className={`py-2.5 ${last ? "" : "border-b border-white/[0.06]"}`}>
+    <li className={`py-2.5 ${last ? "" : "border-b-[0.5px] border-sys-sep"}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] text-white/55" style={{ fontWeight: 700 }}>
+        <span className="text-[13px] font-semibold text-sys-label2">
           {series.label}
         </span>
         <span
-          className="truncate text-[11px]"
-          style={{ color: active ? "#34D27B" : "rgba(255,255,255,0.45)", fontWeight: 600 }}
+          className="truncate text-[13px]"
+          style={{ color: active ? "var(--club-tint)" : "var(--label-2)", fontWeight: 600 }}
         >
           {seriesNote(series)}
         </span>
@@ -117,17 +117,17 @@ function SeriesItem({ series, last }: { series: BracketSeries; last: boolean }) 
       <div className="mt-1.5 flex items-center gap-2">
         <TeamSide team={series.higher} series={series} align="left" />
         <span
-          className="shrink-0 text-center text-[16px] tabular-nums text-white"
+          className="shrink-0 text-center font-num text-[20px] font-semibold text-label"
           style={{ fontWeight: 800, minWidth: 44 }}
         >
           {showScore ? (
             <>
               <Score team={series.higher} series={series} />
-              <span className="px-1 text-white/30">:</span>
+              <span className="px-1 text-label/30">:</span>
               <Score team={series.lower} series={series} />
             </>
           ) : (
-            <span className="text-[11px] text-white/35" style={{ fontWeight: 600 }}>
+            <span className="text-[13px] text-sys-label2" style={{ fontWeight: 600 }}>
               vs
             </span>
           )}
@@ -135,7 +135,7 @@ function SeriesItem({ series, last }: { series: BracketSeries; last: boolean }) 
         <TeamSide team={series.lower} placeholder={series.lowerPlaceholder} series={series} align="right" />
       </div>
       {series.round === "WC" && series.hasWildcardAdvantage && (
-        <p className="mt-1 text-[10.5px] text-white/35">4위 팀이 1승을 안고 시작해요</p>
+        <p className="mt-1 text-[12px] text-sys-label2">4위 팀이 1승을 안고 시작해요</p>
       )}
     </li>
   );
@@ -161,8 +161,8 @@ function TeamSide({
   if (!team) {
     return (
       <span className={`flex min-w-0 flex-1 items-center gap-2 ${dir}`}>
-        <span className="h-[22px] w-[22px] shrink-0 rounded-full border border-dashed border-white/25" />
-        <span className="truncate text-[12.5px] text-white/40">{placeholder ?? "미정"}</span>
+        <span className="h-[22px] w-[22px] shrink-0 rounded-full border border-dashed border-label/25" />
+        <span className="truncate text-[13px] text-sys-label2">{placeholder ?? "미정"}</span>
       </span>
     );
   }
@@ -172,10 +172,10 @@ function TeamSide({
   return (
     <span className={`flex min-w-0 flex-1 items-center gap-2 ${dir}`} style={{ opacity: lost ? 0.42 : 1 }}>
       <TeamLogoChip teamId={team.teamId} />
-      <span className="truncate text-[13.5px] text-white" style={{ fontWeight: won ? 800 : 600 }}>
+      <span className="truncate text-[15px] text-label" style={{ fontWeight: won ? 800 : 600 }}>
         {t.short}
       </span>
-      {team.seed != null && <span className="shrink-0 text-[10.5px] text-white/40">{team.seed}위</span>}
+      {team.seed != null && <span className="shrink-0 text-[12px] text-sys-label2">{team.seed}위</span>}
     </span>
   );
 }
