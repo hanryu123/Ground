@@ -47,8 +47,11 @@ const config: CapacitorConfig = {
       launchShowDuration: 0,
     },
   },
+  // 앱을 켜고 웹이 뜨기 전 빈 화면 — 흰색 대신 시작 화면(스플래시)과 같은 남색
+  backgroundColor: "#071a31",
   ios: {
-    contentInset: "always",
+    // 웹이 상태 바·홈 바 밑까지 그린다 (예전 "always" 는 그 띠가 흰색으로 남았다). 여백은 CSS safe-area 로 잡는다
+    contentInset: "never",
     // 개발 중 WKWebView 인스펙터 허용
     allowsLinkPreview: false,
   },

@@ -587,7 +587,7 @@ export default function NotificationBell({
   }
 
   return (
-    <div ref={wrapRef} className="absolute right-5 top-5 z-[120]">
+    <div ref={wrapRef} className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+1.4rem)] z-[120]">
       {/* ── 종 트리거 ── */}
       <motion.button
         type="button"
