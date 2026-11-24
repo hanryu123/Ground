@@ -9,6 +9,7 @@ import { headers } from "next/headers";
 import { writeAdminAuditLog } from "@/lib/adminAudit";
 import { resolveServerAppEnv } from "@/lib/appEnv";
 import { requireDashboardAuth } from "@/lib/adminDashboardAuth";
+import { markDispatchOnce, sendTeamTopicNotification } from "@/services/notificationService";
 
 async function readActionResponse(res: Response): Promise<{ parsed: unknown; text: string }> {
   const text = await res.text().catch(() => "");
@@ -395,4 +396,85 @@ export async function sendMarketingPush(input: {
   });
 
   return { ok: true, id: record.id, sentCount, total };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 스토브리그 알림 — 비시즌 우리 팀 FA·트레이드·계약 소식. 자동 발송 없음, 어드민이 골라서 보낸다.
+// ────────────────────────────────────────────────────────────────────
+
+export type StoveLeagueRow = {
+  teamId: string;
+  items: Array<{ id: string; title: string; tag: string; url: string; dateTime: string; sent: boolean; pushTitle: string; pushBody: string }>;
+};
+
+export async function listStoveLeagueCandidates(): Promise<{ ok: true; rows: StoveLeagueRow[] } | { ok: false; error: string }> {
+  await requireDashboardAuth();
+  try {
+    const { TEAMS } = await import("@/lib/teams");
+    const { getStoveLeagueCandidates, buildStoveLeagueCopy } = await import("@/lib/notifications/stoveLeague");
+    const rows = await mapWithConcurrency(TEAMS, 3, async (team) => {
+      const items = (await getStoveLeagueCandidates(team.id, 2)).slice(0, 4);
+      const sentRows = items.length
+        ? await prisma.notificationDispatchState.findMany({
+            where: { alertKind: "stove-league", teamScope: team.id, eventKey: { in: items.map((i) => i.id) } },
+            select: { eventKey: true },
+          })
+        : [];
+      const sent = new Set(sentRows.map((r) => r.eventKey));
+      return {
+        teamId: team.id,
+        items: items.map((i) => {
+          const copy = buildStoveLeagueCopy(team.id, i);
+          return { id: i.id, title: i.title, tag: i.tag, url: i.url, dateTime: i.dateTime, sent: sent.has(i.id), pushTitle: copy.title, pushBody: copy.body };
+        }),
+      };
+    });
+    return { ok: true, rows };
+  } catch (e) {
+    return { ok: false, error: String(e).slice(0, 200) };
+  }
+}
+
+export async function sendStoveLeagueAlert(input: {
+  teamId: string;
+  newsId: string;
+  title: string;
+  body: string;
+  testOnly: boolean;
+  testNativeTokenId?: string | null;
+}): Promise<{ ok: true; sent: number } | { ok: false; error: string }> {
+  await requireDashboardAuth();
+  const { teamId, newsId, title, body, testOnly } = input;
+  if (!teamId || !newsId || !title.trim() || !body.trim()) return { ok: false, error: "필수 항목 누락" };
+
+  // 테스트는 마케팅 푸시의 "테스트만" 경로를 그대로 쓴다 (내 기기로만)
+  if (testOnly) {
+    const res = await sendMarketingPush({ title, body, url: "/today", targetTeamId: teamId, testOnly: true, testNativeTokenId: input.testNativeTokenId });
+    return res.ok ? { ok: true, sent: res.sentCount } : { ok: false, error: res.error };
+  }
+
+  const first = await markDispatchOnce({ alertKind: "stove-league", teamScope: teamId, eventKey: newsId });
+  if (!first) return { ok: false, error: "이미 보낸 소식이에요" };
+
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "ground-alpha.vercel.app";
+  const origin = `${host.includes("localhost") ? "http" : "https"}://${host}`;
+  const result = await sendTeamTopicNotification({
+    teamId,
+    topicKey: "stoveLeague",
+    title,
+    body,
+    url: "/today",
+    payload: { kind: "stove-league", newsId },
+    type: "SYSTEM",
+    origin,
+  });
+  await writeAdminAuditLog({
+    action: "send-stove-league",
+    targetType: "news",
+    targetId: newsId,
+    payload: { teamId, title, body, sent: result.sent },
+    result: "success",
+  });
+  return { ok: true, sent: result.sent };
 }

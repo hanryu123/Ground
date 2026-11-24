@@ -14,6 +14,8 @@ export type PushTopics = {
   livePitcherChange: boolean;
   liveStrikeout: boolean;
   liveHomeRun: boolean;
+  /** 비시즌 우리 팀 FA·트레이드·계약 소식 (없으면 켜진 것으로 본다) */
+  stoveLeague?: boolean;
 };
 
 export function getOrCreateNotifyUserId(): string {

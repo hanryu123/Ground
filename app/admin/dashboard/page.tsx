@@ -5,6 +5,7 @@ import { fetchLiveScoreSnapshot } from "@/lib/score/snapshot";
 import type { LiveScoreGame } from "@/lib/score/types";
 import { findTeam, TEAMS } from "@/lib/teams";
 import PushSenderForm from "./PushSenderForm";
+import StoveLeaguePanel from "./StoveLeaguePanel";
 import DashboardLogin from "./DashboardLogin";
 import { isDashboardAuthenticated, isDashboardPasswordConfigured } from "@/lib/adminDashboardAuth";
 import MarketingPushStats from "./MarketingPushStats";
@@ -199,6 +200,7 @@ function topicLabel(key: TopicKey): string {
     livePitcherChange: "투수 교체",
     liveStrikeout: "삼진",
     liveHomeRun: "홈런",
+    stoveLeague: "스토브리그",
   };
   return labels[key];
 }
@@ -825,6 +827,10 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
             teams={TEAMS.map((t) => ({ id: t.id, name: t.name, short: t.short }))}
             testDevices={pushTestDevices}
           />
+        </div>
+
+        <div className="mt-8">
+          <StoveLeaguePanel testDevices={pushTestDevices} />
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
