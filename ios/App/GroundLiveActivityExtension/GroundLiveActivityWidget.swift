@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -387,9 +388,208 @@ struct GroundLiveActivityWidget: Widget {
     }
 }
 
+// MARK: - 홈 화면 위젯 "오늘 경기 티켓" (iOS 17+)
+//
+// 앱의 오늘 탭 티켓을 홈 화면에 — 경기 전엔 시작 시간, 경기 중엔 점수와 이닝, 끝나면 결과 도장.
+// 위젯은 앱의 저장소를 못 읽어서 응원팀은 위젯 편집(길게 누르기 → 위젯 편집)에서 고른다.
+// 데이터는 앱과 같은 /api/kbo/today 를 읽는다.
+
+@available(iOS 17.0, *)
+enum GroundClub: String, AppEnum {
+    case kia, samsung, lg, kt, doosan, ssg, lotte, hanwha, nc, kiwoom
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "응원팀"
+    static var caseDisplayRepresentations: [GroundClub: DisplayRepresentation] = [
+        .kia: "KIA 타이거즈", .samsung: "삼성 라이온즈", .lg: "LG 트윈스", .kt: "KT 위즈", .doosan: "두산 베어스",
+        .ssg: "SSG 랜더스", .lotte: "롯데 자이언츠", .hanwha: "한화 이글스", .nc: "NC 다이노스", .kiwoom: "키움 히어로즈",
+    ]
+
+    /// lib/clubTheme.ts 와 같은 값 — field(티켓 면), onField(글자)
+    var field: Color {
+        switch self {
+        case .lg: return Color(red: 0xC3 / 255, green: 0x04 / 255, blue: 0x52 / 255)
+        case .samsung: return Color(red: 0x07 / 255, green: 0x4C / 255, blue: 0xA1 / 255)
+        case .kt: return Color(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
+        case .doosan: return Color(red: 0x13 / 255, green: 0x12 / 255, blue: 0x30 / 255)
+        case .kia: return Color(red: 0xEA / 255, green: 0x00 / 255, blue: 0x29 / 255)
+        case .hanwha: return Color(red: 0xFF / 255, green: 0x66 / 255, blue: 0x00 / 255)
+        case .nc: return Color(red: 0x31 / 255, green: 0x52 / 255, blue: 0x88 / 255)
+        case .lotte: return Color(red: 0x04 / 255, green: 0x1E / 255, blue: 0x42 / 255)
+        case .ssg: return Color(red: 0xCE / 255, green: 0x0E / 255, blue: 0x2D / 255)
+        case .kiwoom: return Color(red: 0x82 / 255, green: 0x00 / 255, blue: 0x24 / 255)
+        }
+    }
+
+    var onField: Color { self == .hanwha ? Color(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255) : .white }
+}
+
+func groundShortName(_ teamId: String) -> String {
+    switch teamId.lowercased() {
+    case "lg": return "LG"
+    case "kt": return "KT"
+    case "ssg": return "SSG"
+    case "nc": return "NC"
+    case "doosan": return "두산"
+    case "kia": return "KIA"
+    case "samsung": return "삼성"
+    case "lotte": return "롯데"
+    case "hanwha": return "한화"
+    case "kiwoom": return "키움"
+    default: return teamId.uppercased()
+    }
+}
+
+@available(iOS 17.0, *)
+struct GroundTodayIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "오늘 경기"
+    static var description = IntentDescription("응원팀의 오늘 경기를 티켓으로 보여 줘요.")
+
+    @Parameter(title: "응원팀", default: .kia)
+    var club: GroundClub
+}
+
+struct GroundTodayPayload: Decodable {
+    struct Score: Decodable { let homeScore: Int; let awayScore: Int; let inningLabel: String? }
+    struct Result: Decodable { let homeScore: Int; let awayScore: Int; let winnerId: String? }
+    struct Game: Decodable {
+        let homeId: String
+        let awayId: String
+        let time: String
+        let status: String
+        let liveScore: Score?
+        let result: Result?
+    }
+    let games: [Game]
+}
+
+enum GroundTicketState {
+    case noGame
+    case before(time: String, opponent: String, home: Bool)
+    case live(my: Int, opp: Int, inning: String?, opponent: String)
+    case final(my: Int, opp: Int, outcome: String, opponent: String)
+    case cancelled(opponent: String)
+}
+
+@available(iOS 17.0, *)
+struct GroundTodayEntry: TimelineEntry {
+    let date: Date
+    let club: GroundClub
+    let state: GroundTicketState
+}
+
+@available(iOS 17.0, *)
+struct GroundTodayProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> GroundTodayEntry {
+        GroundTodayEntry(date: .now, club: .kia, state: .before(time: "18:30", opponent: "삼성", home: true))
+    }
+
+    func snapshot(for configuration: GroundTodayIntent, in context: Context) async -> GroundTodayEntry {
+        context.isPreview ? placeholder(in: context) : await load(configuration.club)
+    }
+
+    func timeline(for configuration: GroundTodayIntent, in context: Context) async -> Timeline<GroundTodayEntry> {
+        let entry = await load(configuration.club)
+        // 경기 중엔 15분, 그 밖엔 1시간마다 (위젯 새로고침 횟수는 iOS 가 제한한다)
+        let minutes: Double
+        if case .live = entry.state { minutes = 15 } else { minutes = 60 }
+        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(minutes * 60)))
+    }
+
+    private func load(_ club: GroundClub) async -> GroundTodayEntry {
+        let id = club.rawValue
+        guard let url = URL(string: "https://ground-alpha.vercel.app/api/kbo/today?teamId=\(id)&withStandings=0"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let payload = try? JSONDecoder().decode(GroundTodayPayload.self, from: data),
+              let game = payload.games.first(where: { $0.homeId == id || $0.awayId == id })
+        else {
+            return GroundTodayEntry(date: .now, club: club, state: .noGame)
+        }
+        let home = game.homeId == id
+        let opponent = groundShortName(home ? game.awayId : game.homeId)
+        let state: GroundTicketState
+        if game.status == "CANCEL" {
+            state = .cancelled(opponent: opponent)
+        } else if let r = game.result, game.status == "RESULT" {
+            let my = home ? r.homeScore : r.awayScore
+            let opp = home ? r.awayScore : r.homeScore
+            state = .final(my: my, opp: opp, outcome: r.winnerId == nil ? "무" : (r.winnerId == id ? "승" : "패"), opponent: opponent)
+        } else if let s = game.liveScore, game.status == "LIVE" {
+            state = .live(my: home ? s.homeScore : s.awayScore, opp: home ? s.awayScore : s.homeScore, inning: s.inningLabel, opponent: opponent)
+        } else {
+            state = .before(time: game.time, opponent: opponent, home: home)
+        }
+        return GroundTodayEntry(date: .now, club: club, state: state)
+    }
+}
+
+@available(iOS 17.0, *)
+struct GroundTodayWidgetView: View {
+    let entry: GroundTodayEntry
+    @Environment(\.widgetFamily) private var family
+
+    private var my: String { groundShortName(entry.club.rawValue) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch entry.state {
+            case .noGame:
+                Text(my).font(.system(size: 22, weight: .black))
+                Spacer(minLength: 0)
+                Text("오늘은 경기가 없어요").font(.system(size: 13, weight: .semibold)).opacity(0.85)
+            case let .before(time, opponent, home):
+                Text("\(my) vs \(opponent)").font(.system(size: 17, weight: .black)).lineLimit(1)
+                Text(home ? "홈" : "원정").font(.system(size: 12, weight: .semibold)).opacity(0.8)
+                Spacer(minLength: 0)
+                Text(time).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+            case let .live(myScore, opp, inning, opponent):
+                Text("\(my) vs \(opponent)").font(.system(size: 15, weight: .black)).lineLimit(1)
+                Text(inning ?? "경기 중").font(.system(size: 12, weight: .bold)).opacity(0.85)
+                Spacer(minLength: 0)
+                Text("\(myScore) : \(opp)").font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+            case let .final(myScore, opp, outcome, opponent):
+                HStack(alignment: .top) {
+                    Text("\(my) vs \(opponent)").font(.system(size: 15, weight: .black)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(outcome)
+                        .font(.system(size: 15, weight: .black))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(lineWidth: 2))
+                        .rotationEffect(.degrees(-8))
+                }
+                Text("경기 종료").font(.system(size: 12, weight: .bold)).opacity(0.85)
+                Spacer(minLength: 0)
+                Text("\(myScore) : \(opp)").font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+            case let .cancelled(opponent):
+                Text("\(my) vs \(opponent)").font(.system(size: 15, weight: .black))
+                Spacer(minLength: 0)
+                Text("경기 취소").font(.system(size: 20, weight: .bold))
+            }
+        }
+        .foregroundStyle(entry.club.onField)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .containerBackground(entry.club.field, for: .widget)
+        .widgetURL(URL(string: "https://ground-alpha.vercel.app/today"))
+    }
+}
+
+@available(iOS 17.0, *)
+struct GroundTodayWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "GroundTodayWidget", intent: GroundTodayIntent.self, provider: GroundTodayProvider()) { entry in
+            GroundTodayWidgetView(entry: entry)
+        }
+        .configurationDisplayName("오늘 경기 티켓")
+        .description("응원팀의 오늘 경기 — 시작 시간, 점수, 결과")
+        .supportedFamilies([.systemSmall])
+    }
+}
+
 @main
 struct GroundLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         GroundLiveActivityWidget()
+        if #available(iOS 17.0, *) {
+            GroundTodayWidget()
+        }
     }
 }
