@@ -48,6 +48,29 @@ async function fetchNews(teamId: string, tag: NewsTag | null, limit: number): Pr
   };
 }
 
+const NEWS_CACHE_PREFIX = "ground-news-cache:";
+const NEWS_CACHE_MAX_AGE_MS = 12 * 3600_000;
+
+function readNewsCache(teamId: string): { items: TeamNewsItem[]; tags: NewsTag[] } | null {
+  try {
+    const raw = localStorage.getItem(NEWS_CACHE_PREFIX + teamId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; items: TeamNewsItem[]; tags: NewsTag[] };
+    if (Date.now() - parsed.at > NEWS_CACHE_MAX_AGE_MS) return null;
+    return { items: parsed.items, tags: parsed.tags };
+  } catch {
+    return null;
+  }
+}
+
+function writeNewsCache(teamId: string, page: TeamNewsPage) {
+  try {
+    localStorage.setItem(NEWS_CACHE_PREFIX + teamId, JSON.stringify({ at: Date.now(), items: page.items, tags: page.tags }));
+  } catch {
+    // 저장 공간이 없으면 다음에 다시 받는다
+  }
+}
+
 export default function TeamNewsList({
   teamId,
   maxCount = 30,
@@ -66,17 +89,20 @@ export default function TeamNewsList({
 
   // 팀당 한 번만 넉넉히 받아 두고 태그 필터는 화면에서 거른다.
   // (태그마다 요청하면 주소별 CDN 캐시가 따로라, 처음 누르는 태그는 서버 재계산·분류를 기다리느라 수 초씩 빈 화면이었다)
+  // 앱을 켜면 지난번 받은 소식을 먼저 보여 주고, 새 소식이 오면 바꿔 끼운다 (빈 화면 대기 제거)
   useEffect(() => {
     const key = teamId;
     requestKey.current = key;
     setTag(null);
-    setTags([]);
-    setAllItems(null);
+    const cached = readNewsCache(teamId);
+    setTags(cached?.tags ?? []);
+    setAllItems(cached?.items ?? null);
     fetchNews(teamId, null, FETCH_LIMIT)
       .then((page) => {
         if (requestKey.current !== key) return;
         setAllItems(page.items);
         setTags(page.tags);
+        writeNewsCache(teamId, page);
       })
       .catch(() => {
         if (requestKey.current === key) setAllItems([]);
