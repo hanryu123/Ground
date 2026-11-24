@@ -7,6 +7,7 @@ import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton"
 import GamePass from "@/components/today/GamePass";
 import { NextGamePass, SeasonPass } from "@/components/today/SeasonPass";
 import ShareResultRow from "@/components/today/ShareResultRow";
+import ScoringTimeline from "@/components/today/ScoringTimeline";
 import FeedNewsSection from "@/components/feed/FeedNewsSection";
 import FeedShortsSection from "@/components/feed/FeedShortsSection";
 import FeedTicketPracticeCard from "@/components/feed/FeedTicketPracticeCard";
@@ -182,6 +183,8 @@ export default function TodayPage() {
           </div>
         </section>
       ) : null}
+
+      {game ? <ScoringTimeline team={team} game={game} /> : null}
 
       {game && (highlight || myLineup || game.status === "RESULT") ? (
         <section className="mx-4 mt-4 overflow-hidden rounded-[12px] bg-sys-card">

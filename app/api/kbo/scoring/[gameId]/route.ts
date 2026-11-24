@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { NAVER_BASE } from "@/lib/naverApi";
+import { fetchKboScoringEvents } from "@/lib/score/kboLineScore";
 
 export const runtime = "nodejs";
 
@@ -326,14 +327,18 @@ export async function GET(
   const homeId = url.searchParams.get("homeId") ?? "";
   const awayId = url.searchParams.get("awayId") ?? "";
 
-  const events = await fetchScoringEvents(gameId, homeId, awayId);
+  const live = url.searchParams.get("live") === "1";
+
+  // KBO 공식 스코어보드가 1순위 (네이버는 서버 요청을 막는다). 실패할 때만 예전 네이버 경로.
+  const official = await fetchKboScoringEvents(gameId, homeId, awayId).catch(() => null);
+  const events = official ?? (await fetchScoringEvents(gameId, homeId, awayId));
 
   return NextResponse.json(
     { events },
     {
       headers: {
-        // 종료 경기: 데이터 불변 → 1시간 CDN 캐시
-        "Cache-Control": "public, max-age=3600, s-maxage=3600",
+        // 경기 중이면 1분, 끝난 경기는 기록이 안 바뀌어 1시간 CDN 캐시
+        "Cache-Control": live ? "public, max-age=30, s-maxage=60" : "public, max-age=3600, s-maxage=3600",
       },
     },
   );
