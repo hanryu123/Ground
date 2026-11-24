@@ -685,6 +685,15 @@ export async function fetchKboTodayGames(
   }
 ): Promise<LiveGame[]> {
   const target = date ?? todayKstDate();
+  // KBO 공식 시즌 일정상 이 날 경기가 없으면 바로 빈 목록 — 하루 조회가 0경기면 네이버로 넘어가는데,
+  // 네이버가 서버 요청에 응답을 안 해 4초 타임아웃까지 매달려 오늘 탭 맨 위가 늦게 떴다 (비시즌·쉬는 날).
+  // 시즌 일정을 못 받으면 이 지름길은 건너뛰고 원래대로 조회한다.
+  try {
+    const season = await fetchKboOfficialSeason(Number(target.slice(0, 4)));
+    if (season.length > 0 && !season.some((g) => g.date === target)) return [];
+  } catch {
+    // 지름길 실패 — 아래 원래 경로로
+  }
   try {
     const cacheMode = options?.cacheMode ?? "cached";
     const games = await fetchKboGamesRange(target, target, { cacheMode });
