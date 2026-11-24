@@ -79,7 +79,13 @@ export default function OnboardingGate({
   }
 
   if (!isReady) {
-    return <div className="h-dvh bg-sys-bg" aria-hidden />;
+    // 앱 시작 화면(iOS 스플래시)과 같은 그림을 같은 크기로 — 네이티브 스플래시가 걷힌 뒤 화면이 끊기지 않게
+    return (
+      <div className="flex h-dvh items-center justify-center bg-[#071a31]" aria-label="GROUND 불러오는 중">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/ground-poster.webp" alt="" width={1024} height={1024} className="w-[min(91vw,42vh)]" fetchPriority="high" />
+      </div>
+    );
   }
 
   const unlocked = Boolean(teamId) && isOnboardingDone;
