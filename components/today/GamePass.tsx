@@ -67,14 +67,20 @@ function headerInfo(game: LiveGame, team: Team, standings: StandingsPayload | nu
       series: mine && theirs ? `시리즈 ${mine.wins}승 ${theirs.wins}패` : null,
     };
   }
-  return { round: "정규시즌", serial: seasonSerial(team.id, standings, game.status === "RESULT"), series: null as string | null };
+  // 정규시즌 경기는 정규시즌 경기 수만 센다 (포스트시즌 대진표가 남아 있어도)
+  return { round: "정규시즌", serial: seasonSerial(team.id, standings, game.status === "RESULT", false), series: null as string | null };
 }
 
 /** 올 시즌 이 팀의 몇 번째 경기인지 — 정규시즌 경기 수 + 지금까지 치른 포스트시즌 경기 (+ 오늘 경기 전이면 1) */
-export function seasonSerial(teamId: string, standings: StandingsPayload | null, todayPlayed: boolean): string | null {
+export function seasonSerial(
+  teamId: string,
+  standings: StandingsPayload | null,
+  todayPlayed: boolean,
+  includePostseason = true
+): string | null {
   const row = standings?.standings.find((r) => r.teamId === teamId);
   if (!row) return null;
-  const postseason = (standings?.bracket?.series ?? []).reduce((sum, s) => {
+  const postseason = !includePostseason ? 0 : (standings?.bracket?.series ?? []).reduce((sum, s) => {
     const ids = [s.higher?.teamId, s.lower?.teamId];
     return ids.includes(teamId) ? sum + (s.higher?.wins ?? 0) + (s.lower?.wins ?? 0) : sum;
   }, 0);

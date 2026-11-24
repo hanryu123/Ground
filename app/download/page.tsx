@@ -245,22 +245,27 @@ export default async function DownloadPage({
             )}
           </div>
 
-          {/* 폰 스크린샷 3장 */}
-          <div className="relative mx-auto flex w-full max-w-[520px] items-end justify-center">
+          {/* 폰 스크린샷 4장 — 팀마다 앱 색이 바뀌는 걸 보여 주려고 네 구단 화면 */}
+          <div className="relative mx-auto flex w-full max-w-[600px] items-end justify-center">
             <PhoneShot
-              src="/landing/postgame.jpg"
-              alt="경기 후 캐스터 한줄평 화면"
-              className="relative z-0 w-[36%] -translate-y-2 translate-x-6 -rotate-[7deg] opacity-90"
+              src="/landing/kia-postgame.jpg"
+              alt="KIA 팬 화면 — 경기 후 리포트와 승리 도장"
+              className="relative z-0 w-[30%] translate-x-8 -rotate-[8deg] opacity-90"
             />
             <PhoneShot
-              src="/landing/today.jpg"
-              alt="오늘 경기 화면"
-              className="relative z-10 w-[42%] -translate-y-6"
+              src="/landing/samsung-today.jpg"
+              alt="삼성 팬 화면 — 경기 중 점수와 이닝"
+              className="relative z-20 w-[34%] -translate-y-6 translate-x-3"
             />
             <PhoneShot
-              src="/landing/schedule.jpg"
-              alt="경기 일정 화면"
-              className="relative z-0 w-[36%] -translate-x-6 -translate-y-2 rotate-[7deg] opacity-90"
+              src="/landing/lg-schedule.jpg"
+              alt="LG 팬 화면 — 일정 탭의 우리 팀 경기 티켓"
+              className="relative z-10 w-[32%] -translate-x-3 -translate-y-3 rotate-[4deg]"
+            />
+            <PhoneShot
+              src="/landing/lotte-rank.jpg"
+              alt="롯데 팬 화면 — 순위표의 우리 팀 줄"
+              className="relative z-0 w-[30%] -translate-x-8 rotate-[9deg] opacity-90"
             />
           </div>
         </section>
