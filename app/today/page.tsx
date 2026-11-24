@@ -6,6 +6,7 @@ import NotificationBell from "@/components/NotificationBell";
 import LiveActivityRecoveryButton from "@/components/LiveActivityRecoveryButton";
 import GamePass from "@/components/today/GamePass";
 import { NextGamePass, SeasonPass } from "@/components/today/SeasonPass";
+import ShareResultRow from "@/components/today/ShareResultRow";
 import FeedNewsSection from "@/components/feed/FeedNewsSection";
 import FeedShortsSection from "@/components/feed/FeedShortsSection";
 import FeedTicketPracticeCard from "@/components/feed/FeedTicketPracticeCard";
@@ -182,9 +183,11 @@ export default function TodayPage() {
         </section>
       ) : null}
 
-      {game && (highlight || myLineup) ? (
+      {game && (highlight || myLineup || game.status === "RESULT") ? (
         <section className="mx-4 mt-4 overflow-hidden rounded-[12px] bg-sys-card">
+          {game.status === "RESULT" ? <ShareResultRow team={team} game={game} /> : null}
           {highlight ? (
+            <div className={game.status === "RESULT" ? "border-t-[0.5px] border-sys-sep" : ""}>
             <GroupedRow
               title="하이라이트 보기"
               detail="유튜브에서 열려요"
@@ -195,9 +198,10 @@ export default function TodayPage() {
                 </span>
               }
             />
+            </div>
           ) : null}
           {myLineup ? (
-            <div className={highlight ? "border-t-[0.5px] border-sys-sep" : ""}>
+            <div className={highlight || game.status === "RESULT" ? "border-t-[0.5px] border-sys-sep" : ""}>
               <button
                 type="button"
                 onClick={() => setDetailOpen((v) => !v)}
