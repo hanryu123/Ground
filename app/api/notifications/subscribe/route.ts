@@ -26,7 +26,6 @@ type SubscribeBody = {
     livePitcherChange?: boolean;
     liveStrikeout?: boolean;
     liveHomeRun?: boolean;
-    stoveLeague?: boolean;
     casterStyle?: string;
   };
   favoriteTeam?: string;
@@ -41,8 +40,6 @@ type PushTopicFlags = {
   livePitcherChange: boolean;
   liveStrikeout: boolean;
   liveHomeRun: boolean;
-  /** 비시즌 우리 팀 FA·트레이드·계약 소식 */
-  stoveLeague: boolean;
   appEnv: "production" | "alpha" | "development";
 };
 
@@ -58,7 +55,6 @@ function normalizeTopics(input: SubscribeBody["topics"]): PushTopicFlags {
     livePitcherChange: toEnabledByDefault(input?.livePitcherChange),
     liveStrikeout: toEnabledByDefault(input?.liveStrikeout),
     liveHomeRun: toEnabledByDefault(input?.liveHomeRun),
-    stoveLeague: toEnabledByDefault(input?.stoveLeague),
     appEnv,
   };
 }

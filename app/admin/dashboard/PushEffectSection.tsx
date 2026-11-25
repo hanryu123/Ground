@@ -14,7 +14,6 @@ const KIND_LABEL: Record<string, string> = {
   preview: "프리뷰",
   report: "경기 리포트",
   highlight: "하이라이트",
-  "stove-league": "스토브리그",
   other: "기타",
 };
 

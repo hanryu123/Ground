@@ -13,9 +13,7 @@ export type TopicKey =
   | "score"
   | "livePitcherChange"
   | "liveStrikeout"
-  | "liveHomeRun"
-  /** 비시즌 우리 팀 FA·트레이드·계약 소식 */
-  | "stoveLeague";
+  | "liveHomeRun";
 
 export const TOPIC_KEYS: readonly TopicKey[] = [
   "pitcher",
@@ -26,7 +24,6 @@ export const TOPIC_KEYS: readonly TopicKey[] = [
   "livePitcherChange",
   "liveStrikeout",
   "liveHomeRun",
-  "stoveLeague",
 ] as const;
 
 export type AlertKind =
@@ -39,8 +36,7 @@ export type AlertKind =
   | "cancel"
   | "rain-delay"
   | "clutch"
-  | "live-activity-start"
-  | "stove-league";
+  | "live-activity-start";
 
 export type SubscriptionTopics = Partial<Record<TopicKey, boolean>> & {
   /** 구독을 만든 클라이언트 환경. 알파 서버는 알파 구독에만 푸시한다. */

@@ -22,7 +22,6 @@ type NativeSubscribeBody = {
     livePitcherChange?: boolean;
     liveStrikeout?: boolean;
     liveHomeRun?: boolean;
-    stoveLeague?: boolean;
     casterStyle?: string;
   };
 };
@@ -36,8 +35,6 @@ type PushTopicFlags = {
   livePitcherChange: boolean;
   liveStrikeout: boolean;
   liveHomeRun: boolean;
-  /** 비시즌 우리 팀 FA·트레이드·계약 소식 */
-  stoveLeague: boolean;
   appEnv: "production" | "alpha" | "development";
 };
 
@@ -52,7 +49,6 @@ function normalizeTopics(input: NativeSubscribeBody["topics"]): PushTopicFlags {
     livePitcherChange: on(input?.livePitcherChange),
     liveStrikeout: on(input?.liveStrikeout),
     liveHomeRun: on(input?.liveHomeRun),
-    stoveLeague: on(input?.stoveLeague),
     appEnv: resolveServerAppEnv(),
   };
 }

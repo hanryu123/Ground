@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Crosshair, Play, Trophy, Check, Share2, PlusSquare, X, Newspaper } from "lucide-react";
+import { Bell, Crosshair, Play, Trophy, Check, Share2, PlusSquare, X } from "lucide-react";
 import {
   getOrCreateNotifyUserId,
   persistSubscription,
@@ -59,7 +59,6 @@ const TOPIC_KEYS: Array<keyof NotifPrefs> = [
   "livePitcherChange",
   "liveStrikeout",
   "liveHomeRun",
-  "stoveLeague",
 ];
 
 const DEFAULT_PREFS: NotifPrefs = {
@@ -119,13 +118,6 @@ const ITEMS_DEFAULT: ToggleItem[] = [
     label: "경기중 · 스코어",
     hint: "득점/실점이 발생할 때마다 바로 푸시.",
     Icon: Bell,
-  },
-  {
-    id: "stoveLeague",
-    topicKeys: ["stoveLeague"],
-    label: "스토브리그 소식",
-    hint: "비시즌에 우리 팀 FA·트레이드·계약 소식이 나오면 알려드려요.",
-    Icon: Newspaper,
   },
 ];
 

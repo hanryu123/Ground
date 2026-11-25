@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
  *  측정 실패가 발송을 막으면 안 되므로 기록 함수는 전부 예외를 삼킨다.
  */
 
-export type PushBatchKind = "score" | "live" | "pitcher" | "preview" | "report" | "highlight" | "stove-league" | "other";
+export type PushBatchKind = "score" | "live" | "pitcher" | "preview" | "report" | "highlight" | "other";
 
 let ready: Promise<void> | null = null;
 
@@ -65,7 +65,6 @@ export function pushKindFromTopic(topicKey: string): PushBatchKind {
     preGame: "preview",
     postGame: "report",
     highlight: "highlight",
-    stoveLeague: "stove-league",
   };
   return map[topicKey] ?? "other";
 }
