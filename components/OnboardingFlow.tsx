@@ -85,6 +85,14 @@ function AddHomeGuideIcon() {
   );
 }
 
+/** Vercel 미리보기(스테이징) 배포인가 — 거기선 푸시 동의·홈 화면 설치 없이 넘어간다. 운영 주소에선 항상 false */
+function isPreviewDeployment(): boolean {
+  if (process.env.NEXT_PUBLIC_VERCEL_ENV === "preview") return true;
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host !== "ground-alpha.vercel.app" && host.endsWith("-han-6930s-projects.vercel.app");
+}
+
 export default function OnboardingFlow({ onComplete }: Props) {
   // 1 응원팀 → 2 알림 말투 → 3 알림 켜기
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -167,7 +175,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
     setLoading(true);
     try {
       // 네이티브 앱: PWA 설치 안내 불필요, 웹 푸시 대신 FCM 사용 (OnboardingGate에서 등록)
-      if (isNativeApp) {
+      if (isNativeApp || isPreviewDeployment()) {
         localStorage.setItem(ONBOARDING_DONE_KEY, "1");
         onComplete();
         return;
@@ -381,7 +389,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                 className="min-h-[52px] w-full rounded-[14px] px-4 text-[17px] font-bold transition active:scale-[0.98] disabled:opacity-60"
                 style={{ backgroundColor: ctaBg, color: ctaText }}
               >
-                {loading ? "켜는 중…" : "편파 알림 켜기"}
+                {loading ? "켜는 중…" : isPreviewDeployment() ? "스테이징 — 알림 없이 시작" : "편파 알림 켜기"}
               </button>
             </div>
           </motion.div>
