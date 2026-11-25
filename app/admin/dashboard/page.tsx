@@ -6,6 +6,7 @@ import type { LiveScoreGame } from "@/lib/score/types";
 import { findTeam, TEAMS } from "@/lib/teams";
 import PushSenderForm from "./PushSenderForm";
 import StoveLeaguePanel from "./StoveLeaguePanel";
+import PushEffectSection from "./PushEffectSection";
 import DashboardLogin from "./DashboardLogin";
 import { isDashboardAuthenticated, isDashboardPasswordConfigured } from "@/lib/adminDashboardAuth";
 import MarketingPushStats from "./MarketingPushStats";
@@ -831,6 +832,10 @@ export default async function AdminDashboardPage({ searchParams }: Props) {
 
         <div className="mt-8">
           <StoveLeaguePanel testDevices={pushTestDevices} />
+        </div>
+
+        <div className="mt-8">
+          <PushEffectSection />
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">

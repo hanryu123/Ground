@@ -13,6 +13,7 @@ import {
   matchesCurrentPushEnv,
 } from "@/lib/notifications/topics";
 import { casterStyleFromTopics, type CasterStyle } from "@/lib/notifications/casterStyle";
+import { newPushBatchId, recordPushBatch, withPushBatch } from "@/lib/pushMetrics";
 import type { LiveScoreGame } from "@/lib/score/types";
 import type { ScoringPlayContext } from "@/lib/score/playByPlay";
 
@@ -273,6 +274,10 @@ export async function dispatchScoreAlertsForGame(input: {
     };
   };
 
+  // 알림 효과 측정 — 이번 득점 알림 묶음 ID (?gb=)
+  const batchId = newPushBatchId();
+  const todayUrl = withPushBatch("/today", batchId);
+
   const pushResults = await mapWithConcurrency(activeSubs, 12, async (sub) => {
     const alert = await buildAlertForTeam(sub.user.favoriteTeam, casterStyleFromTopics(sub.topics));
     if (!alert) return null;
@@ -282,7 +287,7 @@ export async function dispatchScoreAlertsForGame(input: {
       {
         title: alert.aiCopy.title,
         body: alert.aiCopy.body,
-        url: "/today",
+        url: todayUrl,
         latestPlayText: input.latestPlayText,
         teamId: alert.favoriteTeam,
       },
@@ -308,7 +313,7 @@ export async function dispatchScoreAlertsForGame(input: {
           tokens: [row.token],
           title: alert.aiCopy.title,
           body: alert.aiCopy.body,
-          url: "/today",
+          url: todayUrl,
           data: { teamId: alert.favoriteTeam, topicKey: "score" },
         });
         return {
@@ -324,7 +329,7 @@ export async function dispatchScoreAlertsForGame(input: {
         tokens: [row.token],
         title: alert.aiCopy.title,
         body: alert.aiCopy.body,
-        url: "/today",
+        url: todayUrl,
         data: { teamId: alert.favoriteTeam, topicKey: "score" },
       });
       return {
@@ -402,7 +407,7 @@ export async function dispatchScoreAlertsForGame(input: {
         userId: row.sub.userId,
         title: row.aiCopy.title,
         body: row.aiCopy.body,
-        deeplinkUrl: "/today",
+        deeplinkUrl: todayUrl,
         sentAt: new Date(),
         type: "SCORE_UPDATE",
         payload: row.payload,
@@ -416,7 +421,7 @@ export async function dispatchScoreAlertsForGame(input: {
         userId: row.row.userId,
         title: row.aiCopy.title,
         body: row.aiCopy.body,
-        deeplinkUrl: "/today",
+        deeplinkUrl: todayUrl,
         sentAt: new Date(),
         type: "SCORE_UPDATE",
         payload: row.payload,
@@ -427,6 +432,24 @@ export async function dispatchScoreAlertsForGame(input: {
       inboxCreated = created.count;
     }
   }
+
+  const byStyle: Record<string, number> = {};
+  for (const row of sentRows) {
+    const style = casterStyleFromTopics(row.sub.topics);
+    byStyle[style] = (byStyle[style] ?? 0) + 1;
+  }
+  for (const row of nativeSentRows) {
+    const style = casterStyleFromTopics(row.row.topics);
+    byStyle[style] = (byStyle[style] ?? 0) + 1;
+  }
+  await recordPushBatch({
+    id: batchId,
+    kind: "score",
+    teamId: null,
+    title: `${input.game.awayTeam} ${input.game.awayScore}:${input.game.homeScore} ${input.game.homeTeam}`,
+    sentCount: sentRows.length + nativeSentRows.length,
+    byStyle,
+  });
 
   return { sent: sentRows.length + nativeSentRows.length, disabled, inboxCreated, llmCalls };
 }

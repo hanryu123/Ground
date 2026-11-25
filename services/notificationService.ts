@@ -11,6 +11,7 @@ import {
   type TopicKey,
 } from "@/lib/notifications/topics";
 import { findTeam } from "@/lib/teams";
+import { newPushBatchId, pushKindFromTopic, recordPushBatch, withPushBatch } from "@/lib/pushMetrics";
 
 /**
  * 공통 알림 서비스.
@@ -139,6 +140,9 @@ async function _doDeliverPush(input: {
   origin: string;
 }): Promise<{ sent: number; disabled: number; inboxCreated: number }> {
   const title = normalizePushTitle(input);
+  // 알림 효과 측정 — 이 발송 묶음의 ID 를 링크에 붙인다 (?gb=)
+  const batchId = newPushBatchId();
+  input = { ...input, url: withPushBatch(input.url, batchId) };
   const rawSubs = await prisma.pushSubscription.findMany({
     where: {
       enabled: true,
@@ -294,6 +298,14 @@ async function _doDeliverPush(input: {
     // 네이티브 발송 실패는 Web Push 발송에 영향 주지 않음
     console.warn("[notificationService] native push send failed:", (err as Error).message);
   }
+
+  await recordPushBatch({
+    id: batchId,
+    kind: pushKindFromTopic(input.topicKey),
+    teamId: input.teamId,
+    title,
+    sentCount: webSent + nativeSent,
+  });
 
   return { sent: webSent + nativeSent, disabled, inboxCreated };
 }

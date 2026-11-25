@@ -9,6 +9,8 @@ import OnboardingGate from "@/components/OnboardingGate";
 import PageShell from "@/components/PageShell";
 import { clubCssVars } from "@/lib/clubTheme";
 import { useMyTeam } from "@/lib/useMyTeam";
+import { getOrCreateNotifyUserId } from "@/lib/webPushClient";
+import { CASTER_STYLE_STORAGE_KEY } from "@/lib/notifications/casterStyle";
 
 /** 응원팀이 바뀌면 --club-* 를 다시 깐다 (첫 페인트 값은 layout 의 부트 스크립트가 넣는다) */
 function useClubVars(teamId: string) {
@@ -18,10 +20,34 @@ function useClubVars(teamId: string) {
   }, [teamId]);
 }
 
+/** 알림을 눌러 열렸으면(?gb=묶음ID) 한 번 기록하고 주소에서 지운다 — 알림 효과 측정 */
+function usePushOpenBeacon(pathname: string | null) {
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const batchId = url.searchParams.get("gb");
+    if (!batchId) return;
+    url.searchParams.delete("gb");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    let casterStyle: string | null = null;
+    try {
+      casterStyle = localStorage.getItem(CASTER_STYLE_STORAGE_KEY);
+    } catch {
+      // 저장소를 못 읽으면 말투 없이 센다
+    }
+    void fetch("/api/notifications/opened", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batchId, userId: getOrCreateNotifyUserId(), casterStyle }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, [pathname]);
+}
+
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const team = useMyTeam();
   useClubVars(team.id);
+  usePushOpenBeacon(pathname);
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
   const isDocumentRoute =
     pathname === "/privacy" ||
